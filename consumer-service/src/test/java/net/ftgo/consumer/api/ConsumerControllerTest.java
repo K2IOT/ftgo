@@ -1,6 +1,8 @@
 package net.ftgo.consumer.api;
 
 import net.ftgo.common.Money;
+import net.ftgo.consumer.config.ConsumerServiceConfiguration;
+import net.ftgo.consumer.config.EventuateTramTestConfiguration;
 import net.ftgo.consumer.domain.Consumer;
 import net.ftgo.consumer.repository.ConsumerRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -8,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
@@ -24,6 +27,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @Transactional
+@Import(EventuateTramTestConfiguration.class)
 class ConsumerControllerTest {
     
     @Autowired

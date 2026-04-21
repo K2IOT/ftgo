@@ -15,7 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
  * Events are written to the outbox table within the same transaction as business data updates.
  * Debezium CDC monitors the outbox table and publishes events to Kafka.
  */
-@Component
+@Component("consumerDomainEventPublisher")
 public class DomainEventPublisher {
     
     private static final Logger logger = LoggerFactory.getLogger(DomainEventPublisher.class);

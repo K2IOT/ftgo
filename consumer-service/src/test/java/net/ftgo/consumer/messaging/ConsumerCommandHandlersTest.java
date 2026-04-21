@@ -1,6 +1,7 @@
 package net.ftgo.consumer.messaging;
 
 import net.ftgo.common.Money;
+import net.ftgo.consumer.config.EventuateTramTestConfiguration;
 import net.ftgo.consumer.domain.Consumer;
 import net.ftgo.consumer.repository.ConsumerRepository;
 import net.ftgo.consumer.service.ConsumerService;
@@ -8,6 +9,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.*;
 @SpringBootTest
 @ActiveProfiles("test")
 @Transactional
+@Import(EventuateTramTestConfiguration.class)
 class ConsumerCommandHandlersTest {
     
     @Autowired

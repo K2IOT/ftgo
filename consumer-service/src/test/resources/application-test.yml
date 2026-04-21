@@ -12,6 +12,16 @@ spring:
         dialect: org.hibernate.dialect.H2Dialect
   flyway:
     enabled: false
+  main:
+    allow-bean-definition-overriding: true
+  autoconfigure:
+    exclude:
+      - io.eventuate.tram.spring.messaging.common.TramMessagingCommonAutoConfiguration
+      - io.eventuate.tram.spring.events.publisher.TramEventsPublisherConfiguration
+      - io.eventuate.tram.spring.commands.producer.TramCommandProducerConfiguration
+      - io.eventuate.tram.spring.commands.consumer.TramCommandConsumerConfiguration
+      - io.eventuate.tram.sagas.spring.orchestration.SagaOrchestratorConfiguration
+      - io.eventuate.tram.sagas.spring.participant.SagaParticipantConfiguration
 
 logging:
   level:
