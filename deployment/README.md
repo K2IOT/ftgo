@@ -4,11 +4,14 @@ This directory contains Docker Compose configurations and scripts for deploying 
 
 ## Infrastructure Components
 
-### Kafka Cluster
-- 3 Kafka brokers (kafka-1, kafka-2, kafka-3)
-- Zookeeper for coordination
+### Kafka Cluster (KRaft Mode)
+- **3 Kafka brokers** (kafka-1, kafka-2, kafka-3) running in KRaft mode
+- **No Zookeeper required** - uses Kafka's native Raft consensus
 - Pre-configured topics with 3 partitions and replication factor 3
 - 7-day retention policy
+- Image: `bitnami/kafka:latest`
+
+> **Note**: Migrated from Zookeeper-based Kafka to KRaft mode. See [KAFKA_KRAFT_MIGRATION.md](KAFKA_KRAFT_MIGRATION.md) for details.
 
 ### MySQL Databases
 - 6 MySQL 8.0 instances (one per service)
@@ -38,8 +41,7 @@ docker-compose -f docker-compose.infra.yml up -d
 ```
 
 This will start:
-- Zookeeper
-- 3 Kafka brokers
+- 3 Kafka brokers (KRaft mode - no Zookeeper)
 - 6 MySQL databases
 - ScyllaDB
 - Redis
@@ -67,10 +69,14 @@ This creates CDC connectors for all 6 MySQL databases.
 
 ```bash
 # List Kafka topics
-docker exec ftgo-kafka-1 kafka-topics --list --bootstrap-server localhost:9092
+docker exec ftgo-kafka-1 kafka-topics.sh --list --bootstrap-server localhost:9092
 
 # Check Debezium connectors
 curl http://localhost:8083/connectors
+
+# Verify Kafka cluster health
+docker exec ftgo-kafka-1 kafka-broker-api-versions.sh \
+  --bootstrap-server kafka-1:9092,kafka-2:9092,kafka-3:9092
 ```
 
 ## Kafka Topics
@@ -138,8 +144,10 @@ docker-compose -f docker-compose.infra.yml down -v
 ## Troubleshooting
 
 ### Kafka not starting
-- Check Zookeeper is running: `docker logs ftgo-zookeeper`
-- Ensure ports 9092-9094 are not in use
+- Check all brokers are running: `docker-compose -f docker-compose.infra.yml ps`
+- Verify KRaft cluster formation: `docker logs ftgo-kafka-1`
+- Ensure ports 9092, 9094, 9095, 19092-19094 are not in use
+- See [KAFKA_KRAFT_MIGRATION.md](KAFKA_KRAFT_MIGRATION.md) for detailed troubleshooting
 
 ### Debezium connector fails
 - Check MySQL binlog is enabled: `docker exec ftgo-mysql-order mysql -uroot -prootpassword -e "SHOW VARIABLES LIKE 'log_bin'"`
