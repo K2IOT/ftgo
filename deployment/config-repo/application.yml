@@ -1,0 +1,31 @@
+# Common configuration for all services
+spring:
+  kafka:
+    bootstrap-servers: kafka-1:9092,kafka-2:9093,kafka-3:9094
+    consumer:
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+
+logging:
+  level:
+    net.ftgo: INFO
+    org.springframework: INFO
+  pattern:
+    console: '{"timestamp":"%d{yyyy-MM-dd HH:mm:ss.SSS}","level":"%level","service":"${spring.application.name}","trace":"%X{traceId}","span":"%X{spanId}","thread":"%thread","class":"%logger{36}","message":"%msg"}%n'

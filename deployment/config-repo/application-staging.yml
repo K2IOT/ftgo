@@ -1,0 +1,9 @@
+# Staging profile configuration
+spring:
+  kafka:
+    bootstrap-servers: kafka-staging-1:9092,kafka-staging-2:9093,kafka-staging-3:9094
+
+logging:
+  level:
+    net.ftgo: INFO
+    org.springframework: WARN

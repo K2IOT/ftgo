@@ -1,0 +1,75 @@
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+# IDE
+.idea/
+*.iml
+*.iws
+*.ipr
+.vscode/
+*.swp
+*.swo
+*~
+
+# Eclipse
+.classpath
+.project
+.settings/
+bin/
+
+# macOS
+.DS_Store
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+*~.nib
+
+# Package Files
+*.jar
+*.war
+*.nar
+*.ear
+*.zip
+*.tar.gz
+*.rar
+
+# JVM crash logs
+hs_err_pid*
+
+# Spring Boot
+spring-boot-devtools.properties
+
+# Secrets (never commit)
+*.key
+*.pem
+*.p12
+*.jks
+*-token.txt
+secrets/
+
+# Docker volumes
+mysql-*-data/
+scylladb-data/
+
+# Test reports
+test-results/
+test-output/
+
+# Coverage reports
+.jacoco/
+jacoco.exec
+
+# Node (if using any frontend tools)
+node_modules/
+npm-debug.log
+yarn-error.log

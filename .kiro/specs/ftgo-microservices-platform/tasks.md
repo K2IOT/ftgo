@@ -2,14 +2,14 @@
 
 ## Phase 1: Infrastructure Foundation
 
-- [ ] 1. Set up project structure and infrastructure
-  - [ ] 1.1 Create root Gradle multi-project build with Java 21 and Spring Boot 3.2
+- [x] 1. Set up project structure and infrastructure
+  - [x] 1.1 Create root Gradle multi-project build with Java 21 and Spring Boot 3.2
     - Configure multi-project build.gradle with all 8 services
     - Set up common module with shared DTOs, Money value object, Address value object
     - Configure Gradle wrapper and dependency management
     - _Requirements: All services_
   
-  - [ ] 1.2 Deploy Kafka infrastructure
+  - [x] 1.2 Deploy Kafka infrastructure
     - Deploy Kafka 3.x cluster with 3 brokers using Docker Compose
     - Configure Kafka topics with 3 partitions, replication factor 3, 7-day retention
     - Create domain event topics: net.ftgo.orderservice.domain.Order, net.ftgo.consumerservice.domain.Consumer, net.ftgo.restaurantservice.domain.Restaurant, net.ftgo.kitchenservice.domain.Ticket, net.ftgo.accountingservice.domain.Account, net.ftgo.deliveryservice.domain.Delivery
@@ -18,14 +18,14 @@
     - Configure partition key strategy (aggregateType + "#" + aggregateId)
     - _Requirements: 11, 19_
   
-  - [ ] 1.3 Deploy database infrastructure
+  - [x] 1.3 Deploy database infrastructure
     - Deploy MySQL 8 instances for Order, Consumer, Restaurant, Kitchen, Accounting, Delivery services
     - Deploy ScyllaDB cluster for Order History Service
     - Configure HikariCP connection pools (max 20, min idle 5, timeout 30s)
     - Set up Flyway for schema migration management
     - _Requirements: 22_
   
-  - [ ] 1.4 Set up Debezium CDC
+  - [x] 1.4 Set up Debezium CDC
     - Deploy Debezium Connect cluster
     - Configure MySQL binlog settings (binlog_format=ROW, binlog_row_image=FULL)
     - Create Debezium connectors for all 6 MySQL databases
@@ -33,7 +33,7 @@
     - Test CDC event flow from outbox to Kafka
     - _Requirements: 11_
   
-  - [ ] 1.5 Deploy configuration management
+  - [x] 1.5 Deploy configuration management
     - Deploy Spring Cloud Config Server with Git backend
     - Create Git repository for service configurations
     - Deploy HashiCorp Vault for secrets management
@@ -41,7 +41,7 @@
     - Create configuration profiles (dev, staging, production)
     - _Requirements: 21_
   
-  - [ ] 1.6 Set up Kubernetes cluster
+  - [x] 1.6 Set up Kubernetes cluster
     - Set up local Kubernetes cluster (k3s or kind)
     - Create ftgo-production namespace
     - Install Istio service mesh with mTLS STRICT mode

@@ -1,0 +1,19 @@
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: ftgo-services
+  namespace: ftgo-production
+spec:
+  hosts:
+    - "*.ftgo-production.svc.cluster.local"
+  http:
+    - timeout: 5s
+      retries:
+        attempts: 3
+        perTryTimeout: 2s
+        retryOn: 5xx,reset,connect-failure,refused-stream
+      route:
+        - destination:
+            host: order-service
+            port:
+              number: 8080

@@ -1,0 +1,393 @@
+version: '3.8'
+
+services:
+  # Zookeeper for Kafka coordination
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    hostname: zookeeper
+    container_name: ftgo-zookeeper
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    networks:
+      - ftgo-network
+
+  # Kafka Broker 1
+  kafka-1:
+    image: confluentinc/cp-kafka:7.5.0
+    hostname: kafka-1
+    container_name: ftgo-kafka-1
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+      - "19092:19092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-1:9092,PLAINTEXT_HOST://localhost:19092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'false'
+      KAFKA_LOG_RETENTION_MS: 604800000  # 7 days
+      KAFKA_COMPRESSION_TYPE: snappy
+    networks:
+      - ftgo-network
+
+  # Kafka Broker 2
+  kafka-2:
+    image: confluentinc/cp-kafka:7.5.0
+    hostname: kafka-2
+    container_name: ftgo-kafka-2
+    depends_on:
+      - zookeeper
+    ports:
+      - "9093:9093"
+      - "19093:19093"
+    environment:
+      KAFKA_BROKER_ID: 2
+      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-2:9093,PLAINTEXT_HOST://localhost:19093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'false'
+      KAFKA_LOG_RETENTION_MS: 604800000
+      KAFKA_COMPRESSION_TYPE: snappy
+    networks:
+      - ftgo-network
+
+  # Kafka Broker 3
+  kafka-3:
+    image: confluentinc/cp-kafka:7.5.0
+    hostname: kafka-3
+    container_name: ftgo-kafka-3
+    depends_on:
+      - zookeeper
+    ports:
+      - "9094:9094"
+      - "19094:19094"
+    environment:
+      KAFKA_BROKER_ID: 3
+      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-3:9094,PLAINTEXT_HOST://localhost:19094
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'false'
+      KAFKA_LOG_RETENTION_MS: 604800000
+      KAFKA_COMPRESSION_TYPE: snappy
+    networks:
+      - ftgo-network
+
+  # Kafka Topic Initialization
+  kafka-init:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: ftgo-kafka-init
+    depends_on:
+      - kafka-1
+      - kafka-2
+      - kafka-3
+    entrypoint: [ '/bin/sh', '-c' ]
+    command: |
+      "
+      # Wait for Kafka to be ready
+      echo 'Waiting for Kafka to be ready...'
+      cub kafka-ready -b kafka-1:9092 1 60
+      
+      # Create domain event topics
+      kafka-topics --create --if-not-exists --bootstrap-server kafka-1:9092 \
+        --topic net.ftgo.orderservice.domain.Order \
+        --partitions 3 --replication-factor 3 \
+        --config retention.ms=604800000 --config compression.type=snappy
+      
+      kafka-topics --create --if-not-exists --bootstrap-server kafka-1:9092 \
+        --topic net.ftgo.consumerservice.domain.Consumer \
+        --partitions 3 --replication-factor 3 \
+        --config retention.ms=604800000 --config compression.type=snappy
+      
+      kafka-topics --create --if-not-exists --bootstrap-server kafka-1:9092 \
+        --topic net.ftgo.restaurantservice.domain.Restaurant \
+        --partitions 3 --replication-factor 3 \
+        --config retention.ms=604800000 --config compression.type=snappy
+      
+      kafka-topics --create --if-not-exists --bootstrap-server kafka-1:9092 \
+        --topic net.ftgo.kitchenservice.domain.Ticket \
+        --partitions 3 --replication-factor 3 \
+        --config retention.ms=604800000 --config compression.type=snappy
+      
+      kafka-topics --create --if-not-exists --bootstrap-server kafka-1:9092 \
+        --topic net.ftgo.accountingservice.domain.Account \
+        --partitions 3 --replication-factor 3 \
+        --config retention.ms=604800000 --config compression.type=snappy
+      
+      kafka-topics --create --if-not-exists --bootstrap-server kafka-1:9092 \
+        --topic net.ftgo.deliveryservice.domain.Delivery \
+        --partitions 3 --replication-factor 3 \
+        --config retention.ms=604800000 --config compression.type=snappy
+      
+      # Create command channels
+      kafka-topics --create --if-not-exists --bootstrap-server kafka-1:9092 \
+        --topic orderService \
+        --partitions 3 --replication-factor 3
+      
+      kafka-topics --create --if-not-exists --bootstrap-server kafka-1:9092 \
+        --topic consumerService \
+        --partitions 3 --replication-factor 3
+      
+      kafka-topics --create --if-not-exists --bootstrap-server kafka-1:9092 \
+        --topic kitchenService \
+        --partitions 3 --replication-factor 3
+      
+      kafka-topics --create --if-not-exists --bootstrap-server kafka-1:9092 \
+        --topic accountingService \
+        --partitions 3 --replication-factor 3
+      
+      kafka-topics --create --if-not-exists --bootstrap-server kafka-1:9092 \
+        --topic deliveryService \
+        --partitions 3 --replication-factor 3
+      
+      # Create saga reply channels
+      kafka-topics --create --if-not-exists --bootstrap-server kafka-1:9092 \
+        --topic createOrderSagaReply \
+        --partitions 3 --replication-factor 3
+      
+      kafka-topics --create --if-not-exists --bootstrap-server kafka-1:9092 \
+        --topic cancelOrderSagaReply \
+        --partitions 3 --replication-factor 3
+      
+      kafka-topics --create --if-not-exists --bootstrap-server kafka-1:9092 \
+        --topic reviseOrderSagaReply \
+        --partitions 3 --replication-factor 3
+      
+      echo 'Kafka topics created successfully'
+      "
+    networks:
+      - ftgo-network
+
+  # MySQL for Order Service
+  mysql-order:
+    image: mysql:8.0
+    container_name: ftgo-mysql-order
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: ftgo_order
+      MYSQL_USER: ftgo_user
+      MYSQL_PASSWORD: ftgo_password
+    command:
+      - --binlog_format=ROW
+      - --binlog_row_image=FULL
+      - --server-id=1
+      - --log-bin=mysql-bin
+    volumes:
+      - mysql-order-data:/var/lib/mysql
+    networks:
+      - ftgo-network
+
+  # MySQL for Consumer Service
+  mysql-consumer:
+    image: mysql:8.0
+    container_name: ftgo-mysql-consumer
+    ports:
+      - "3307:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: ftgo_consumer
+      MYSQL_USER: ftgo_user
+      MYSQL_PASSWORD: ftgo_password
+    command:
+      - --binlog_format=ROW
+      - --binlog_row_image=FULL
+      - --server-id=2
+      - --log-bin=mysql-bin
+    volumes:
+      - mysql-consumer-data:/var/lib/mysql
+    networks:
+      - ftgo-network
+
+  # MySQL for Restaurant Service
+  mysql-restaurant:
+    image: mysql:8.0
+    container_name: ftgo-mysql-restaurant
+    ports:
+      - "3308:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: ftgo_restaurant
+      MYSQL_USER: ftgo_user
+      MYSQL_PASSWORD: ftgo_password
+    command:
+      - --binlog_format=ROW
+      - --binlog_row_image=FULL
+      - --server-id=3
+      - --log-bin=mysql-bin
+    volumes:
+      - mysql-restaurant-data:/var/lib/mysql
+    networks:
+      - ftgo-network
+
+  # MySQL for Kitchen Service
+  mysql-kitchen:
+    image: mysql:8.0
+    container_name: ftgo-mysql-kitchen
+    ports:
+      - "3309:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: ftgo_kitchen
+      MYSQL_USER: ftgo_user
+      MYSQL_PASSWORD: ftgo_password
+    command:
+      - --binlog_format=ROW
+      - --binlog_row_image=FULL
+      - --server-id=4
+      - --log-bin=mysql-bin
+    volumes:
+      - mysql-kitchen-data:/var/lib/mysql
+    networks:
+      - ftgo-network
+
+  # MySQL for Accounting Service
+  mysql-accounting:
+    image: mysql:8.0
+    container_name: ftgo-mysql-accounting
+    ports:
+      - "3310:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: ftgo_accounting
+      MYSQL_USER: ftgo_user
+      MYSQL_PASSWORD: ftgo_password
+    command:
+      - --binlog_format=ROW
+      - --binlog_row_image=FULL
+      - --server-id=5
+      - --log-bin=mysql-bin
+    volumes:
+      - mysql-accounting-data:/var/lib/mysql
+    networks:
+      - ftgo-network
+
+  # MySQL for Delivery Service
+  mysql-delivery:
+    image: mysql:8.0
+    container_name: ftgo-mysql-delivery
+    ports:
+      - "3311:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: ftgo_delivery
+      MYSQL_USER: ftgo_user
+      MYSQL_PASSWORD: ftgo_password
+    command:
+      - --binlog_format=ROW
+      - --binlog_row_image=FULL
+      - --server-id=6
+      - --log-bin=mysql-bin
+    volumes:
+      - mysql-delivery-data:/var/lib/mysql
+    networks:
+      - ftgo-network
+
+  # ScyllaDB for Order History Service
+  scylladb:
+    image: scylladb/scylla:5.2
+    container_name: ftgo-scylladb
+    ports:
+      - "9042:9042"
+    command: --smp 1 --memory 512M
+    volumes:
+      - scylladb-data:/var/lib/scylla
+    networks:
+      - ftgo-network
+
+  # Redis for API Gateway
+  redis:
+    image: redis:7-alpine
+    container_name: ftgo-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - ftgo-network
+
+  # Debezium Connect
+  debezium:
+    image: debezium/connect:2.4
+    container_name: ftgo-debezium
+    ports:
+      - "8083:8083"
+    depends_on:
+      - kafka-1
+      - kafka-2
+      - kafka-3
+      - mysql-order
+      - mysql-consumer
+      - mysql-restaurant
+      - mysql-kitchen
+      - mysql-accounting
+      - mysql-delivery
+    environment:
+      BOOTSTRAP_SERVERS: kafka-1:9092,kafka-2:9093,kafka-3:9094
+      GROUP_ID: debezium-cluster
+      CONFIG_STORAGE_TOPIC: debezium_configs
+      OFFSET_STORAGE_TOPIC: debezium_offsets
+      STATUS_STORAGE_TOPIC: debezium_status
+      CONFIG_STORAGE_REPLICATION_FACTOR: 3
+      OFFSET_STORAGE_REPLICATION_FACTOR: 3
+      STATUS_STORAGE_REPLICATION_FACTOR: 3
+    networks:
+      - ftgo-network
+
+  # HashiCorp Vault for secrets management
+  vault:
+    image: hashicorp/vault:1.15
+    container_name: ftgo-vault
+    ports:
+      - "8200:8200"
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: ftgo-root-token
+      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+    cap_add:
+      - IPC_LOCK
+    networks:
+      - ftgo-network
+
+  # Spring Cloud Config Server
+  config-server:
+    image: hyness/spring-cloud-config-server:4.1.0
+    container_name: ftgo-config-server
+    ports:
+      - "8888:8888"
+    environment:
+      SPRING_CLOUD_CONFIG_SERVER_GIT_URI: https://github.com/ftgo/ftgo-config-repo.git
+      SPRING_CLOUD_CONFIG_SERVER_GIT_DEFAULT_LABEL: main
+      SPRING_PROFILES_ACTIVE: native
+      SPRING_CLOUD_CONFIG_SERVER_NATIVE_SEARCH_LOCATIONS: file:///config
+    volumes:
+      - ./config-repo:/config
+    networks:
+      - ftgo-network
+
+networks:
+  ftgo-network:
+    driver: bridge
+
+volumes:
+  mysql-order-data:
+  mysql-consumer-data:
+  mysql-restaurant-data:
+  mysql-kitchen-data:
+  mysql-accounting-data:
+  mysql-delivery-data:
+  scylladb-data:

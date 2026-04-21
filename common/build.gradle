@@ -1,0 +1,7 @@
+// Common module - shared DTOs and value objects
+// This module is a library, not a Spring Boot application
+
+dependencies {
+    implementation 'com.fasterxml.jackson.core:jackson-databind'
+    implementation 'jakarta.validation:jakarta.validation-api'
+}

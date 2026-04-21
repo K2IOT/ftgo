@@ -1,0 +1,11 @@
+rootProject.name = 'ftgo'
+
+include 'common'
+include 'api-gateway'
+include 'order-service'
+include 'consumer-service'
+include 'restaurant-service'
+include 'kitchen-service'
+include 'accounting-service'
+include 'delivery-service'
+include 'order-history-service'

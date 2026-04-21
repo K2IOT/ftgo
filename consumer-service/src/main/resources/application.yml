@@ -1,0 +1,32 @@
+spring:
+  application:
+    name: consumer-service
+  datasource:
+    url: jdbc:mysql://localhost:3306/ftgo_consumer?createDatabaseIfNotExist=true
+    username: ftgo_user
+    password: ftgo_password
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 30000
+  jpa:
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      group-id: consumer-service
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+
+server:
+  port: 8082
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
