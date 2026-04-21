@@ -54,14 +54,14 @@
 ## Phase 2: Core Services Implementation
 
 - [ ] 2. Implement Consumer Service
-  - [ ] 2.1 Create Consumer aggregate and database schema
+  - [x] 2.1 Create Consumer aggregate and database schema
     - Create Consumer aggregate with id, name, email, creditLimit, availableCredit fields
     - Implement credit limit validation (positive decimal value)
     - Create Flyway migration V1__create_consumers_table.sql with outbox and processed_messages tables
     - Implement Consumer repository with JPA
     - _Requirements: 4.1, 4.2, 4.4_
   
-  - [ ] 2.2 Implement Consumer command handlers and API
+  - [x] 2.2 Implement Consumer command handlers and API
     - Implement REST API for consumer registration (POST /consumers)
     - Implement REST API for profile updates (PUT /consumers/{id})
     - Implement verifyConsumer command handler for saga participation
@@ -83,7 +83,7 @@
     - _Requirements: 4.5_
 
 - [ ] 3. Implement Restaurant Service
-  - [ ] 3.1 Create Restaurant aggregate and database schema
+  - [x] 3.1 Create Restaurant aggregate and database schema
     - Create Restaurant aggregate with id, name, address, openingHours fields
     - Create MenuItem entity with id, restaurantId, name, description, price, available fields
     - Implement price validation (positive decimal values)
@@ -91,7 +91,7 @@
     - Implement Restaurant and MenuItem repositories
     - _Requirements: 5.1, 5.2, 5.4_
   
-  - [ ] 3.2 Implement Restaurant API and event publishing
+  - [x] 3.2 Implement Restaurant API and event publishing
     - Implement REST API for restaurant creation (POST /restaurants)
     - Implement REST API for menu item management (POST/PUT/DELETE /restaurants/{id}/menu-items)
     - Implement REST API for menu item availability updates
@@ -106,7 +106,7 @@
     - _Requirements: 5_
 
 - [ ] 4. Implement Accounting Service
-  - [ ] 4.1 Create Account aggregate and database schema
+  - [x] 4.1 Create Account aggregate and database schema
     - Create Account aggregate with id, consumerId fields
     - Create Authorization entity with id, accountId, requestId (idempotency key), amount, status, createdAt, reversedAt fields
     - Implement AuthorizationStatus enum (APPROVED, DENIED, REVERSED)
@@ -114,7 +114,7 @@
     - Implement Account and Authorization repositories with requestId index
     - _Requirements: 7.1, 7.5_
   
-  - [ ] 4.2 Implement authorization command handlers
+  - [x] 4.2 Implement authorization command handlers
     - Implement authorizeCard command handler with idempotency check using requestId
     - Return cached result for duplicate authorization requests with same requestId
     - Implement reverseAuthorization command handler
@@ -122,7 +122,7 @@
     - Record all authorization attempts with timestamp, amount, and outcome for audit
     - _Requirements: 7.2, 7.3, 7.4, 7.6_
   
-  - [ ] 4.3 Implement event publishing and saga participation
+  - [x] 4.3 Implement event publishing and saga participation
     - Implement transactional outbox for CardAuthorized events
     - Implement transactional outbox for CardReversed events
     - Configure Accounting Service as saga participant on accountingService command channel

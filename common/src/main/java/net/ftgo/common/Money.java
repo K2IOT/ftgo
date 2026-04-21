@@ -2,6 +2,7 @@ package net.ftgo.common;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import jakarta.persistence.Embeddable;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.PositiveOrZero;
 
@@ -13,6 +14,7 @@ import java.util.Objects;
  * Value object representing a monetary amount.
  * Immutable and ensures proper decimal precision for currency calculations.
  */
+@Embeddable
 public class Money {
     
     @NotNull
@@ -20,6 +22,13 @@ public class Money {
     private final BigDecimal amount;
     
     public static final Money ZERO = new Money(BigDecimal.ZERO);
+    
+    /**
+     * Default constructor for JPA.
+     */
+    protected Money() {
+        this.amount = BigDecimal.ZERO;
+    }
     
     @JsonCreator
     public Money(@JsonProperty("amount") BigDecimal amount) {

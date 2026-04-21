@@ -2,7 +2,7 @@ spring:
   application:
     name: consumer-service
   datasource:
-    url: jdbc:mysql://localhost:3306/ftgo_consumer?createDatabaseIfNotExist=true
+    url: jdbc:mysql://localhost:3307/ftgo_consumer?createDatabaseIfNotExist=true
     username: ftgo_user
     password: ftgo_password
     driver-class-name: com.mysql.cj.jdbc.Driver
@@ -13,6 +13,9 @@ spring:
   jpa:
     hibernate:
       ddl-auto: validate
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQLDialect
   flyway:
     enabled: true
   kafka:
@@ -21,6 +24,15 @@ spring:
       group-id: consumer-service
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
+
+# Eventuate Tram configuration
+eventuatelocal:
+  kafka:
+    bootstrap:
+      servers: localhost:9092
+  cdc:
+    reader:
+      name: MySqlReader
 
 server:
   port: 8082
