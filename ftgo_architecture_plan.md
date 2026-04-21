@@ -114,7 +114,7 @@ FTGO Domain
 | Property | Detail |
 |---|---|
 | Responsibility | Queryable read model across all order-related data |
-| Database | AWS DynamoDB (or MongoDB for on-prem) |
+| Database | ScyllaDB |
 | IPC | Kafka consumer (subscribes to Order, Delivery, Kitchen, Accounting events) |
 | Patterns | **CQRS Read Model**, Event Handler, Eventual Consistency |
 | Key queries | `findOrderHistory(consumerId, filter)`, `findOrder(orderId)` |
@@ -134,7 +134,7 @@ Restaurant Service   MySQL               restaurants, menu_items
 Kitchen Service      MySQL               tickets, ticket_line_items
 Accounting Service   MySQL               accounts, authorizations
 Delivery Service     MySQL               deliveries, couriers
-Order History Svc    DynamoDB / MongoDB  order_history (CQRS view)
+Order History Svc    ScyllaDB            order_history (CQRS view)
 API Gateway          Redis               sessions, rate_limit_counters
 ```
 
@@ -162,12 +162,12 @@ tickets(id, restaurant_id, state, ready_by, accepted_at, prepared_at)
 --             PREPARING, READY_FOR_PICKUP, PICKED_UP
 ```
 
-### 4.3 CQRS View Design (Order History — DynamoDB)
+### 4.3 CQRS View Design (Order History — ScyllaDB)
 
-Primary key: `orderId` (String)  
-Global Secondary Index: `(consumerId, creationDate)` → supports `findOrderHistory()`  
-Attributes: `orderId, consumerId, restaurantId, status, orderTotal, lineItems[], deliveryStatus, keywords[]`  
-Duplicate detection: Per-aggregate event ID tracking attribute `Order#<id>`, `Delivery#<id>`
+Primary table: `order_history` with partition key `order_id`  
+Materialized View: `order_history_by_consumer` with partition key `consumer_id` and clustering key `creation_date DESC` → supports `findOrderHistory()`  
+Columns: `order_id, consumer_id, restaurant_id, status, order_total, line_items (frozen list), delivery_status, keywords (set)`  
+Duplicate detection: Separate `processed_messages` table tracking message IDs
 
 ---
 
@@ -343,7 +343,7 @@ findOrderHistory(consumerId, {since, status, keyword, page})
 | Message broker | Apache Kafka 3.x | Event streaming, command channels |
 | Transactional DB | MySQL 8 (per service) | ACID transactions, Outbox table |
 | CDC relay | Debezium | Tail binlog → publish to Kafka |
-| CQRS store | DynamoDB / MongoDB | Order History read model |
+| CQRS store | ScyllaDB | Order History read model |
 | Cache | Redis | API Gateway sessions, hot data |
 | Search | Elasticsearch | Restaurant geo-search, product search |
 | Container runtime | Docker | Package each service as image |
@@ -414,10 +414,11 @@ Kubernetes:
 ```
 
 ### 10.2 Distributed Tracing
-- Spring Cloud Sleuth → auto-instruments all HTTP + Kafka messages
-- B3 propagation headers across service boundaries
-- Trace ID available in every log line
+- OpenTelemetry Java Agent → auto-instruments all HTTP + Kafka messages
+- W3C Trace Context propagation headers across service boundaries
+- Trace ID available in every log line via MDC
 - Full saga execution visible as single trace in Jaeger
+- OTLP (OpenTelemetry Protocol) export to Jaeger backend
 
 ### 10.3 Application Metrics (Micrometer → Prometheus)
 ```
@@ -591,7 +592,7 @@ ftgo/
 | Transaction model | Sagas over 2PC | 2PC blocks at scale; Kafka unavailable during 2PC; eventual consistency acceptable for food ordering |
 | Saga coordination | Orchestration for Create/Revise/Cancel | Better visibility, simpler debugging, no cyclic event dependencies |
 | Event relay | Debezium CDC over polling | Zero polling overhead, reliable binlog-based ordering, handles high write throughput |
-| CQRS store | DynamoDB over RDBMS | `findOrderHistory()` needs GSI queries across consumerId + date; DynamoDB scales independently |
+| CQRS store | ScyllaDB over RDBMS | `findOrderHistory()` needs materialized views for efficient queries across consumerId + date; ScyllaDB provides high performance and horizontal scalability |
 | Service mesh | Istio | Offloads circuit breaking + mTLS from application code; enables canary releases without code change |
 | Saga isolation | Semantic Lock + Pessimistic View | Prevents lost updates and dirty reads without distributed locks (which kill availability) |
 | DB | MySQL over PostgreSQL | Debezium CDC maturity for MySQL binlog; Eventuate Local has excellent MySQL support |

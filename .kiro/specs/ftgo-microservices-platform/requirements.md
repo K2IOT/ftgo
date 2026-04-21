@@ -23,7 +23,7 @@ The FTGO (Food To Go) platform is a production-grade microservices-based food or
 - **CDC**: Change Data Capture mechanism using Debezium to tail database binlog
 - **JWT**: JSON Web Token used for authentication and authorization
 - **Kafka**: Apache Kafka message broker for event streaming and command channels
-- **DynamoDB**: NoSQL database used for Order_History_Service read model
+- **ScyllaDB**: High-performance NoSQL database (Cassandra-compatible) used for Order_History_Service read model
 - **Kubernetes**: Container orchestration platform for service deployment
 - **Istio**: Service mesh providing mTLS, circuit breaking, and traffic management
 - **Debezium**: CDC platform that captures database changes and publishes to Kafka
@@ -150,7 +150,7 @@ The FTGO (Food To Go) platform is a production-grade microservices-based food or
 
 #### Acceptance Criteria
 
-1. WHEN the Order_History_Service receives an OrderCreated event, THE Order_History_Service SHALL create an order history record in DynamoDB
+1. WHEN the Order_History_Service receives an OrderCreated event, THE Order_History_Service SHALL create an order history record in ScyllaDB
 2. WHEN the Order_History_Service receives order lifecycle events (OrderApproved, OrderCancelled, TicketAccepted, DeliveryDelivered), THE Order_History_Service SHALL update the corresponding order history record
 3. WHEN a consumer queries order history by consumer ID, THE Order_History_Service SHALL return orders sorted by creation date descending
 4. WHERE a consumer specifies filter criteria (status, date range, restaurant, keyword), THE Order_History_Service SHALL return only matching orders
@@ -226,13 +226,13 @@ The FTGO (Food To Go) platform is a production-grade microservices-based food or
 
 #### Acceptance Criteria
 
-1. WHEN a request enters the API_Gateway, THE API_Gateway SHALL generate a unique trace ID and span ID
-2. WHEN a service makes an HTTP request to another service, THE service SHALL propagate the trace ID and parent span ID in B3 headers
-3. WHEN a service publishes a Kafka message, THE service SHALL include the trace ID in the message headers
-4. WHEN a service consumes a Kafka message, THE service SHALL extract the trace ID and continue the trace
-5. THE FTGO_Platform SHALL send all trace spans to Jaeger for storage and visualization
+1. WHEN a request enters the API_Gateway, THE OpenTelemetry instrumentation SHALL generate a unique trace ID and span ID
+2. WHEN a service makes an HTTP request to another service, THE service SHALL propagate the trace context using W3C Trace Context headers (traceparent, tracestate)
+3. WHEN a service publishes a Kafka message, THE OpenTelemetry instrumentation SHALL include the trace context in the message headers
+4. WHEN a service consumes a Kafka message, THE OpenTelemetry instrumentation SHALL extract the trace context and continue the trace
+5. THE FTGO_Platform SHALL export all trace spans to Jaeger using OTLP (OpenTelemetry Protocol)
 6. WHEN a saga executes across multiple services, THE Order_Service SHALL ensure all saga steps share the same trace ID for end-to-end visibility
-7. THE FTGO_Platform SHALL include the trace ID in every log line for correlation
+7. THE FTGO_Platform SHALL include the trace ID in every log line via MDC (Mapped Diagnostic Context) for correlation
 8. FOR ALL requests, the complete request path across all services SHALL be visible as a single trace in Jaeger (traceability property)
 
 ### Requirement 15: Metrics and Observability

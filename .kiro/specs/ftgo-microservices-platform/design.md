@@ -19,9 +19,9 @@ The FTGO (Food To Go) platform is a production-grade, event-driven microservices
 - **Saga Framework**: [Eventuate Tram Sagas](https://eventuate.io/docs/manual/eventuate-tram/latest/getting-started-eventuate-tram-sagas.html) for orchestration-based saga coordination
 - **Messaging**: Apache Kafka 3.x for event streaming and command channels
 - **CDC**: [Debezium](https://debezium.io/) for change data capture from MySQL binlog to Kafka
-- **Databases**: MySQL 8 (per service), DynamoDB for CQRS read model
+- **Databases**: MySQL 8 (per service), ScyllaDB for CQRS read model
 - **Orchestration**: Kubernetes with Istio service mesh
-- **Observability**: Jaeger (tracing), Prometheus (metrics), ELK Stack (logging)
+- **Observability**: OpenTelemetry + Jaeger (tracing), Prometheus (metrics), ELK Stack (logging)
 
 ## Architecture
 
@@ -68,7 +68,7 @@ graph TB
     
     Debezium -->|Publish| Kafka
     
-    HistorySvc -->|Query| DynamoDB[(DynamoDB)]
+    HistorySvc -->|Query| ScyllaDB[(ScyllaDB)]
 ```
 
 ### Service Responsibilities
@@ -82,7 +82,7 @@ graph TB
 | **Kitchen Service** | Kitchen ticket management, preparation tracking | MySQL (tickets) | Saga participant, publishes ticket lifecycle events |
 | **Accounting Service** | Payment authorization, transaction management | MySQL (accounts) | Saga participant (pivot point), publishes authorization events |
 | **Delivery Service** | Courier assignment, delivery tracking | MySQL (deliveries) | Consumes order events, publishes delivery status |
-| **Order History Service** | CQRS read model for order queries | DynamoDB | Consumes all order-related events, provides query API |
+| **Order History Service** | CQRS read model for order queries | ScyllaDB | Consumes all order-related events, provides query API |
 
 ### Saga Orchestration Pattern
 
@@ -151,13 +151,15 @@ The [Transactional Outbox pattern](https://microservices.io/patterns/data/transa
 
 ### CQRS Read Model
 
-The Order History Service implements the CQRS pattern, maintaining a denormalized read model in DynamoDB optimized for query access patterns. This separates read and write concerns, allowing the Order Service to optimize for transactional consistency while the Order History Service optimizes for query performance.
+The Order History Service implements the CQRS pattern, maintaining a denormalized read model in ScyllaDB optimized for query access patterns. This separates read and write concerns, allowing the Order Service to optimize for transactional consistency while the Order History Service optimizes for query performance.
 
-**DynamoDB Schema Design:**
+**ScyllaDB Schema Design:**
 
-- **Primary Key**: `orderId` (String) - supports `findOrder(orderId)` queries
-- **Global Secondary Index (GSI)**: `(consumerId, creationDate)` - supports `findOrderHistory(consumerId)` with date range filtering
-- **Attributes**: `orderId`, `consumerId`, `restaurantId`, `status`, `orderTotal`, `lineItems[]`, `deliveryStatus`, `ticketStatus`, `authorizationStatus`, `keywords[]`
+ScyllaDB (Cassandra-compatible) provides high-performance, low-latency reads with horizontal scalability:
+
+- **Primary Table**: `order_history` with partition key `order_id` - supports `findOrder(orderId)` queries
+- **Materialized View**: `order_history_by_consumer` with partition key `consumer_id` and clustering key `creation_date DESC` - supports `findOrderHistory(consumerId)` with date range filtering
+- **Columns**: `order_id`, `consumer_id`, `restaurant_id`, `status`, `order_total`, `line_items` (frozen list), `delivery_status`, `ticket_status`, `authorization_status`, `keywords` (set), `creation_date`
 
 **Event Sourcing for Read Model:**
 
@@ -172,7 +174,7 @@ The Order History Service subscribes to domain events from multiple services and
 
 **Idempotent Event Processing:**
 
-Each event includes a unique `messageId`. The Order History Service maintains a `PROCESSED_MESSAGES` table (or DynamoDB attribute) to track processed events, ensuring idempotent updates even with at-least-once Kafka delivery.
+Each event includes a unique `messageId`. The Order History Service maintains a `processed_messages` table in ScyllaDB to track processed events, ensuring idempotent updates even with at-least-once Kafka delivery.
 
 ## Components and Interfaces
 
@@ -361,6 +363,9 @@ The Accounting Service implements idempotent command processing using `requestId
 @Component
 public class OrderHistoryEventHandlers {
     
+    @Autowired
+    private CassandraTemplate cassandraTemplate;
+    
     @EventHandler
     public void handleOrderCreated(OrderCreated event) {
         if (isDuplicate(event.getMessageId())) {
@@ -376,7 +381,7 @@ public class OrderHistoryEventHandlers {
         record.setLineItems(event.getLineItems());
         record.setCreationDate(event.getCreatedAt());
         
-        dynamoDBMapper.save(record);
+        cassandraTemplate.insert(record);
         markProcessed(event.getMessageId());
     }
     
@@ -386,9 +391,9 @@ public class OrderHistoryEventHandlers {
             return;
         }
         
-        OrderHistoryRecord record = dynamoDBMapper.load(OrderHistoryRecord.class, event.getOrderId());
+        OrderHistoryRecord record = cassandraTemplate.selectOneById(event.getOrderId(), OrderHistoryRecord.class);
         record.setStatus("APPROVED");
-        dynamoDBMapper.save(record);
+        cassandraTemplate.update(record);
         markProcessed(event.getMessageId());
     }
 }
@@ -400,32 +405,54 @@ public class OrderHistoryEventHandlers {
 @RestController
 public class OrderHistoryController {
     
+    @Autowired
+    private CassandraTemplate cassandraTemplate;
+    
     @GetMapping("/orders/{orderId}")
     public OrderHistoryRecord findOrder(@PathVariable String orderId) {
-        return dynamoDBMapper.load(OrderHistoryRecord.class, orderId);
+        return cassandraTemplate.selectOneById(orderId, OrderHistoryRecord.class);
     }
     
     @GetMapping("/consumers/{consumerId}/orders")
-    public Page<OrderHistoryRecord> findOrderHistory(
+    public Slice<OrderHistoryRecord> findOrderHistory(
         @PathVariable Long consumerId,
         @RequestParam(required = false) String status,
         @RequestParam(required = false) LocalDate since,
-        @RequestParam(required = false) String keyword,
         @RequestParam(defaultValue = "20") int pageSize,
-        @RequestParam(required = false) String continuationToken
+        @RequestParam(required = false) String pagingState
     ) {
-        DynamoDBQueryExpression<OrderHistoryRecord> query = new DynamoDBQueryExpression<>()
-            .withIndexName("consumerId-creationDate-index")
-            .withKeyConditionExpression("consumerId = :consumerId")
-            .withExpressionAttributeValues(Map.of(":consumerId", consumerId));
+        // Query materialized view order_history_by_consumer
+        Select select = QueryBuilder.selectFrom("order_history_by_consumer")
+            .all()
+            .whereColumn("consumer_id").isEqualTo(literal(consumerId));
         
-        if (status != null) {
-            query.withFilterExpression("status = :status")
-                 .withExpressionAttributeValues(Map.of(":status", status));
+        if (since != null) {
+            select = select.whereColumn("creation_date")
+                .isGreaterThanOrEqualTo(literal(since.atStartOfDay()));
         }
         
-        // Execute query with pagination
-        return executeQuery(query, pageSize, continuationToken);
+        select = select.limit(pageSize);
+        
+        if (pagingState != null) {
+            select = select.setPagingState(ByteBuffer.wrap(Base64.getDecoder().decode(pagingState)));
+        }
+        
+        ResultSet rs = cassandraTemplate.getCqlOperations().queryForResultSet(select.build());
+        List<OrderHistoryRecord> records = cassandraTemplate.getConverter()
+            .read(OrderHistoryRecord.class, rs);
+        
+        // Filter by status if provided (client-side filtering)
+        if (status != null) {
+            records = records.stream()
+                .filter(r -> status.equals(r.getStatus()))
+                .collect(Collectors.toList());
+        }
+        
+        String nextPagingState = rs.getExecutionInfo().getPagingState() != null
+            ? Base64.getEncoder().encodeToString(rs.getExecutionInfo().getPagingState().array())
+            : null;
+        
+        return new SliceImpl<>(records, PageRequest.of(0, pageSize), nextPagingState != null);
     }
 }
 ```
@@ -681,59 +708,79 @@ CREATE TABLE processed_messages (
 );
 ```
 
-### Order History Service (DynamoDB)
+### Order History Service (ScyllaDB)
 
 **Table: order_history**
 
-```json
-{
-  "TableName": "order_history",
-  "KeySchema": [
-    { "AttributeName": "orderId", "KeyType": "HASH" }
-  ],
-  "AttributeDefinitions": [
-    { "AttributeName": "orderId", "AttributeType": "S" },
-    { "AttributeName": "consumerId", "AttributeType": "N" },
-    { "AttributeName": "creationDate", "AttributeType": "S" }
-  ],
-  "GlobalSecondaryIndexes": [
-    {
-      "IndexName": "consumerId-creationDate-index",
-      "KeySchema": [
-        { "AttributeName": "consumerId", "KeyType": "HASH" },
-        { "AttributeName": "creationDate", "KeyType": "RANGE" }
-      ],
-      "Projection": { "ProjectionType": "ALL" }
-    }
-  ]
-}
+```cql
+CREATE TABLE order_history (
+    order_id TEXT PRIMARY KEY,
+    consumer_id BIGINT,
+    restaurant_id BIGINT,
+    status TEXT,
+    order_total DECIMAL,
+    line_items LIST<FROZEN<line_item>>,
+    delivery_address TEXT,
+    delivery_status TEXT,
+    ticket_status TEXT,
+    authorization_status TEXT,
+    creation_date TIMESTAMP,
+    keywords SET<TEXT>
+);
+
+CREATE TYPE line_item (
+    menu_item_id BIGINT,
+    name TEXT,
+    price DECIMAL,
+    quantity INT
+);
+
+-- Materialized view for querying by consumer
+CREATE MATERIALIZED VIEW order_history_by_consumer AS
+    SELECT *
+    FROM order_history
+    WHERE consumer_id IS NOT NULL
+      AND creation_date IS NOT NULL
+      AND order_id IS NOT NULL
+    PRIMARY KEY (consumer_id, creation_date, order_id)
+    WITH CLUSTERING ORDER BY (creation_date DESC);
+
+-- Table for tracking processed messages (idempotency)
+CREATE TABLE processed_messages (
+    message_id TEXT PRIMARY KEY,
+    consumed_at TIMESTAMP
+);
 ```
 
-**Record Structure:**
+**Record Structure (JSON representation):**
 
 ```json
 {
-  "orderId": "12345",
-  "consumerId": 67890,
-  "restaurantId": 111,
+  "order_id": "12345",
+  "consumer_id": 67890,
+  "restaurant_id": 111,
   "status": "APPROVED",
-  "orderTotal": 45.99,
-  "lineItems": [
-    { "menuItemId": 1, "name": "Burger", "price": 12.99, "quantity": 2 },
-    { "menuItemId": 2, "name": "Fries", "price": 4.99, "quantity": 1 }
+  "order_total": 45.99,
+  "line_items": [
+    { "menu_item_id": 1, "name": "Burger", "price": 12.99, "quantity": 2 },
+    { "menu_item_id": 2, "name": "Fries", "price": 4.99, "quantity": 1 }
   ],
-  "deliveryAddress": "123 Main St",
-  "deliveryStatus": "PICKED_UP",
-  "ticketStatus": "READY_FOR_PICKUP",
-  "authorizationStatus": "APPROVED",
-  "creationDate": "2025-01-15T10:30:00Z",
-  "keywords": ["burger", "fries"],
-  "processedMessages": {
-    "Order#12345": ["msg-001", "msg-002"],
-    "Delivery#12345": ["msg-003"]
-  }
+  "delivery_address": "123 Main St",
+  "delivery_status": "PICKED_UP",
+  "ticket_status": "READY_FOR_PICKUP",
+  "authorization_status": "APPROVED",
+  "creation_date": "2025-01-15T10:30:00Z",
+  "keywords": ["burger", "fries"]
 }
 ```
+
+**Benefits of ScyllaDB:**
+
+- **High Performance**: Written in C++, ScyllaDB provides lower latency and higher throughput than Cassandra
+- **Cassandra Compatibility**: Uses CQL (Cassandra Query Language) and is compatible with Cassandra drivers
+- **Horizontal Scalability**: Scales linearly by adding nodes to the cluster
+- **Tunable Consistency**: Supports configurable consistency levels (ONE, QUORUM, ALL)
+- **Materialized Views**: Automatic denormalization for efficient query patterns
 
 ### Kafka Topic Configuration
 
@@ -1197,22 +1244,30 @@ public class CreateOrderSagaIntegrationTest {
 Test eventual consistency between write and read models:
 
 ```java
-@Test
-public void testOrderHistoryEventualConsistency() {
-    // Create order
-    Order order = orderService.createOrder(request);
+@SpringBootTest
+@Testcontainers
+public class OrderHistoryCQRSTest {
     
-    // Wait for event propagation to Order History Service
-    await().atMost(5, SECONDS).until(() -> {
+    @Container
+    static CassandraContainer scyllaDB = new CassandraContainer<>("scylladb/scylla:5.2");
+    
+    @Test
+    public void testOrderHistoryEventualConsistency() {
+        // Create order
+        Order order = orderService.createOrder(request);
+        
+        // Wait for event propagation to Order History Service
+        await().atMost(5, SECONDS).until(() -> {
+            OrderHistoryRecord record = orderHistoryService.findOrder(order.getId());
+            return record != null && record.getStatus().equals("APPROVED");
+        });
+        
+        // Verify all fields propagated correctly
         OrderHistoryRecord record = orderHistoryService.findOrder(order.getId());
-        return record != null && record.getStatus().equals("APPROVED");
-    });
-    
-    // Verify all fields propagated correctly
-    OrderHistoryRecord record = orderHistoryService.findOrder(order.getId());
-    assertEquals(order.getConsumerId(), record.getConsumerId());
-    assertEquals(order.getRestaurantId(), record.getRestaurantId());
-    assertEquals(order.getOrderTotal(), record.getOrderTotal());
+        assertEquals(order.getConsumerId(), record.getConsumerId());
+        assertEquals(order.getRestaurantId(), record.getRestaurantId());
+        assertEquals(order.getOrderTotal(), record.getOrderTotal());
+    }
 }
 ```
 
@@ -1368,28 +1423,33 @@ export default function () {
 ```java
 @Test
 public void testDistributedTracingSpansAllServices() {
-    // Create order
-    String traceId = UUID.randomUUID().toString();
-    Order order = orderService.createOrder(request, traceId);
+    // Create order (OpenTelemetry auto-generates trace ID)
+    Order order = orderService.createOrder(request);
+    
+    // Extract trace ID from current span
+    String traceId = Span.current().getSpanContext().getTraceId();
     
     // Wait for saga completion
     await().atMost(10, SECONDS).until(() -> 
         orderRepository.findById(order.getId()).getState() == OrderState.APPROVED
     );
     
-    // Query Jaeger for trace
+    // Query Jaeger for trace via OTLP
     Trace trace = jaegerClient.getTrace(traceId);
     
     // Verify spans exist for all services
-    assertNotNull(trace.findSpan("order-service", "createOrder"));
+    assertNotNull(trace.findSpan("order-service", "POST /orders"));
     assertNotNull(trace.findSpan("consumer-service", "verifyConsumer"));
     assertNotNull(trace.findSpan("kitchen-service", "createTicket"));
     assertNotNull(trace.findSpan("accounting-service", "authorizeCard"));
     
     // Verify parent-child relationships
-    Span orderSpan = trace.findSpan("order-service", "createOrder");
+    Span orderSpan = trace.findSpan("order-service", "POST /orders");
     Span consumerSpan = trace.findSpan("consumer-service", "verifyConsumer");
     assertEquals(orderSpan.getSpanId(), consumerSpan.getParentSpanId());
+    
+    // Verify W3C Trace Context propagation
+    assertTrue(trace.allSpansHaveTraceId(traceId));
 }
 ```
 
@@ -1428,7 +1488,7 @@ This design document specifies a production-grade microservices architecture for
 
 1. **Saga Orchestration** using Eventuate Tram Sagas for distributed transaction coordination
 2. **Transactional Outbox Pattern** with Debezium CDC for reliable event publishing
-3. **CQRS** with DynamoDB for scalable read operations
+3. **CQRS** with ScyllaDB for scalable read operations
 4. **Event-Driven Architecture** with Kafka for asynchronous service communication
 5. **Semantic Locking** for saga isolation and consistency
 6. **Comprehensive Testing Strategy** including unit tests, property-based tests, integration tests, chaos engineering, and end-to-end tests
@@ -1439,7 +1499,7 @@ The design ensures data consistency across microservices without distributed tra
 
 - **Orchestration over Choreography**: Centralized saga orchestration in Order Service provides better visibility and debugging compared to choreography
 - **Debezium CDC over Polling**: Binlog-based CDC eliminates polling overhead and provides reliable event ordering
-- **DynamoDB for CQRS**: NoSQL database optimized for query patterns with GSI support for flexible access patterns
+- **ScyllaDB for CQRS**: High-performance NoSQL database with Cassandra compatibility, materialized views for efficient query patterns, and horizontal scalability
 - **Semantic Locks over Distributed Locks**: Pending states prevent concurrent modifications without the availability cost of distributed locks
 - **Property-Based Testing**: Validates universal properties across all inputs, complementing example-based unit tests
 
