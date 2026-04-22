@@ -1,0 +1,23 @@
+spring:
+  application:
+    name: accounting-service-test
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+  flyway:
+    enabled: true
+    clean-disabled: false
+  kafka:
+    consumer:
+      group-id: accounting-service-test
+      auto-offset-reset: earliest
+
+logging:
+  level:
+    net.ftgo: DEBUG
+    org.springframework.kafka: WARN
+    org.testcontainers: INFO

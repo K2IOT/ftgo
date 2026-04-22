@@ -19,7 +19,7 @@ public class Money {
     
     @NotNull
     @PositiveOrZero
-    private final BigDecimal amount;
+    private BigDecimal amount;
     
     public static final Money ZERO = new Money(BigDecimal.ZERO);
     

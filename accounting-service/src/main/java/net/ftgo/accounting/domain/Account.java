@@ -93,8 +93,8 @@ public class Account {
         // Create new authorization
         // In a real system, this would call a payment gateway API
         // For this implementation, we'll approve all authorizations
+        // Note: accountId will be set by JPA when the account is persisted
         Authorization authorization = new Authorization(
-            this.id,
             requestId,
             amount,
             AuthorizationStatus.APPROVED
@@ -190,8 +190,8 @@ public class Account {
         existingAuth.reverse();
         
         // Create new authorization with the new amount
+        // Note: accountId will be set by JPA when the account is persisted
         Authorization newAuth = new Authorization(
-            this.id,
             newRequestId,
             newAmount,
             AuthorizationStatus.APPROVED

@@ -76,6 +76,26 @@ public class Authorization {
     }
     
     /**
+     * Creates a new Authorization without accountId (will be set by JPA).
+     * Used when creating authorizations within an Account aggregate.
+     * 
+     * @param requestId the unique request ID (idempotency key)
+     * @param amount the authorization amount
+     * @param status the authorization status
+     * @throws IllegalArgumentException if any required field is null or invalid
+     */
+    public Authorization(String requestId, Money amount, AuthorizationStatus status) {
+        validateRequestId(requestId);
+        validateAmount(amount);
+        validateStatus(status);
+        
+        this.requestId = requestId;
+        this.amount = amount;
+        this.status = status;
+        this.createdAt = LocalDateTime.now();
+    }
+    
+    /**
      * Validates that the account ID is not null.
      * 
      * @param accountId the account ID to validate

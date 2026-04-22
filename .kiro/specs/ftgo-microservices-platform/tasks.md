@@ -69,13 +69,13 @@
     - Implement transactional outbox for ConsumerUpdated events
     - _Requirements: 1.3, 4.3_
   
-  - [ ]* 2.3 Write Consumer Service tests
+  - [x] 2.3 Write Consumer Service tests
     - Add unit tests for Consumer aggregate state transitions
     - Add unit tests for credit limit validation
     - Create integration tests with Testcontainers (MySQL + Kafka)
     - _Requirements: 4_
   
-  - [ ]* 2.4 Write property test for Consumer Credit Invariant
+  - [x]* 2.4 Write property test for Consumer Credit Invariant
     - **Property 3: Consumer Credit Invariant**
     - **Validates: Requirements 4.5**
     - Test that availableCredit = creditLimit - reservedAmounts for all consumer states
@@ -99,7 +99,7 @@
     - Implement menu item validation for order placement
     - _Requirements: 5.3, 5.5_
   
-  - [ ]* 3.3 Write Restaurant Service tests
+  - [x]* 3.3 Write Restaurant Service tests
     - Add unit tests for menu item price validation
     - Add unit tests for menu item availability checks
     - Create integration tests with Testcontainers
@@ -128,14 +128,14 @@
     - Configure Accounting Service as saga participant on accountingService command channel
     - _Requirements: 7.2, 7.3_
   
-  - [ ]* 4.4 Write Accounting Service tests
+  - [x] 4.4 Write Accounting Service tests
     - Add unit tests for authorization idempotency (same requestId returns same result)
     - Add unit tests for authorization reversal
     - Add unit tests for authorization revision
     - Create integration tests with Testcontainers
     - _Requirements: 7_
   
-  - [ ]* 4.5 Write property tests for authorization correctness
+  - [x] 4.5 Write property tests for authorization correctness
     - **Property 4: Authorization Idempotency**
     - **Validates: Requirements 7.7**
     - Test that processing same requestId multiple times produces same outcome
@@ -158,7 +158,7 @@
     - Implement Order repository with optimistic locking (version field)
     - _Requirements: 1.1, 2.1, 2.7, 3.1, 3.7, 12.1, 12.2, 12.3_
   
-  - [ ]* 5.2 Write Order aggregate tests
+  - [ ] 5.2 Write Order aggregate tests
     - Add unit tests for Order state machine transitions
     - Add unit tests for semantic lock validation (reject concurrent modifications)
     - Test optimistic locking with version field
@@ -204,7 +204,7 @@
     - Log saga failures and increment metrics counters
     - _Requirements: 1.7, 1.8_
   
-  - [ ]* 7.3 Write CreateOrderSaga tests
+  - [ ] 7.3 Write CreateOrderSaga tests
     - Add saga unit tests using Eventuate Tram Sagas testing framework
     - Test success path (all steps succeed)
     - Test failure before pivot (authorization fails, compensation executes)
@@ -229,7 +229,7 @@
     - Publish OrderCancelled event when saga completes successfully
     - _Requirements: 2.5, 2.6_
   
-  - [ ]* 8.3 Write CancelOrderSaga tests
+  - [ ] 8.3 Write CancelOrderSaga tests
     - Add saga unit tests
     - Test success path
     - Test failure before pivot (reversal fails, compensation restores order to APPROVED)
@@ -237,7 +237,7 @@
     - Create integration test for CancelOrderSaga end-to-end flow
     - _Requirements: 2_
   
-  - [ ]* 8.4 Write property test for compensation correctness
+  - [ ] 8.4 Write property test for compensation correctness
     - **Property 8: Saga Compensation Correctness**
     - **Validates: Requirements 2.8**
     - Test that reversing authorization then re-authorizing restores original state
@@ -261,7 +261,7 @@
     - Publish OrderRevised event when saga completes successfully
     - _Requirements: 3.5, 3.6_
   
-  - [ ]* 9.3 Write ReviseOrderSaga tests
+  - [ ] 9.3 Write ReviseOrderSaga tests
     - Add saga unit tests
     - Test success path
     - Test failure before pivot (authorization revision fails, compensation restores original order)
@@ -269,8 +269,8 @@
     - Create integration test for ReviseOrderSaga end-to-end flow
     - _Requirements: 3_
 
-- [ ] 10. Implement Order Service REST API
-  - [~] 10.1 Create Order REST controllers
+- [x] 10. Implement Order Service REST API
+  - [x] 10.1 Create Order REST controllers
     - Implement POST /orders endpoint (initiates CreateOrderSaga)
     - Implement GET /orders/{orderId} endpoint
     - Implement POST /orders/{orderId}/cancel endpoint (initiates CancelOrderSaga)
@@ -279,14 +279,14 @@
     - Implement request validation (valid consumerId, restaurantId, menu items, delivery address, payment token)
     - _Requirements: 1.1, 2.1, 3.1, 12.1, 12.2, 12.3_
   
-  - [~] 10.2 Implement transactional outbox for Order events
+  - [x] 10.2 Implement transactional outbox for Order events
     - Create OutboxRepository for Order Service
     - Implement domain event publishing with outbox insertion (same transaction as order update)
     - Publish OrderApproved, OrderCancelled, OrderRevised events
     - Ensure Debezium CDC publishes events from outbox to Kafka
     - _Requirements: 1.8, 2.6, 3.6, 11.1, 11.2, 11.3_
   
-  - [ ]* 10.3 Write Order Service API tests
+  - [ ] 10.3 Write Order Service API tests
     - Add REST API integration tests
     - Test POST /orders creates order and initiates saga
     - Test GET /orders/{orderId} returns order details
@@ -298,7 +298,7 @@
 ## Phase 4: Kitchen and Delivery Services
 
 - [ ] 11. Implement Kitchen Service
-  - [~] 11.1 Create Ticket aggregate with state machine
+  - [ ] 11.1 Create Ticket aggregate with state machine
     - Create Ticket aggregate with id, restaurantId, orderId, state, lineItems, readyBy, acceptedAt, preparedAt fields
     - Implement TicketState enum (CREATE_PENDING, AWAITING_ACCEPTANCE, ACCEPTED, PREPARING, READY_FOR_PICKUP, PICKED_UP, CANCELLED)
     - Create TicketLineItem entity with menuItemId, name, quantity fields
@@ -308,7 +308,7 @@
     - Implement Ticket repository
     - _Requirements: 6.1, 6.2, 6.6_
   
-  - [~] 11.2 Implement Kitchen command handlers for saga participation
+  - [ ] 11.2 Implement Kitchen command handlers for saga participation
     - Implement createTicket command handler (creates ticket in CREATE_PENDING state)
     - Implement approveTicket command handler (transitions to AWAITING_ACCEPTANCE)
     - Implement cancelTicket command handler (compensation for CreateOrderSaga)
@@ -321,7 +321,7 @@
     - Configure Kitchen Service as saga participant on kitchenService command channel
     - _Requirements: 1.4, 1.6, 2.2, 2.4, 3.2, 3.4, 6.1, 6.2, 6.5_
   
-  - [~] 11.3 Implement Kitchen REST API for kitchen staff
+  - [ ] 11.3 Implement Kitchen REST API for kitchen staff
     - Implement GET /tickets endpoint (query tickets by restaurantId and state)
     - Implement POST /tickets/{ticketId}/accept endpoint (kitchen staff accepts ticket)
     - Implement POST /tickets/{ticketId}/preparing endpoint (mark as preparing)
@@ -338,7 +338,7 @@
     - _Requirements: 6_
 
 - [ ] 12. Implement Delivery Service
-  - [~] 12.1 Create Delivery aggregate and database schema
+  - [ ] 12.1 Create Delivery aggregate and database schema
     - Create Delivery aggregate with id, orderId, courierId, pickupAddress, deliveryAddress, scheduledTime, pickupTime, deliveryTime, status fields
     - Create Courier entity with id, name, phone, available fields
     - Implement DeliveryStatus enum (PENDING, ASSIGNED, PICKED_UP, DELIVERED)
@@ -346,7 +346,7 @@
     - Implement Delivery and Courier repositories
     - _Requirements: 8.1_
   
-  - [~] 12.2 Implement Delivery event handlers and API
+  - [ ] 12.2 Implement Delivery event handlers and API
     - Implement OrderApproved event handler (creates delivery record with pickup/delivery addresses and scheduled time)
     - Implement REST API for courier assignment (POST /deliveries/{deliveryId}/assign)
     - Implement REST API for pickup (POST /deliveries/{deliveryId}/pickup)
@@ -372,13 +372,13 @@
 ## Phase 5: API Gateway and Authentication
 
 - [ ] 13. Implement API Gateway core
-  - [~] 13.1 Create Spring Cloud Gateway project
+  - [ ] 13.1 Create Spring Cloud Gateway project
     - Create api-gateway module with Spring Cloud Gateway dependencies
     - Configure Redis for session storage and rate limiting
     - Set up application.yml with gateway routes
     - _Requirements: 10_
   
-  - [~] 13.2 Implement JWT authentication and authorization
+  - [ ] 13.2 Implement JWT authentication and authorization
     - Implement JWT authentication filter
     - Implement JWT signature validation with OAuth2 public key
     - Extract user ID and roles from JWT token
@@ -402,7 +402,7 @@
     - _Requirements: 10.8_
 
 - [ ] 14. Implement Gateway routing and resilience
-  - [~] 14.1 Configure gateway routes
+  - [ ] 14.1 Configure gateway routes
     - Configure routes for Order Service (/orders/**)
     - Configure routes for Consumer Service (/consumers/**)
     - Configure routes for Restaurant Service (/restaurants/**)
@@ -411,7 +411,7 @@
     - Configure routes for Order History Service (/order-history/**)
     - _Requirements: 10_
   
-  - [~] 14.2 Implement circuit breaker and rate limiting
+  - [ ] 14.2 Implement circuit breaker and rate limiting
     - Implement circuit breaker filter with Resilience4j (5 consecutive failures trigger open state for 30s)
     - Implement rate limiting filter (100 requests per minute per consumer)
     - Implement fallback responses for circuit breaker open state
@@ -426,7 +426,7 @@
     - _Requirements: 10.7, 18_
 
 - [ ] 15. Implement API composition
-  - [~] 15.1 Create order details composition endpoint
+  - [ ] 15.1 Create order details composition endpoint
     - Implement GET /order-details/{orderId} endpoint
     - Aggregate data from Order Service, Kitchen Service, and Delivery Service
     - Use Mono.zip for parallel service calls
@@ -443,7 +443,7 @@
 ## Phase 6: CQRS Read Model (Order History Service)
 
 - [ ] 16. Implement Order History Service with ScyllaDB
-  - [~] 16.1 Create ScyllaDB schema
+  - [ ] 16.1 Create ScyllaDB schema
     - Create order_history table with order_id as partition key
     - Create line_item user-defined type (menu_item_id, name, price, quantity)
     - Create order_history_by_consumer materialized view (partition key: consumer_id, clustering key: creation_date DESC)
@@ -451,7 +451,7 @@
     - Configure ScyllaDB connection with CassandraTemplate
     - _Requirements: 9.1, 9.6_
   
-  - [~] 16.2 Implement event handlers for read model updates
+  - [ ] 16.2 Implement event handlers for read model updates
     - Implement OrderCreated event handler (create order history record)
     - Implement OrderApproved event handler (update status to APPROVED)
     - Implement OrderCancelled event handler (update status to CANCELLED)
@@ -472,7 +472,7 @@
     - _Requirements: 9_
 
 - [ ] 17. Implement Order History query API
-  - [~] 17.1 Create query endpoints
+  - [ ] 17.1 Create query endpoints
     - Implement GET /orders/{orderId} endpoint (query by order_id)
     - Implement GET /consumers/{consumerId}/orders endpoint (query materialized view)
     - Add filtering by status, date range, restaurant, keyword
@@ -499,7 +499,7 @@
 ## Phase 7: Observability and Production Hardening
 
 - [ ] 18. Implement health checks
-  - [~] 18.1 Add Spring Boot Actuator to all services
+  - [ ] 18.1 Add Spring Boot Actuator to all services
     - Add Spring Boot Actuator dependencies to all 8 services
     - Implement /actuator/health endpoint with database connectivity check (execute test query)
     - Implement Kafka producer connectivity check
@@ -507,7 +507,7 @@
     - Return HTTP 503 with status DOWN and component details when any dependency unhealthy
     - _Requirements: 13.1, 13.2, 13.3, 13.4, 13.5_
   
-  - [~] 18.2 Configure Kubernetes probes
+  - [ ] 18.2 Configure Kubernetes probes
     - Configure readiness probes to call /actuator/health (30s initial delay, 10s period)
     - Configure liveness probes to call /actuator/health (60s initial delay, 20s period)
     - Test that Kubernetes removes pod from load balancing when readiness probe fails
@@ -521,7 +521,7 @@
     - _Requirements: 13_
 
 - [ ] 19. Implement distributed tracing
-  - [~] 19.1 Add OpenTelemetry instrumentation
+  - [ ] 19.1 Add OpenTelemetry instrumentation
     - Add OpenTelemetry Java Agent to all services
     - Configure W3C Trace Context propagation (traceparent, tracestate headers)
     - Configure trace context propagation in Kafka message headers
@@ -529,13 +529,13 @@
     - Add trace ID to MDC (Mapped Diagnostic Context) for log correlation
     - _Requirements: 14.1, 14.2, 14.3, 14.4, 14.7_
   
-  - [~] 19.2 Deploy Jaeger backend
+  - [ ] 19.2 Deploy Jaeger backend
     - Deploy Jaeger all-in-one or production deployment
     - Configure Jaeger UI for trace visualization
     - Ensure all services export spans to Jaeger
     - _Requirements: 14.5_
   
-  - [~] 19.3 Implement saga tracing
+  - [ ] 19.3 Implement saga tracing
     - Ensure all saga steps share the same trace ID for end-to-end visibility
     - Propagate trace context through saga command channels
     - Verify complete request path across all services visible as single trace
@@ -550,7 +550,7 @@
     - _Requirements: 14_
 
 - [ ] 20. Implement metrics and monitoring
-  - [~] 20.1 Add Micrometer metrics to all services
+  - [ ] 20.1 Add Micrometer metrics to all services
     - Add Micrometer dependencies to all services
     - Implement order_service_placed_orders_total counter (increment on order creation)
     - Implement order_service_approved_orders_total counter (increment on order approval)
@@ -560,7 +560,7 @@
     - Expose /actuator/prometheus endpoint for all services
     - _Requirements: 15.1, 15.2, 15.3, 15.4, 15.5, 15.6_
   
-  - [~] 20.2 Deploy Prometheus and Grafana
+  - [ ] 20.2 Deploy Prometheus and Grafana
     - Deploy Prometheus with 15s scrape interval
     - Configure Prometheus to scrape /actuator/prometheus from all services
     - Deploy Grafana
@@ -576,13 +576,13 @@
     - _Requirements: 15_
 
 - [ ] 21. Implement structured logging
-  - [~] 21.1 Configure structured JSON logging
+  - [ ] 21.1 Configure structured JSON logging
     - Configure Logback for JSON structured logging in all services
     - Add timestamp, level, service name, trace ID, and message fields to all log entries
     - Log all messages to stdout
     - _Requirements: 16.1, 16.2_
   
-  - [~] 21.2 Deploy ELK stack
+  - [ ] 21.2 Deploy ELK stack
     - Deploy Fluentd DaemonSet in Kubernetes to collect logs from all pods
     - Configure Fluentd to forward logs to Elasticsearch
     - Deploy Kibana with log search dashboards per service
@@ -591,20 +591,20 @@
     - _Requirements: 16.3, 16.4, 16.5, 16.6, 16.7_
 
 - [ ] 22. Implement security and mTLS
-  - [~] 22.1 Configure Istio mTLS
+  - [ ] 22.1 Configure Istio mTLS
     - Configure Istio PeerAuthentication with mTLS STRICT mode for all service-to-service communication
     - Configure Istio AuthorizationPolicy allowing only authorized services to communicate
     - Implement automatic certificate rotation
     - Test that all service-to-service traffic is encrypted with TLS 1.3
     - _Requirements: 17.1, 17.2, 17.3, 17.4, 17.7_
   
-  - [~] 22.2 Implement JWT validation in API Gateway
+  - [ ] 22.2 Implement JWT validation in API Gateway
     - Implement JWT signature validation using public key from OAuth2 authorization server
     - Validate JWT expiration time
     - Extract user ID and roles from JWT claims
     - _Requirements: 10.2, 17.5_
   
-  - [~] 22.3 Implement sensitive data filtering
+  - [ ] 22.3 Implement sensitive data filtering
     - Add sensitive data filtering in logs (credit card numbers, passwords)
     - Never log or expose sensitive data in error messages
     - _Requirements: 17.6_
@@ -617,7 +617,7 @@
     - _Requirements: 17_
 
 - [ ] 23. Implement resilience patterns
-  - [~] 23.1 Configure Istio circuit breaker and retry
+  - [ ] 23.1 Configure Istio circuit breaker and retry
     - Configure Istio circuit breaker (5 consecutive 5xx errors trigger open state for 30s)
     - Configure Istio retry policy (3 attempts, 500ms base delay, 5xx errors only)
     - Configure Istio timeout (5s for all service-to-service requests)
@@ -626,7 +626,7 @@
     - Test circuit breaker closes after successful test request
     - _Requirements: 18.1, 18.2, 18.3, 18.4, 18.5, 18.6, 18.7, 18.8_
   
-  - [~] 23.2 Implement connection pool monitoring
+  - [ ] 23.2 Implement connection pool monitoring
     - Implement connection pool monitoring with HikariCP
     - Configure connection pool limits (max 20, min idle 5, timeout 30s)
     - Implement deadlock retry with @Retryable annotation (3 attempts, 100ms delay, exponential backoff)
@@ -639,7 +639,7 @@
     - _Requirements: 18_
 
 - [ ] 24. Implement Kafka configuration and testing
-  - [~] 24.1 Configure Kafka partition strategy
+  - [ ] 24.1 Configure Kafka partition strategy
     - Configure Kafka partition key strategy (aggregateType + "#" + aggregateId)
     - Verify event ordering per aggregate (same partition key → same partition)
     - Configure consumer groups for each service
@@ -654,7 +654,7 @@
     - _Requirements: 19.7_
 
 - [ ] 25. Configure deployment and scaling
-  - [~] 25.1 Create Kubernetes deployment manifests
+  - [ ] 25.1 Create Kubernetes deployment manifests
     - Create Kubernetes Deployment manifests for all 8 services
     - Configure API Gateway with 3 replicas
     - Configure Order Service with 3 replicas
@@ -662,7 +662,7 @@
     - Configure resource limits (CPU, memory) for each service
     - _Requirements: 20.1, 20.2, 20.3, 20.4, 20.8_
   
-  - [~] 25.2 Configure autoscaling and rolling updates
+  - [ ] 25.2 Configure autoscaling and rolling updates
     - Configure Horizontal Pod Autoscaler (HPA) to scale services based on CPU utilization > 70%
     - Configure rolling update strategy (maxSurge=1, maxUnavailable=0)
     - Create Istio VirtualService for canary deployments (95% stable, 5% canary)
@@ -672,14 +672,14 @@
 ## Phase 8: Configuration, Schema Management, and Event Validation
 
 - [ ] 26. Implement configuration management
-  - [~] 26.1 Set up Spring Cloud Config Server
+  - [ ] 26.1 Set up Spring Cloud Config Server
     - Create service configurations in Git repository
     - Configure Spring Cloud Config Server with Git backend
     - Create configuration profiles (dev, staging, production)
     - Configure services to fetch configuration from Config Server based on service name and profile
     - _Requirements: 21.1, 21.2, 21.3_
   
-  - [~] 26.2 Integrate HashiCorp Vault for secrets
+  - [ ] 26.2 Integrate HashiCorp Vault for secrets
     - Store database passwords in Vault
     - Store API keys in Vault
     - Implement Vault token-based secret retrieval for each service
@@ -688,7 +688,7 @@
     - _Requirements: 21.4, 21.5, 21.6, 21.7_
 
 - [ ] 27. Implement database schema management
-  - [~] 27.1 Create Flyway migration scripts
+  - [ ] 27.1 Create Flyway migration scripts
     - Create Flyway migration scripts for all services (V1__initial_schema.sql, V2__add_columns.sql, etc.)
     - Ensure backward compatibility for rolling deployments
     - Configure Flyway to execute pending migrations on service startup
@@ -704,14 +704,14 @@
     - _Requirements: 22_
 
 - [ ] 28. Implement configuration parser and serialization
-  - [~] 28.1 Create Config_Parser for YAML configuration
+  - [ ] 28.1 Create Config_Parser for YAML configuration
     - Implement Config_Parser to parse YAML configuration files into Configuration objects
     - Return descriptive error with line number and issue for invalid YAML
     - Validate that required fields (service name, database URL, Kafka brokers) are present
     - Validate that port numbers are in valid range 1-65535
     - _Requirements: 24.1, 24.2, 24.5, 24.6_
   
-  - [~] 28.2 Create Config_Pretty_Printer for YAML formatting
+  - [ ] 28.2 Create Config_Pretty_Printer for YAML formatting
     - Implement Config_Pretty_Printer to format Configuration objects back into YAML
     - Format YAML with consistent indentation (2 spaces)
     - Sort keys alphabetically
@@ -733,25 +733,25 @@
     - _Requirements: 24.4_
 
 - [ ] 29. Implement event schema validation
-  - [~] 29.1 Deploy schema registry
+  - [ ] 29.1 Deploy schema registry
     - Deploy schema registry for domain events
     - Create JSON schemas for all domain event types (OrderCreated, OrderApproved, OrderCancelled, TicketCreated, CardAuthorized, etc.)
     - Register schemas in schema registry with versioning
     - _Requirements: 25.5_
   
-  - [~] 29.2 Implement event validation at publish time
+  - [ ] 29.2 Implement event validation at publish time
     - Implement Event_Publisher to validate events against registered JSON schema before publishing
     - Throw exception and prevent publishing if event fails schema validation
     - Log validation errors and increment metrics counter
     - _Requirements: 25.1, 25.3_
   
-  - [~] 29.3 Implement event validation at consume time
+  - [ ] 29.3 Implement event validation at consume time
     - Implement Event_Consumer to validate events against expected JSON schema on consumption
     - Log error, send event to dead letter queue, and continue processing if validation fails
     - Do not throw exception (acknowledge and skip invalid events)
     - _Requirements: 25.2, 25.4_
   
-  - [~] 29.4 Ensure schema backward compatibility
+  - [ ] 29.4 Ensure schema backward compatibility
     - Ensure backward compatibility when event schema evolves (make new fields optional)
     - Test that old consumers can process events with new schema
     - Test that new consumers can process events with old schema
@@ -774,7 +774,7 @@
 ## Phase 9: End-to-End Testing and Validation
 
 - [ ] 30. Set up Docker Compose test environment
-  - [~] 30.1 Create comprehensive Docker Compose file
+  - [ ] 30.1 Create comprehensive Docker Compose file
     - Create docker-compose.yml with all 8 services
     - Include Kafka (3 brokers), MySQL (6 instances), ScyllaDB, Redis, Debezium
     - Include Jaeger, Prometheus, Grafana, Elasticsearch, Kibana, Fluentd
@@ -783,53 +783,53 @@
     - _Requirements: 23.1_
 
 - [ ] 31. Implement Cucumber end-to-end scenarios
-  - [~] 31.1 Create Cucumber test for Create Order happy path
+  - [ ] 31.1 Create Cucumber test for Create Order happy path
     - Given consumer with credit limit and restaurant with menu
     - When consumer places order
     - Then order should be APPROVED, ticket created, credit authorized, order history updated
     - _Requirements: 23.2_
   
-  - [~] 31.2 Create Cucumber test for Create Order with insufficient credit
+  - [ ] 31.2 Create Cucumber test for Create Order with insufficient credit
     - Given consumer with low credit limit
     - When consumer places expensive order
     - Then order should be REJECTED, no ticket created, no authorization
     - _Requirements: 23.2_
   
-  - [~] 31.3 Create Cucumber test for Cancel Order workflow
+  - [ ] 31.3 Create Cucumber test for Cancel Order workflow
     - Given approved order
     - When consumer cancels order
     - Then order should be CANCELLED, ticket cancelled, authorization reversed
     - _Requirements: 23.3_
   
-  - [~] 31.4 Create Cucumber test for Revise Order workflow
+  - [ ] 31.4 Create Cucumber test for Revise Order workflow
     - Given approved order
     - When consumer revises order with new line items
     - Then order should be updated, ticket revised, authorization adjusted
     - _Requirements: 23.3_
   
-  - [~] 31.5 Verify order history eventual consistency
+  - [ ] 31.5 Verify order history eventual consistency
     - For all scenarios, verify order history reflects final state
     - _Requirements: 23.5_
 
 - [ ] 32. Implement chaos engineering tests
-  - [~] 32.1 Test saga compensation with Kitchen Service failure
+  - [ ] 32.1 Test saga compensation with Kitchen Service failure
     - Kill Kitchen Service during CreateOrderSaga after ticket creation
     - Verify saga compensation (ticket cancelled, order rejected)
     - _Requirements: 23.4, 23.5_
   
-  - [~] 32.2 Test saga completion with Accounting Service failure after authorization
+  - [ ] 32.2 Test saga completion with Accounting Service failure after authorization
     - Kill Accounting Service after authorization succeeds
     - Verify saga completes without re-authorizing (retriable steps succeed)
     - _Requirements: 23.6_
   
-  - [~] 32.3 Test system resilience with random service failures
+  - [ ] 32.3 Test system resilience with random service failures
     - Inject random failures into services (30% failure rate)
     - Create 100 orders concurrently
     - Verify all orders reach terminal state (APPROVED or REJECTED)
     - _Requirements: 23.7, 23.8_
 
 - [ ] 33. Implement load testing
-  - [~] 33.1 Create k6 load test script
+  - [ ] 33.1 Create k6 load test script
     - Create k6 script for order placement
     - Test 1000 concurrent order placements
     - Verify 95th percentile latency < 500ms
@@ -868,7 +868,7 @@
 ## Phase 10: Documentation and Production Deployment
 
 - [ ] 36. Create comprehensive documentation
-  - [~] 36.1 Create system documentation
+  - [ ] 36.1 Create system documentation
     - Create README.md with system overview and architecture
     - Document local development setup instructions
     - Document Docker Compose usage for testing
@@ -879,7 +879,7 @@
     - _Requirements: All_
 
 - [ ] 37. Deploy to production
-  - [~] 37.1 Deploy infrastructure
+  - [ ] 37.1 Deploy infrastructure
     - Deploy to production Kubernetes cluster (EKS/GKE/AKS)
     - Configure production Kafka cluster (3+ brokers, replication factor 3)
     - Configure production MySQL instances with replication
@@ -887,14 +887,14 @@
     - Deploy Redis cluster for API Gateway
     - _Requirements: 20_
   
-  - [~] 37.2 Deploy service mesh and observability
+  - [ ] 37.2 Deploy service mesh and observability
     - Deploy Istio service mesh with mTLS STRICT mode
     - Deploy observability stack (Jaeger, Prometheus, Grafana, ELK)
     - Configure production secrets in Vault
     - Set up monitoring alerts and dashboards
     - _Requirements: 13, 14, 15, 16, 17_
   
-  - [~] 37.3 Deploy services and validate
+  - [ ] 37.3 Deploy services and validate
     - Deploy all 8 services with production configuration
     - Perform smoke tests in production
     - Monitor saga completion rates and error rates

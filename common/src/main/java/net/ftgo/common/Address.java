@@ -2,6 +2,7 @@ package net.ftgo.common;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import jakarta.persistence.Embeddable;
 import jakarta.validation.constraints.NotBlank;
 
 import java.util.Objects;
@@ -10,19 +11,26 @@ import java.util.Objects;
  * Value object representing a physical address.
  * Used for delivery addresses and restaurant locations.
  */
+@Embeddable
 public class Address {
     
     @NotBlank
-    private final String street;
+    private String street;
     
     @NotBlank
-    private final String city;
+    private String city;
     
     @NotBlank
-    private final String state;
+    private String state;
     
     @NotBlank
-    private final String zipCode;
+    private String zipCode;
+    
+    /**
+     * Default constructor for JPA.
+     */
+    protected Address() {
+    }
     
     @JsonCreator
     public Address(
