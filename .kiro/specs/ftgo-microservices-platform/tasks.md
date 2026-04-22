@@ -244,8 +244,8 @@
     - Use jqwik with @Property annotation and 100 tries
     - _Requirements: 2.8_
 
-- [ ] 9. Implement ReviseOrderSaga
-  - [~] 9.1 Create ReviseOrderSaga definition
+- [x] 9. Implement ReviseOrderSaga
+  - [x] 9.1 Create ReviseOrderSaga definition
     - Create ReviseOrderSagaData class with orderId, revisedLineItems, revisedTotal, ticketId, authorizationId fields
     - Implement ReviseOrderSaga with 5 steps
     - Step 1: invokeLocal beginRevise (state=REVISION_PENDING) with compensation undoRevise (restore original order)
@@ -255,7 +255,7 @@
     - Step 5: invokeLocal confirmRevise (state=APPROVED, update order details) (retriable)
     - _Requirements: 3.1, 3.2, 3.3, 3.4_
   
-  - [~] 9.2 Implement ReviseOrderSaga failure handling
+  - [x] 9.2 Implement ReviseOrderSaga failure handling
     - Implement compensation execution for failures before pivot (undoReviseTicket, undoRevise)
     - Implement retry logic for failures after pivot
     - Publish OrderRevised event when saga completes successfully
