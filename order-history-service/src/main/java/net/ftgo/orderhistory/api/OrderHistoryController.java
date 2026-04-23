@@ -5,7 +5,6 @@ import net.ftgo.orderhistory.repository.OrderHistoryRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.cassandra.core.query.CassandraPageRequest;
 import org.springframework.data.domain.Slice;
-import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -58,7 +57,10 @@ public class OrderHistoryController {
      * 
      * Supports pagination with:
      * - pageSize: Number of records per page (default 20, max 100)
-     * - pagingState: Continuation token from previous response
+     * - pagingState: Continuation token from previous response (Base64-encoded)
+     * 
+     * The paging state is an opaque token that represents the position in the result set.
+     * Clients should pass the pagingState from the previous response to get the next page.
      * 
      * @param consumerId the consumer ID
      * @param status optional status filter
@@ -66,7 +68,7 @@ public class OrderHistoryController {
      * @param restaurantId optional restaurant ID filter
      * @param keyword optional keyword search
      * @param pageSize page size (default 20, max 100)
-     * @param pagingState continuation token for pagination
+     * @param pagingState continuation token for pagination (Base64-encoded)
      * @return paginated order history response
      * 
      * Requirements 9.4, 9.5, 9.7: Filtering, pagination, and sorting
@@ -86,8 +88,25 @@ public class OrderHistoryController {
             pageSize = 20;
         }
         
-        // Create pageable (paging state support requires additional configuration)
-        CassandraPageRequest pageable = CassandraPageRequest.of(0, pageSize);
+        // Create pageable with paging state if provided
+        CassandraPageRequest pageable;
+        if (pagingState != null && !pagingState.isEmpty()) {
+            try {
+                // Decode the Base64-encoded paging state
+                byte[] pagingStateBytes = Base64.getDecoder().decode(pagingState);
+                ByteBuffer pagingStateBuffer = ByteBuffer.wrap(pagingStateBytes);
+                
+                // Create page request with paging state
+                // Use the static factory method that accepts paging state
+                pageable = CassandraPageRequest.of(CassandraPageRequest.first(pageSize), pagingStateBuffer);
+            } catch (IllegalArgumentException e) {
+                // Invalid paging state, return bad request
+                return ResponseEntity.badRequest().build();
+            }
+        } else {
+            // First page request
+            pageable = CassandraPageRequest.first(pageSize);
+        }
         
         // Query with or without date filter
         Slice<OrderHistoryRecord> slice;
@@ -110,12 +129,26 @@ public class OrderHistoryController {
                 (record.getKeywords() != null && record.getKeywords().contains(keyword.toLowerCase())))
             .collect(Collectors.toList());
         
+        // Extract next paging state if available
+        String nextPagingState = null;
+        if (slice.hasNext() && pageable instanceof CassandraPageRequest) {
+            CassandraPageRequest cassandraPageRequest = (CassandraPageRequest) pageable;
+            ByteBuffer currentPagingState = cassandraPageRequest.getPagingState();
+            
+            // Encode the paging state as Base64 for the client
+            if (currentPagingState != null) {
+                byte[] pagingStateBytes = new byte[currentPagingState.remaining()];
+                currentPagingState.get(pagingStateBytes);
+                nextPagingState = Base64.getEncoder().encodeToString(pagingStateBytes);
+            }
+        }
+        
         OrderHistoryResponse response = new OrderHistoryResponse(
             filteredRecords,
             filteredRecords.size(),
             pageSize,
             slice.hasNext(),
-            null // Paging state support requires additional configuration
+            nextPagingState
         );
         
         return ResponseEntity.ok(response);
