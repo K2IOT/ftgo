@@ -297,8 +297,8 @@
 
 ## Phase 4: Kitchen and Delivery Services
 
-- [~] 11. Implement Kitchen Service
-  - [ ] 11.1 Create Ticket aggregate with state machine
+- [x] 11. Implement Kitchen Service
+  - [x] 11.1 Create Ticket aggregate with state machine
     - Create Ticket aggregate with id, restaurantId, orderId, state, lineItems, readyBy, acceptedAt, preparedAt fields
     - Implement TicketState enum (CREATE_PENDING, AWAITING_ACCEPTANCE, ACCEPTED, PREPARING, READY_FOR_PICKUP, PICKED_UP, CANCELLED)
     - Create TicketLineItem entity with menuItemId, name, quantity fields
@@ -308,7 +308,7 @@
     - Implement Ticket repository
     - _Requirements: 6.1, 6.2, 6.6_
   
-  - [ ] 11.2 Implement Kitchen command handlers for saga participation
+  - [x] 11.2 Implement Kitchen command handlers for saga participation
     - Implement createTicket command handler (creates ticket in CREATE_PENDING state)
     - Implement approveTicket command handler (transitions to AWAITING_ACCEPTANCE)
     - Implement cancelTicket command handler (compensation for CreateOrderSaga)
@@ -321,7 +321,7 @@
     - Configure Kitchen Service as saga participant on kitchenService command channel
     - _Requirements: 1.4, 1.6, 2.2, 2.4, 3.2, 3.4, 6.1, 6.2, 6.5_
   
-  - [ ] 11.3 Implement Kitchen REST API for kitchen staff
+  - [x] 11.3 Implement Kitchen REST API for kitchen staff
     - Implement GET /tickets endpoint (query tickets by restaurantId and state)
     - Implement POST /tickets/{ticketId}/accept endpoint (kitchen staff accepts ticket)
     - Implement POST /tickets/{ticketId}/preparing endpoint (mark as preparing)
@@ -329,7 +329,7 @@
     - Implement transactional outbox for TicketAccepted, TicketPreparing, TicketReady, TicketCancelled events
     - _Requirements: 6.3, 6.4, 6.5_
   
-  - [ ]* 11.4 Write Kitchen Service tests
+  - [x] 11.4 Write Kitchen Service tests
     - Add unit tests for Ticket state machine transitions
     - Add unit tests for command handlers
     - Test state transition validation (reject invalid transitions)
