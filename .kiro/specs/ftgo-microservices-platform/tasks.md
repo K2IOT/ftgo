@@ -442,8 +442,8 @@
 
 ## Phase 6: CQRS Read Model (Order History Service)
 
-- [ ] 16. Implement Order History Service with ScyllaDB
-  - [ ] 16.1 Create ScyllaDB schema
+- [x] 16. Implement Order History Service with ScyllaDB
+  - [x] 16.1 Create ScyllaDB schema
     - Create order_history table with order_id as partition key
     - Create line_item user-defined type (menu_item_id, name, price, quantity)
     - Create order_history_by_consumer materialized view (partition key: consumer_id, clustering key: creation_date DESC)
@@ -451,7 +451,7 @@
     - Configure ScyllaDB connection with CassandraTemplate
     - _Requirements: 9.1, 9.6_
   
-  - [ ] 16.2 Implement event handlers for read model updates
+  - [x] 16.2 Implement event handlers for read model updates
     - Implement OrderCreated event handler (create order history record)
     - Implement OrderApproved event handler (update status to APPROVED)
     - Implement OrderCancelled event handler (update status to CANCELLED)
@@ -464,15 +464,15 @@
     - Add idempotency check using processed_messages table (check messageId before processing)
     - _Requirements: 9.1, 9.2, 9.6_
   
-  - [ ] 16.3 Write event handler tests
+  - [x] 16.3 Write event handler tests
     - Add unit tests for event handlers
     - Test OrderCreated creates new record
     - Test subsequent events update existing record
     - Test idempotency (processing same event twice produces same state)
     - _Requirements: 9_
 
-- [ ] 17. Implement Order History query API
-  - [ ] 17.1 Create query endpoints
+- [-] 17. Implement Order History query API
+  - [x] 17.1 Create query endpoints
     - Implement GET /orders/{orderId} endpoint (query by order_id)
     - Implement GET /consumers/{consumerId}/orders endpoint (query materialized view)
     - Add filtering by status, date range, restaurant, keyword
@@ -480,7 +480,7 @@
     - Return complete order details including line items and delivery status
     - _Requirements: 9.3, 9.4, 9.5, 9.7_
   
-  - [ ]* 17.2 Write query API tests
+  - [x] 17.2 Write query API tests
     - Add integration tests with ScyllaDB Testcontainer
     - Test query by order_id returns correct record
     - Test query by consumer_id returns orders sorted by creation_date DESC
@@ -489,7 +489,7 @@
     - Test eventual consistency with write model (create order, wait for event propagation, query read model)
     - _Requirements: 9_
   
-  - [ ]* 17.3 Write property test for Event Processing Idempotency
+  - [x] 17.3 Write property test for Event Processing Idempotency
     - **Property 6: Event Processing Idempotency**
     - **Validates: Requirements 9.9, 11.8**
     - Test that processing same event multiple times produces same final state
