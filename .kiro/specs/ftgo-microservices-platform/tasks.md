@@ -337,8 +337,8 @@
     - Test ticket line items match order line items
     - _Requirements: 6_
 
-- [ ] 12. Implement Delivery Service
-  - [ ] 12.1 Create Delivery aggregate and database schema
+- [x] 12. Implement Delivery Service
+  - [x] 12.1 Create Delivery aggregate and database schema
     - Create Delivery aggregate with id, orderId, courierId, pickupAddress, deliveryAddress, scheduledTime, pickupTime, deliveryTime, status fields
     - Create Courier entity with id, name, phone, available fields
     - Implement DeliveryStatus enum (PENDING, ASSIGNED, PICKED_UP, DELIVERED)
@@ -346,7 +346,7 @@
     - Implement Delivery and Courier repositories
     - _Requirements: 8.1_
   
-  - [ ] 12.2 Implement Delivery event handlers and API
+  - [x] 12.2 Implement Delivery event handlers and API
     - Implement OrderApproved event handler (creates delivery record with pickup/delivery addresses and scheduled time)
     - Implement REST API for courier assignment (POST /deliveries/{deliveryId}/assign)
     - Implement REST API for pickup (POST /deliveries/{deliveryId}/pickup)
@@ -355,14 +355,14 @@
     - Implement transactional outbox for DeliveryAssigned, DeliveryPickedUp, DeliveryDelivered events
     - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5_
   
-  - [ ]* 12.3 Write Delivery Service tests
+  - [x] 12.3 Write Delivery Service tests
     - Add unit tests for delivery status transitions
     - Add unit tests for estimated delivery time calculation
     - Create integration tests with event consumption
     - Test OrderApproved event creates delivery record
     - _Requirements: 8_
   
-  - [ ]* 12.4 Write property test for Delivery Temporal Ordering
+  - [x] 12.4 Write property test for Delivery Temporal Ordering
     - **Property 5: Delivery Temporal Ordering**
     - **Validates: Requirements 8.6**
     - Test that pickupTime < deliveryTime for all completed deliveries
@@ -464,7 +464,7 @@
     - Add idempotency check using processed_messages table (check messageId before processing)
     - _Requirements: 9.1, 9.2, 9.6_
   
-  - [ ]* 16.3 Write event handler tests
+  - [ ] 16.3 Write event handler tests
     - Add unit tests for event handlers
     - Test OrderCreated creates new record
     - Test subsequent events update existing record
