@@ -147,7 +147,7 @@
 
 ## Phase 3: Order Service and Saga Orchestration
 
-- [ ] 5. Implement Order Service core aggregate
+- [x] 5. Implement Order Service core aggregate
   - [x] 5.1 Create Order aggregate with state machine
     - Create Order aggregate with id, version (optimistic locking), state, consumerId, restaurantId, lineItems, deliveryInfo, paymentInfo, orderTotal, createdAt fields
     - Implement OrderState enum (APPROVAL_PENDING, APPROVED, REJECTED, CANCEL_PENDING, CANCELLED, REVISION_PENDING)
@@ -158,13 +158,13 @@
     - Implement Order repository with optimistic locking (version field)
     - _Requirements: 1.1, 2.1, 2.7, 3.1, 3.7, 12.1, 12.2, 12.3_
   
-  - [ ] 5.2 Write Order aggregate tests
+  - [x] 5.2 Write Order aggregate tests
     - Add unit tests for Order state machine transitions
     - Add unit tests for semantic lock validation (reject concurrent modifications)
     - Test optimistic locking with version field
     - _Requirements: 1, 2, 3, 12_
   
-  - [ ]* 5.3 Write property tests for Order invariants
+  - [x] 5.3 Write property tests for Order invariants
     - **Property 1: Order Creation Idempotency**
     - **Validates: Requirements 1.9**
     - Test that creating order then querying returns equivalent order details
@@ -204,7 +204,7 @@
     - Log saga failures and increment metrics counters
     - _Requirements: 1.7, 1.8_
   
-  - [ ] 7.3 Write CreateOrderSaga tests
+  - [x] 7.3 Write CreateOrderSaga tests
     - Add saga unit tests using Eventuate Tram Sagas testing framework
     - Test success path (all steps succeed)
     - Test failure before pivot (authorization fails, compensation executes)
@@ -229,7 +229,7 @@
     - Publish OrderCancelled event when saga completes successfully
     - _Requirements: 2.5, 2.6_
   
-  - [ ] 8.3 Write CancelOrderSaga tests
+  - [x] 8.3 Write CancelOrderSaga tests
     - Add saga unit tests
     - Test success path
     - Test failure before pivot (reversal fails, compensation restores order to APPROVED)
@@ -261,7 +261,7 @@
     - Publish OrderRevised event when saga completes successfully
     - _Requirements: 3.5, 3.6_
   
-  - [ ] 9.3 Write ReviseOrderSaga tests
+  - [x] 9.3 Write ReviseOrderSaga tests
     - Add saga unit tests
     - Test success path
     - Test failure before pivot (authorization revision fails, compensation restores original order)
@@ -286,7 +286,7 @@
     - Ensure Debezium CDC publishes events from outbox to Kafka
     - _Requirements: 1.8, 2.6, 3.6, 11.1, 11.2, 11.3_
   
-  - [ ] 10.3 Write Order Service API tests
+  - [x] 10.3 Write Order Service API tests
     - Add REST API integration tests
     - Test POST /orders creates order and initiates saga
     - Test GET /orders/{orderId} returns order details
@@ -297,7 +297,7 @@
 
 ## Phase 4: Kitchen and Delivery Services
 
-- [ ] 11. Implement Kitchen Service
+- [~] 11. Implement Kitchen Service
   - [ ] 11.1 Create Ticket aggregate with state machine
     - Create Ticket aggregate with id, restaurantId, orderId, state, lineItems, readyBy, acceptedAt, preparedAt fields
     - Implement TicketState enum (CREATE_PENDING, AWAITING_ACCEPTANCE, ACCEPTED, PREPARING, READY_FOR_PICKUP, PICKED_UP, CANCELLED)

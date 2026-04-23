@@ -48,6 +48,7 @@ subprojects {
         testImplementation 'org.testcontainers:mysql:1.19.3'
         testImplementation 'net.jqwik:jqwik:1.8.2'
         testImplementation 'io.rest-assured:rest-assured:5.4.0'
+        testImplementation 'org.awaitility:awaitility:4.2.0'
         testRuntimeOnly 'com.h2database:h2'
     }
     
@@ -117,6 +118,10 @@ project(':order-service') {
         implementation 'com.mysql:mysql-connector-j'
         implementation 'org.flywaydb:flyway-core'
         implementation 'org.flywaydb:flyway-mysql'
+        implementation 'com.zaxxer:HikariCP'
+        
+        // Saga testing support
+        testImplementation 'io.eventuate.tram.sagas:eventuate-tram-sagas-testing-support'
         implementation 'com.zaxxer:HikariCP'
     }
 }

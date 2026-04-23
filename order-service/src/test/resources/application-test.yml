@@ -1,0 +1,54 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:testdb;MODE=MySQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: 
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+    show-sql: false
+  flyway:
+    enabled: false
+  main:
+    allow-bean-definition-overriding: true
+
+# Eventuate Tram configuration for testing
+eventuate:
+  database:
+    schema: eventuate
+  local:
+    kafka:
+      bootstrap:
+        servers: ${spring.kafka.bootstrap-servers:localhost:9092}
+
+# Kafka configuration (overridden by Testcontainers in integration tests)
+spring.kafka:
+  bootstrap-servers: localhost:9092
+  consumer:
+    group-id: order-service-test
+    auto-offset-reset: earliest
+    key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+  producer:
+    key-serializer: org.apache.kafka.common.serialization.StringSerializer
+    value-serializer: org.apache.kafka.common.serialization.StringSerializer
+
+# Logging configuration
+logging:
+  level:
+    root: INFO
+    net.ftgo: DEBUG
+    io.eventuate: DEBUG
+    org.hibernate.SQL: DEBUG
+    org.hibernate.type.descriptor.sql.BasicBinder: TRACE
+    org.springframework.kafka: INFO
+    org.apache.kafka: WARN
+
+# Disable actuator endpoints in tests
+management:
+  endpoints:
+    enabled-by-default: false
