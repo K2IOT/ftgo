@@ -8,29 +8,103 @@ spring:
           uri: http://localhost:8081
           predicates:
             - Path=/orders/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: orderServiceCircuitBreaker
+                fallbackUri: forward:/fallback/orders
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 100
+                redis-rate-limiter.burstCapacity: 200
+                key-resolver: "#{@userKeyResolver}"
         - id: consumer-service
           uri: http://localhost:8082
           predicates:
             - Path=/consumers/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: consumerServiceCircuitBreaker
+                fallbackUri: forward:/fallback/consumers
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 100
+                redis-rate-limiter.burstCapacity: 200
+                key-resolver: "#{@userKeyResolver}"
         - id: restaurant-service
           uri: http://localhost:8083
           predicates:
             - Path=/restaurants/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: restaurantServiceCircuitBreaker
+                fallbackUri: forward:/fallback/restaurants
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 100
+                redis-rate-limiter.burstCapacity: 200
+                key-resolver: "#{@userKeyResolver}"
         - id: kitchen-service
           uri: http://localhost:8084
           predicates:
             - Path=/tickets/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: kitchenServiceCircuitBreaker
+                fallbackUri: forward:/fallback/tickets
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 100
+                redis-rate-limiter.burstCapacity: 200
+                key-resolver: "#{@userKeyResolver}"
         - id: delivery-service
           uri: http://localhost:8086
           predicates:
             - Path=/deliveries/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: deliveryServiceCircuitBreaker
+                fallbackUri: forward:/fallback/deliveries
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 100
+                redis-rate-limiter.burstCapacity: 200
+                key-resolver: "#{@userKeyResolver}"
         - id: order-history-service
           uri: http://localhost:8087
           predicates:
             - Path=/order-history/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: orderHistoryServiceCircuitBreaker
+                fallbackUri: forward:/fallback/order-history
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 100
+                redis-rate-limiter.burstCapacity: 200
+                key-resolver: "#{@userKeyResolver}"
   redis:
     host: localhost
     port: 6379
+    timeout: 2000ms
+  session:
+    store-type: redis
+    redis:
+      namespace: ftgo:session
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # This should be configured to point to your OAuth2 authorization server
+          # For development, you can use a local key or mock server
+          issuer-uri: ${JWT_ISSUER_URI:http://localhost:9000}
+          # Alternative: use jwk-set-uri for direct JWK endpoint
+          # jwk-set-uri: ${JWT_JWK_SET_URI:http://localhost:9000/.well-known/jwks.json}
 
 server:
   port: 8080
@@ -39,4 +113,67 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,prometheus
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+# Resilience4j Circuit Breaker Configuration
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        slidingWindowSize: 10
+        minimumNumberOfCalls: 5
+        failureRateThreshold: 50
+        waitDurationInOpenState: 30s
+        permittedNumberOfCallsInHalfOpenState: 3
+        automaticTransitionFromOpenToHalfOpenEnabled: true
+        recordExceptions:
+          - org.springframework.web.client.HttpServerErrorException
+          - java.util.concurrent.TimeoutException
+          - java.io.IOException
+    instances:
+      orderServiceCircuitBreaker:
+        baseConfig: default
+      consumerServiceCircuitBreaker:
+        baseConfig: default
+      restaurantServiceCircuitBreaker:
+        baseConfig: default
+      kitchenServiceCircuitBreaker:
+        baseConfig: default
+      deliveryServiceCircuitBreaker:
+        baseConfig: default
+      orderHistoryServiceCircuitBreaker:
+        baseConfig: default
+      orderDetails:
+        baseConfig: default
+        slidingWindowSize: 10
+        minimumNumberOfCalls: 5
+        failureRateThreshold: 50
+        waitDurationInOpenState: 30s
+
+  timelimiter:
+    configs:
+      default:
+        timeoutDuration: 5s
+
+# Service URLs for API composition
+services:
+  order-service:
+    url: ${ORDER_SERVICE_URL:http://localhost:8081}
+  kitchen-service:
+    url: ${KITCHEN_SERVICE_URL:http://localhost:8084}
+  delivery-service:
+    url: ${DELIVERY_SERVICE_URL:http://localhost:8086}
+
+logging:
+  level:
+    root: INFO
+    net.ftgo: DEBUG
+    org.springframework.cloud.gateway: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"

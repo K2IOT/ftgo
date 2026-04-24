@@ -85,7 +85,7 @@ project(':common') {
 }
 
 // Service-specific configurations
-configure(subprojects.findAll { it.name != 'common' }) {
+configure(subprojects.findAll { it.name != 'common' && it.name != 'api-gateway' }) {
     dependencies {
         implementation project(':common')
         
@@ -195,6 +195,9 @@ project(':order-history-service') {
 // API Gateway
 project(':api-gateway') {
     dependencies {
+        implementation project(':common')
+        
+        // Reactive Gateway
         implementation 'org.springframework.cloud:spring-cloud-starter-gateway'
         implementation 'org.springframework.boot:spring-boot-starter-data-redis-reactive'
         implementation 'org.springframework.boot:spring-boot-starter-security'
@@ -203,6 +206,22 @@ project(':api-gateway') {
         implementation 'io.github.resilience4j:resilience4j-spring-boot3:2.1.0'
         implementation 'io.github.resilience4j:resilience4j-reactor:2.1.0'
         implementation 'io.github.resilience4j:resilience4j-circuitbreaker:2.1.0'
+        
+        // Observability
+        implementation 'io.micrometer:micrometer-registry-prometheus'
+        
+        // JWT testing support
+        testImplementation 'com.nimbusds:nimbus-jose-jwt:9.37.3'
+        
+        // WireMock for integration testing
+        testImplementation 'org.wiremock:wiremock-standalone:3.3.1'
+        
+        // Redis Testcontainer
+        testImplementation 'org.testcontainers:testcontainers:1.19.3'
+        testImplementation 'org.testcontainers:junit-jupiter:1.19.3'
+        
+        // Reactor test support
+        testImplementation 'io.projectreactor:reactor-test'
     }
 }
 

@@ -237,7 +237,7 @@
     - Create integration test for CancelOrderSaga end-to-end flow
     - _Requirements: 2_
   
-  - [ ] 8.4 Write property test for compensation correctness
+  - [x] 8.4 Write property test for compensation correctness
     - **Property 8: Saga Compensation Correctness**
     - **Validates: Requirements 2.8**
     - Test that reversing authorization then re-authorizing restores original state
@@ -371,14 +371,14 @@
 
 ## Phase 5: API Gateway and Authentication
 
-- [ ] 13. Implement API Gateway core
-  - [ ] 13.1 Create Spring Cloud Gateway project
+- [x] 13. Implement API Gateway core
+  - [x] 13.1 Create Spring Cloud Gateway project
     - Create api-gateway module with Spring Cloud Gateway dependencies
     - Configure Redis for session storage and rate limiting
     - Set up application.yml with gateway routes
     - _Requirements: 10_
   
-  - [ ] 13.2 Implement JWT authentication and authorization
+  - [x] 13.2 Implement JWT authentication and authorization
     - Implement JWT authentication filter
     - Implement JWT signature validation with OAuth2 public key
     - Extract user ID and roles from JWT token
@@ -386,7 +386,7 @@
     - Return 401 Unauthorized for expired or invalid JWT
     - _Requirements: 10.1, 10.2, 10.3, 10.4_
   
-  - [ ]* 13.3 Write JWT validation tests
+  - [x] 13.3 Write JWT validation tests
     - Add unit tests for JWT validation
     - Test valid JWT is accepted
     - Test expired JWT is rejected
@@ -394,15 +394,15 @@
     - Test role-based authorization
     - _Requirements: 10_
   
-  - [ ]* 13.4 Write property test for JWT Validation Correctness
+  - [x] 13.4 Write property test for JWT Validation Correctness
     - **Property 7: JWT Validation Correctness**
     - **Validates: Requirements 10.8**
     - Test that JWT is accepted iff signature is valid AND not expired
     - Use jqwik with @Property annotation and 100 tries
     - _Requirements: 10.8_
 
-- [ ] 14. Implement Gateway routing and resilience
-  - [ ] 14.1 Configure gateway routes
+- [x] 14. Implement Gateway routing and resilience
+  - [x] 14.1 Configure gateway routes
     - Configure routes for Order Service (/orders/**)
     - Configure routes for Consumer Service (/consumers/**)
     - Configure routes for Restaurant Service (/restaurants/**)
@@ -411,29 +411,29 @@
     - Configure routes for Order History Service (/order-history/**)
     - _Requirements: 10_
   
-  - [ ] 14.2 Implement circuit breaker and rate limiting
+  - [x] 14.2 Implement circuit breaker and rate limiting
     - Implement circuit breaker filter with Resilience4j (5 consecutive failures trigger open state for 30s)
     - Implement rate limiting filter (100 requests per minute per consumer)
     - Implement fallback responses for circuit breaker open state
     - Return 429 Too Many Requests when rate limit exceeded
     - _Requirements: 10.5, 10.7, 18_
   
-  - [ ]* 14.3 Write circuit breaker tests
+  - [x] 14.3 Write circuit breaker tests
     - Add integration tests for circuit breaker behavior
     - Test circuit opens after 5 consecutive failures
     - Test circuit closes after successful test request in half-open state
     - Test rate limiting returns 429 after 100 requests
     - _Requirements: 10.7, 18_
 
-- [ ] 15. Implement API composition
-  - [ ] 15.1 Create order details composition endpoint
+- [x] 15. Implement API composition
+  - [x] 15.1 Create order details composition endpoint
     - Implement GET /order-details/{orderId} endpoint
     - Aggregate data from Order Service, Kitchen Service, and Delivery Service
     - Use Mono.zip for parallel service calls
     - Implement fallback for service unavailability (return cached data or partial response)
     - _Requirements: 10.6_
   
-  - [ ]* 15.2 Write API composition tests
+  - [x] 15.2 Write API composition tests
     - Add integration tests for API composition
     - Test successful aggregation from all services
     - Test fallback when one service is unavailable
