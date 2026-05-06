@@ -24,9 +24,8 @@ import java.util.Arrays;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.doAnswer;
+import org.awaitility.Awaitility;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Integration tests for CancelOrderSaga with Testcontainers.
@@ -63,24 +62,10 @@ import static org.mockito.Mockito.doAnswer;
  * 4. confirmCancelTicket - Confirms ticket cancellation (retriable)
  * 5. confirmCancel (local) - Transitions order to CANCELLED state (retriable)
  */
-@SpringBootTest
-@TestPropertySource(properties = {
-    "spring.datasource.url=jdbc:h2:mem:testdb;MODE=MySQL;INIT=RUNSCRIPT FROM 'classpath:eventuate-schema.sql'",
-    "spring.datasource.driver-class-name=org.h2.Driver",
-    "spring.jpa.hibernate.ddl-auto=create-drop",
-    "spring.flyway.enabled=false",
-    "eventuatelocal.kafka.bootstrap.servers=localhost:9092",
-    "spring.kafka.bootstrap-servers=localhost:9092",
-    "spring.main.allow-bean-definition-overriding=true",
-    "spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.H2Dialect"
-})
-class CancelOrderSagaIntegrationTest {
-    
-    @MockBean
-    private MessageProducer messageProducer;
-    
-    @MockBean
-    private MessageConsumer messageConsumer;
+import org.springframework.context.annotation.Import;
+
+@Import(TestParticipantConfiguration.class)
+class CancelOrderSagaIntegrationTest extends OrderServiceIntegrationTestBase {
     
     @Autowired
     private OrderRepository orderRepository;
@@ -95,13 +80,6 @@ class CancelOrderSagaIntegrationTest {
     void setUp() {
         // Clean up database before each test
         orderRepository.deleteAll();
-        
-        // Mock messageProducer to set Message ID, which is required by Eventuate CommandProducer
-        doAnswer(invocation -> {
-            io.eventuate.tram.messaging.common.Message message = invocation.getArgument(1);
-            message.getHeaders().put(io.eventuate.tram.messaging.common.Message.ID, java.util.UUID.randomUUID().toString());
-            return null;
-        }).when(messageProducer).send(anyString(), any(io.eventuate.tram.messaging.common.Message.class));
     }
     
     // ========== Helper Methods ==========
@@ -173,20 +151,15 @@ class CancelOrderSagaIntegrationTest {
             sagaData
         );
         
-        // Note: In a real integration test, we would:
-        // 1. Start the saga
-        // 2. Mock or stub Kitchen Service and Accounting Service responses
-        // 3. Wait for saga completion
-        // 4. Verify final order state
-        
-        // For this test, we verify the saga definition is properly configured
-        assertNotNull(sagaInstance);
-        assertNotNull(sagaInstance.getId());
-        
         // Verify saga data is correctly set
         assertEquals(orderId, sagaData.getOrderId());
         assertEquals(ticketId, sagaData.getTicketId());
         assertEquals(authorizationId, sagaData.getAuthorizationId());
+        
+        Awaitility.await().atMost(10, TimeUnit.SECONDS).untilAsserted(() -> {
+            Order finalOrder = orderRepository.findById(orderId).orElseThrow();
+            assertEquals(OrderState.CANCELLED, finalOrder.getState());
+        });
     }
     
     /**
