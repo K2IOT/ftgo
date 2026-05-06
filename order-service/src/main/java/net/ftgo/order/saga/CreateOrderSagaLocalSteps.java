@@ -141,27 +141,31 @@ public class CreateOrderSagaLocalSteps {
         Order order = orderRepository.findById(orderId)
             .orElseThrow(() -> new IllegalArgumentException("Order not found: " + orderId));
         
+        // Store saga-created resource IDs on the Order entity
+        // These are needed later by Cancel/Revise sagas
+        order.setTicketId(command.getTicketId());
+        order.setAuthorizationId(command.getAuthorizationId());
+        
         // Transition to APPROVED state
         order.approve();
         orderRepository.save(order);
         
         // Publish OrderApproved event via transactional outbox
-        // Note: ticketId and authorizationId would be retrieved from saga data
-        // For now, we'll publish with null values (to be enhanced when saga manager is integrated)
         OrderApproved event = new OrderApproved(
             order.getId(),
             order.getConsumerId(),
             order.getRestaurantId(),
             order.getOrderTotal(),
-            null, // ticketId from saga data
-            null  // authorizationId from saga data
+            command.getTicketId(),
+            command.getAuthorizationId()
         );
         eventPublisher.publishOrderEvent(order.getId(), event);
         
         // Increment metrics counter
         ordersApprovedCounter.increment();
         
-        logger.info("Order approved: orderId={}, state={}", orderId, order.getState());
+        logger.info("Order approved: orderId={}, state={}, ticketId={}, authorizationId={}",
+            orderId, order.getState(), command.getTicketId(), command.getAuthorizationId());
         
         return withSuccess();
     }
@@ -190,15 +194,20 @@ public class CreateOrderSagaLocalSteps {
     
     /**
      * Command to approve an order (local step).
+     * Carries ticketId and authorizationId from saga data to be stored on the Order entity.
      */
     public static class ApproveOrderCommand implements io.eventuate.tram.commands.common.Command {
         private Long orderId;
+        private Long ticketId;
+        private Long authorizationId;
         
         public ApproveOrderCommand() {
         }
         
-        public ApproveOrderCommand(Long orderId) {
+        public ApproveOrderCommand(Long orderId, Long ticketId, Long authorizationId) {
             this.orderId = orderId;
+            this.ticketId = ticketId;
+            this.authorizationId = authorizationId;
         }
         
         public Long getOrderId() {
@@ -207,6 +216,22 @@ public class CreateOrderSagaLocalSteps {
         
         public void setOrderId(Long orderId) {
             this.orderId = orderId;
+        }
+        
+        public Long getTicketId() {
+            return ticketId;
+        }
+        
+        public void setTicketId(Long ticketId) {
+            this.ticketId = ticketId;
+        }
+        
+        public Long getAuthorizationId() {
+            return authorizationId;
+        }
+        
+        public void setAuthorizationId(Long authorizationId) {
+            this.authorizationId = authorizationId;
         }
     }
 }

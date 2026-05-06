@@ -163,6 +163,7 @@ public class ReviseOrderSaga implements SimpleSaga<ReviseOrderSagaData> {
             data.getAuthorizationId(), data.getRevisedTotal());
         
         return send(new ReviseAuthorizationCommand(
+                data.getConsumerId(),
                 data.getAuthorizationId(),
                 data.getRevisedTotal().getAmount()
             ))

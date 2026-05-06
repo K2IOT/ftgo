@@ -90,6 +90,11 @@ public class OrderHistoryEventHandlers {
                 }
             }
             
+            if (eventType == null) {
+                logger.warn("Could not determine event type for messageId={}, skipping", messageId);
+                return;
+            }
+            
             switch (eventType) {
                 case "OrderCreatedEvent":
                     OrderCreatedEvent orderCreated = objectMapper.treeToValue(eventNode, OrderCreatedEvent.class);

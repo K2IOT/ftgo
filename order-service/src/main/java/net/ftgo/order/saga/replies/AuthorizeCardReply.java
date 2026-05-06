@@ -8,7 +8,7 @@ package net.ftgo.order.saga.replies;
  */
 public class AuthorizeCardReply {
     
-    private String authorizationId;
+    private Long authorizationId;
     
     /**
      * Default constructor for serialization.
@@ -21,15 +21,15 @@ public class AuthorizeCardReply {
      * 
      * @param authorizationId the ID of the created authorization
      */
-    public AuthorizeCardReply(String authorizationId) {
+    public AuthorizeCardReply(Long authorizationId) {
         this.authorizationId = authorizationId;
     }
     
-    public String getAuthorizationId() {
+    public Long getAuthorizationId() {
         return authorizationId;
     }
     
-    public void setAuthorizationId(String authorizationId) {
+    public void setAuthorizationId(Long authorizationId) {
         this.authorizationId = authorizationId;
     }
 }

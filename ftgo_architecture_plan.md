@@ -371,7 +371,7 @@ Deployments (1 per service):
   ftgo-order-history-svc    replicas: 2
 
 Infrastructure (StatefulSets):
-  kafka (3 brokers + ZooKeeper / KRaft)
+  kafka (3 brokers + KRaft)
   mysql-order     mysql-consumer     mysql-restaurant
   mysql-kitchen   mysql-accounting   mysql-delivery
   redis           debezium-connect   elasticsearch

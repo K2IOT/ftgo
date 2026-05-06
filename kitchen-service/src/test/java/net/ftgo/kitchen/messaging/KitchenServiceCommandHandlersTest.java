@@ -312,8 +312,7 @@ class KitchenServiceCommandHandlersTest {
         Ticket ticket = mock(Ticket.class);
         when(ticketRepository.findById(TICKET_ID)).thenReturn(Optional.of(ticket));
         
-        List<CreateTicketCommand.TicketLineItemDTO> originalItems = createSampleLineItemDTOs();
-        UndoReviseTicketCommand command = new UndoReviseTicketCommand(TICKET_ID, originalItems);
+        UndoReviseTicketCommand command = new UndoReviseTicketCommand(TICKET_ID);
         CommandMessage<UndoReviseTicketCommand> cm = mock(CommandMessage.class);
         when(cm.getCommand()).thenReturn(command);
         
@@ -322,7 +321,7 @@ class KitchenServiceCommandHandlersTest {
         
         // Then
         assertNotNull(reply);
-        verify(ticket).undoRevise(any());
+        verify(ticket).undoRevise();
         verify(ticketRepository).save(ticket);
     }
     

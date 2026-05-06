@@ -13,13 +13,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.containers.KafkaContainer;
-import org.testcontainers.containers.MySQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.utility.DockerImageName;
+import org.springframework.test.context.TestPropertySource;
+import org.springframework.boot.test.mock.mockito.MockBean;
+import io.eventuate.tram.messaging.producer.MessageProducer;
+import io.eventuate.tram.messaging.consumer.MessageConsumer;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -27,6 +24,9 @@ import java.util.Arrays;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doAnswer;
 
 /**
  * Integration tests for CancelOrderSaga with Testcontainers.
@@ -64,27 +64,23 @@ import static org.junit.jupiter.api.Assertions.*;
  * 5. confirmCancel (local) - Transitions order to CANCELLED state (retriable)
  */
 @SpringBootTest
-@Testcontainers
+@TestPropertySource(properties = {
+    "spring.datasource.url=jdbc:h2:mem:testdb;MODE=MySQL;INIT=RUNSCRIPT FROM 'classpath:eventuate-schema.sql'",
+    "spring.datasource.driver-class-name=org.h2.Driver",
+    "spring.jpa.hibernate.ddl-auto=create-drop",
+    "spring.flyway.enabled=false",
+    "eventuatelocal.kafka.bootstrap.servers=localhost:9092",
+    "spring.kafka.bootstrap-servers=localhost:9092",
+    "spring.main.allow-bean-definition-overriding=true",
+    "spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.H2Dialect"
+})
 class CancelOrderSagaIntegrationTest {
     
-    @Container
-    static MySQLContainer<?> mysql = new MySQLContainer<>(DockerImageName.parse("mysql:8.0"))
-            .withDatabaseName("ftgo_order_test")
-            .withUsername("test")
-            .withPassword("test")
-            .withReuse(true);
+    @MockBean
+    private MessageProducer messageProducer;
     
-    @Container
-    static KafkaContainer kafka = new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.5.0"))
-            .withReuse(true);
-    
-    @DynamicPropertySource
-    static void configureProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", mysql::getJdbcUrl);
-        registry.add("spring.datasource.username", mysql::getUsername);
-        registry.add("spring.datasource.password", mysql::getPassword);
-        registry.add("spring.kafka.bootstrap-servers", kafka::getBootstrapServers);
-    }
+    @MockBean
+    private MessageConsumer messageConsumer;
     
     @Autowired
     private OrderRepository orderRepository;
@@ -99,6 +95,13 @@ class CancelOrderSagaIntegrationTest {
     void setUp() {
         // Clean up database before each test
         orderRepository.deleteAll();
+        
+        // Mock messageProducer to set Message ID, which is required by Eventuate CommandProducer
+        doAnswer(invocation -> {
+            io.eventuate.tram.messaging.common.Message message = invocation.getArgument(1);
+            message.getHeaders().put(io.eventuate.tram.messaging.common.Message.ID, java.util.UUID.randomUUID().toString());
+            return null;
+        }).when(messageProducer).send(anyString(), any(io.eventuate.tram.messaging.common.Message.class));
     }
     
     // ========== Helper Methods ==========
@@ -135,8 +138,8 @@ class CancelOrderSagaIntegrationTest {
     /**
      * Creates saga data for order cancellation.
      */
-    private CancelOrderSagaData createSagaData(Long orderId, Long ticketId, String authorizationId) {
-        return new CancelOrderSagaData(orderId, ticketId, authorizationId);
+    private CancelOrderSagaData createSagaData(Long orderId, Long ticketId, Long authorizationId) {
+        return new CancelOrderSagaData(orderId, 100L, ticketId, authorizationId);
     }
     
     // ========== Success Path Tests ==========
@@ -159,7 +162,7 @@ class CancelOrderSagaIntegrationTest {
         Order order = createApprovedOrder();
         Long orderId = order.getId();
         Long ticketId = 100L;
-        String authorizationId = "auth-success-001";
+        Long authorizationId = 1001L;
         
         assertEquals(OrderState.APPROVED, order.getState());
         
@@ -518,7 +521,7 @@ class CancelOrderSagaIntegrationTest {
         // Given: Saga data
         Long orderId = 123L;
         Long ticketId = 456L;
-        String authorizationId = "auth-persist-001";
+        Long authorizationId = 1001L;
         
         CancelOrderSagaData sagaData = createSagaData(orderId, ticketId, authorizationId);
         

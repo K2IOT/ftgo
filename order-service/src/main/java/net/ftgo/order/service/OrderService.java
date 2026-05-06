@@ -125,16 +125,12 @@ public class OrderService {
     /**
      * Cancels an order and initiates CancelOrderSaga.
      * 
-     * Steps:
-     * 1. Retrieve order
-     * 2. Validate order is in APPROVED state (semantic lock check)
-     * 3. Transition order to CANCEL_PENDING state
-     * 4. Persist order
-     * 5. Initiate CancelOrderSaga for distributed cancellation
+     * The saga's local step (Step 1) handles the state validation and
+     * transition to CANCEL_PENDING. This method only retrieves the order
+     * and initiates the saga with the required data.
      * 
      * @param orderId the order ID to cancel
      * @throws OrderNotFoundException if order not found
-     * @throws IllegalStateException if order is not in APPROVED state or is in pending state
      */
     @Transactional
     public void cancelOrder(Long orderId) {
@@ -143,25 +139,17 @@ public class OrderService {
         Order order = orderRepository.findById(orderId)
             .orElseThrow(() -> new OrderNotFoundException("Order not found: " + orderId));
         
-        // Validate order is not in a pending state (semantic lock)
-        order.validateNotPending();
-        
-        // Transition to CANCEL_PENDING state
-        order.beginCancel();
-        orderRepository.save(order);
-        
-        logger.info("Order transitioned to CANCEL_PENDING: orderId={}", orderId);
-        
-        // Create saga data
-        // Note: ticketId and authorizationId would need to be retrieved from saga instance
-        // For now, we'll use placeholder values (to be enhanced with saga instance lookup)
+        // Create saga data with IDs from the Order entity
+        // ticketId and authorizationId were stored during CreateOrderSaga
         CancelOrderSagaData sagaData = new CancelOrderSagaData(
             order.getId(),
-            null, // ticketId - to be retrieved from CreateOrderSaga instance
-            null  // authorizationId - to be retrieved from CreateOrderSaga instance
+            order.getConsumerId(),
+            order.getTicketId(),
+            order.getAuthorizationId()
         );
         
-        // Initiate CancelOrderSaga
+        // Initiate CancelOrderSaga — Step 1 (local) will validate state
+        // and transition to CANCEL_PENDING
         sagaInstanceFactory.create(cancelOrderSaga, sagaData);
         
         logger.info("CancelOrderSaga initiated for orderId={}", orderId);
@@ -170,17 +158,13 @@ public class OrderService {
     /**
      * Revises an order and initiates ReviseOrderSaga.
      * 
-     * Steps:
-     * 1. Retrieve order
-     * 2. Validate order is in APPROVED state (semantic lock check)
-     * 3. Transition order to REVISION_PENDING state
-     * 4. Persist order
-     * 5. Initiate ReviseOrderSaga for distributed revision
+     * The saga's local step (Step 1) handles the state validation and
+     * transition to REVISION_PENDING. This method only retrieves the order
+     * and initiates the saga with the required data.
      * 
      * @param orderId the order ID to revise
      * @param revisedLineItems the new line items
      * @throws OrderNotFoundException if order not found
-     * @throws IllegalStateException if order is not in APPROVED state or is in pending state
      * @throws IllegalArgumentException if revised line items are invalid
      */
     @Transactional
@@ -191,31 +175,23 @@ public class OrderService {
         Order order = orderRepository.findById(orderId)
             .orElseThrow(() -> new OrderNotFoundException("Order not found: " + orderId));
         
-        // Validate order is not in a pending state (semantic lock)
-        order.validateNotPending();
-        
-        // Transition to REVISION_PENDING state
-        order.beginRevise();
-        orderRepository.save(order);
-        
-        logger.info("Order transitioned to REVISION_PENDING: orderId={}", orderId);
-        
         // Calculate revised total
         Money revisedTotal = revisedLineItems.stream()
             .map(OrderLineItem::getTotal)
             .reduce(Money.ZERO, Money::add);
         
-        // Create saga data
-        // Note: ticketId and authorizationId would need to be retrieved from saga instance
+        // Create saga data with IDs from the Order entity
         ReviseOrderSagaData sagaData = new ReviseOrderSagaData(
             order.getId(),
+            order.getConsumerId(),
             revisedLineItems,
             revisedTotal,
-            null, // ticketId - to be retrieved from CreateOrderSaga instance
-            null  // authorizationId - to be retrieved from CreateOrderSaga instance
+            order.getTicketId(),
+            order.getAuthorizationId()
         );
         
-        // Initiate ReviseOrderSaga
+        // Initiate ReviseOrderSaga — Step 1 (local) will validate state
+        // and transition to REVISION_PENDING
         sagaInstanceFactory.create(reviseOrderSaga, sagaData);
         
         logger.info("ReviseOrderSaga initiated for orderId={}, revisedTotal={}",

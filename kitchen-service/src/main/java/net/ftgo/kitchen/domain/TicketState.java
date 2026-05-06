@@ -9,7 +9,10 @@ package net.ftgo.kitchen.domain;
  * ACCEPTED → PREPARING (via preparing())
  * PREPARING → READY_FOR_PICKUP (via readyForPickup())
  * READY_FOR_PICKUP → PICKED_UP (via pickedUp())
- * Any state → CANCELLED (via cancel())
+ * Any state → CANCEL_PENDING (via beginCancel()) → CANCELLED (via confirmCancel())
+ * Any state → REVISION_PENDING (via beginRevise()) → restored state (via confirmRevise())
+ * CANCEL_PENDING → previous state (via undoCancel(), compensation)
+ * REVISION_PENDING → previous state (via undoRevise(), compensation)
  */
 public enum TicketState {
     /**
@@ -42,6 +45,18 @@ public enum TicketState {
      * Courier has picked up the order.
      */
     PICKED_UP,
+    
+    /**
+     * Ticket cancellation is in progress (CancelOrderSaga active).
+     * Semantic lock — prevents concurrent modifications.
+     */
+    CANCEL_PENDING,
+    
+    /**
+     * Ticket revision is in progress (ReviseOrderSaga active).
+     * Semantic lock — prevents concurrent modifications.
+     */
+    REVISION_PENDING,
     
     /**
      * Ticket has been cancelled (compensation from saga).

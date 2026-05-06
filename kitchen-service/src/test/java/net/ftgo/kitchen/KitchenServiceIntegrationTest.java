@@ -310,17 +310,17 @@ class KitchenServiceIntegrationTest {
         when(beginReviseCm.getCommand()).thenReturn(beginReviseCommand);
         commandHandlers.handleBeginReviseTicket(beginReviseCm);
         
-        // Step 2: Undo revise (compensation)
-        UndoReviseTicketCommand undoReviseCommand = new UndoReviseTicketCommand(ticketId, originalItems);
+        // Step 2: Undo revise (compensation) - restores state from ticket's previousState
+        UndoReviseTicketCommand undoReviseCommand = new UndoReviseTicketCommand(ticketId);
         CommandMessage<UndoReviseTicketCommand> undoReviseCm = mock(CommandMessage.class);
         when(undoReviseCm.getCommand()).thenReturn(undoReviseCommand);
         
         commandHandlers.handleUndoReviseTicket(undoReviseCm);
         
         ticket = ticketRepository.findById(ticketId).orElseThrow();
+        // undoRevise restores state to previousState (AWAITING_ACCEPTANCE) without changing line items
+        assertEquals(TicketState.AWAITING_ACCEPTANCE, ticket.getState());
         assertEquals(2, ticket.getLineItems().size());
-        assertEquals(2, ticket.getLineItems().get(0).getQuantity());
-        assertEquals("Fries", ticket.getLineItems().get(1).getName());
     }
     
     @Test

@@ -159,7 +159,7 @@ public class CancelOrderSaga implements SimpleSaga<CancelOrderSagaData> {
         logger.info("CancelOrderSaga: Step 3 (PIVOT) - reverseAuthorization for authorizationId={}",
             data.getAuthorizationId());
         
-        return send(new ReverseAuthorizationCommand(data.getAuthorizationId()))
+        return send(new ReverseAuthorizationCommand(data.getConsumerId(), data.getAuthorizationId()))
             .to(ChannelNames.ACCOUNTING_SERVICE_COMMAND_CHANNEL)
             .build();
     }

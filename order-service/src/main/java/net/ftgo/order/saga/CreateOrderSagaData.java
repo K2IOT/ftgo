@@ -32,7 +32,7 @@ public class CreateOrderSagaData {
     
     // IDs of created resources (populated during saga execution)
     private Long ticketId;
-    private String authorizationId;
+    private Long authorizationId;
     
     /**
      * Default constructor for serialization.
@@ -108,17 +108,17 @@ public class CreateOrderSagaData {
         this.ticketId = ticketId;
     }
     
-    public String getAuthorizationId() {
+    public Long getAuthorizationId() {
         return authorizationId;
     }
     
-    public void setAuthorizationId(String authorizationId) {
+    public void setAuthorizationId(Long authorizationId) {
         this.authorizationId = authorizationId;
     }
     
     @Override
     public String toString() {
-        return String.format("CreateOrderSagaData{orderId=%d, consumerId=%d, restaurantId=%d, orderTotal=%s, ticketId=%d, authorizationId=%s}",
+        return String.format("CreateOrderSagaData{orderId=%d, consumerId=%d, restaurantId=%d, orderTotal=%s, ticketId=%d, authorizationId=%d}",
             orderId, consumerId, restaurantId, orderTotal, ticketId, authorizationId);
     }
 }

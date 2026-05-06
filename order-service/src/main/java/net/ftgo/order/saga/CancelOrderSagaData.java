@@ -19,8 +19,9 @@ package net.ftgo.order.saga;
 public class CancelOrderSagaData {
     
     private Long orderId;
+    private Long consumerId;
     private Long ticketId;
-    private String authorizationId;
+    private Long authorizationId;
     
     /**
      * Default constructor for serialization.
@@ -32,11 +33,13 @@ public class CancelOrderSagaData {
      * Creates saga data for order cancellation.
      * 
      * @param orderId the order ID to cancel
+     * @param consumerId the consumer ID (needed for accounting commands)
      * @param ticketId the ticket ID to cancel
      * @param authorizationId the authorization ID to reverse
      */
-    public CancelOrderSagaData(Long orderId, Long ticketId, String authorizationId) {
+    public CancelOrderSagaData(Long orderId, Long consumerId, Long ticketId, Long authorizationId) {
         this.orderId = orderId;
+        this.consumerId = consumerId;
         this.ticketId = ticketId;
         this.authorizationId = authorizationId;
     }
@@ -51,6 +54,14 @@ public class CancelOrderSagaData {
         this.orderId = orderId;
     }
     
+    public Long getConsumerId() {
+        return consumerId;
+    }
+    
+    public void setConsumerId(Long consumerId) {
+        this.consumerId = consumerId;
+    }
+    
     public Long getTicketId() {
         return ticketId;
     }
@@ -59,17 +70,17 @@ public class CancelOrderSagaData {
         this.ticketId = ticketId;
     }
     
-    public String getAuthorizationId() {
+    public Long getAuthorizationId() {
         return authorizationId;
     }
     
-    public void setAuthorizationId(String authorizationId) {
+    public void setAuthorizationId(Long authorizationId) {
         this.authorizationId = authorizationId;
     }
     
     @Override
     public String toString() {
-        return String.format("CancelOrderSagaData{orderId=%d, ticketId=%d, authorizationId=%s}",
-            orderId, ticketId, authorizationId);
+        return String.format("CancelOrderSagaData{orderId=%d, consumerId=%d, ticketId=%d, authorizationId=%d}",
+            orderId, consumerId, ticketId, authorizationId);
     }
 }

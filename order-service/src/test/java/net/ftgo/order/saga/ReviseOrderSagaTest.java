@@ -55,10 +55,11 @@ class ReviseOrderSagaTest {
         );
         Money revisedTotal = new Money(BigDecimal.valueOf(30.97));
         Long ticketId = 100L;
-        String authorizationId = "auth-123";
+        Long authorizationId = 123L;
         
         sagaData = new ReviseOrderSagaData(
             orderId, 
+            50L,
             revisedLineItems, 
             revisedTotal, 
             ticketId, 
@@ -95,7 +96,7 @@ class ReviseOrderSagaTest {
         assertEquals(2, sagaData.getRevisedLineItems().size());
         assertEquals(new Money(BigDecimal.valueOf(30.97)), sagaData.getRevisedTotal());
         assertEquals(100L, sagaData.getTicketId());
-        assertEquals("auth-123", sagaData.getAuthorizationId());
+        assertEquals(123L, sagaData.getAuthorizationId());
     }
     
     @Test
@@ -103,7 +104,7 @@ class ReviseOrderSagaTest {
         String result = sagaData.toString();
         assertTrue(result.contains("orderId=1"));
         assertTrue(result.contains("ticketId=100"));
-        assertTrue(result.contains("authorizationId=auth-123"));
+        assertTrue(result.contains("authorizationId=123"));
     }
     
     @Test
@@ -123,7 +124,7 @@ class ReviseOrderSagaTest {
         
         data.setOrderId(10L);
         data.setTicketId(20L);
-        data.setAuthorizationId("auth-xyz");
+        data.setAuthorizationId(123L);
         
         List<OrderLineItem> items = Arrays.asList(
             new OrderLineItem(1L, "Pizza", new Money(BigDecimal.valueOf(15.99)), 1)
@@ -135,7 +136,7 @@ class ReviseOrderSagaTest {
         
         assertEquals(10L, data.getOrderId());
         assertEquals(20L, data.getTicketId());
-        assertEquals("auth-xyz", data.getAuthorizationId());
+        assertEquals(123L, data.getAuthorizationId());
         assertEquals(items, data.getRevisedLineItems());
         assertEquals(total, data.getRevisedTotal());
     }
@@ -144,14 +145,14 @@ class ReviseOrderSagaTest {
     void testSagaData_AllFieldsSet() {
         Long orderId = 999L;
         Long ticketId = 888L;
-        String authorizationId = "auth-test-999";
+        Long authorizationId = 123L;
         List<OrderLineItem> lineItems = Arrays.asList(
             new OrderLineItem(1L, "Burger", new Money(BigDecimal.valueOf(12.99)), 2)
         );
         Money total = new Money(BigDecimal.valueOf(25.98));
         
         ReviseOrderSagaData data = new ReviseOrderSagaData(
-            orderId, lineItems, total, ticketId, authorizationId
+            orderId, 50L, lineItems, total, ticketId, authorizationId
         );
         
         assertEquals(orderId, data.getOrderId());
@@ -167,36 +168,39 @@ class ReviseOrderSagaTest {
     void testSagaData_WithNullOrderId() {
         ReviseOrderSagaData data = new ReviseOrderSagaData(
             null, 
+            50L,
             sagaData.getRevisedLineItems(), 
             sagaData.getRevisedTotal(), 
             100L, 
-            "auth-123"
+            123L
         );
         
         assertNull(data.getOrderId());
         assertEquals(100L, data.getTicketId());
-        assertEquals("auth-123", data.getAuthorizationId());
+        assertEquals(123L, data.getAuthorizationId());
     }
     
     @Test
     void testSagaData_WithNullTicketId() {
         ReviseOrderSagaData data = new ReviseOrderSagaData(
             1L, 
+            50L,
             sagaData.getRevisedLineItems(), 
             sagaData.getRevisedTotal(), 
             null, 
-            "auth-123"
+            123L
         );
         
         assertEquals(1L, data.getOrderId());
         assertNull(data.getTicketId());
-        assertEquals("auth-123", data.getAuthorizationId());
+        assertEquals(123L, data.getAuthorizationId());
     }
     
     @Test
     void testSagaData_WithNullAuthorizationId() {
         ReviseOrderSagaData data = new ReviseOrderSagaData(
             1L, 
+            50L,
             sagaData.getRevisedLineItems(), 
             sagaData.getRevisedTotal(), 
             100L, 
@@ -210,7 +214,7 @@ class ReviseOrderSagaTest {
     
     @Test
     void testSagaData_WithAllNullFields() {
-        ReviseOrderSagaData data = new ReviseOrderSagaData(null, null, null, null, null);
+        ReviseOrderSagaData data = new ReviseOrderSagaData(null, null, null, null, null, null);
         
         assertNull(data.getOrderId());
         assertNull(data.getRevisedLineItems());
@@ -245,10 +249,11 @@ class ReviseOrderSagaTest {
     void testSagaData_WithEmptyLineItems() {
         ReviseOrderSagaData data = new ReviseOrderSagaData(
             1L, 
+            50L,
             Arrays.asList(), 
             new Money(BigDecimal.ZERO), 
             100L, 
-            "auth-123"
+            123L
         );
         
         assertNotNull(data.getRevisedLineItems());
@@ -263,10 +268,11 @@ class ReviseOrderSagaTest {
         
         ReviseOrderSagaData data = new ReviseOrderSagaData(
             1L, 
+            50L,
             singleItem, 
             new Money(BigDecimal.valueOf(15.99)), 
             100L, 
-            "auth-123"
+            123L
         );
         
         assertEquals(1, data.getRevisedLineItems().size());
@@ -283,10 +289,11 @@ class ReviseOrderSagaTest {
         
         ReviseOrderSagaData data = new ReviseOrderSagaData(
             1L, 
+            50L,
             multipleItems, 
             new Money(BigDecimal.valueOf(38.95)), 
             100L, 
-            "auth-123"
+            123L
         );
         
         assertEquals(3, data.getRevisedLineItems().size());
@@ -306,10 +313,11 @@ class ReviseOrderSagaTest {
     void testSagaData_WithZeroRevisedTotal() {
         ReviseOrderSagaData data = new ReviseOrderSagaData(
             1L, 
+            50L,
             Arrays.asList(), 
             new Money(BigDecimal.ZERO), 
             100L, 
-            "auth-123"
+            123L
         );
         
         assertEquals(new Money(BigDecimal.ZERO), data.getRevisedTotal());
@@ -321,10 +329,11 @@ class ReviseOrderSagaTest {
         
         ReviseOrderSagaData data = new ReviseOrderSagaData(
             1L, 
+            50L,
             sagaData.getRevisedLineItems(), 
             largeTotal, 
             100L, 
-            "auth-123"
+            123L
         );
         
         assertEquals(largeTotal, data.getRevisedTotal());
@@ -334,7 +343,7 @@ class ReviseOrderSagaTest {
     
     @Test
     void testSagaData_ToStringWithNullFields() {
-        ReviseOrderSagaData data = new ReviseOrderSagaData(null, null, null, null, null);
+        ReviseOrderSagaData data = new ReviseOrderSagaData(null, null, null, null, null, null);
         String result = data.toString();
         
         assertNotNull(result);
@@ -345,16 +354,17 @@ class ReviseOrderSagaTest {
     void testSagaData_ToStringFormat() {
         ReviseOrderSagaData data = new ReviseOrderSagaData(
             123L, 
+            50L,
             sagaData.getRevisedLineItems(), 
             new Money(BigDecimal.valueOf(45.99)), 
             456L, 
-            "auth-789"
+            789L
         );
         String result = data.toString();
         
         assertTrue(result.contains("orderId=123"));
         assertTrue(result.contains("ticketId=456"));
-        assertTrue(result.contains("authorizationId=auth-789"));
+        assertTrue(result.contains("authorizationId=789"));
     }
     
     // ========== Saga Data Immutability Tests ==========
@@ -363,16 +373,17 @@ class ReviseOrderSagaTest {
     void testSagaData_CanBeModifiedAfterCreation() {
         ReviseOrderSagaData data = new ReviseOrderSagaData(
             1L, 
+            50L,
             sagaData.getRevisedLineItems(), 
             sagaData.getRevisedTotal(), 
             100L, 
-            "auth-original"
+            123L
         );
         
         // Modify fields
         data.setOrderId(2L);
         data.setTicketId(200L);
-        data.setAuthorizationId("auth-modified");
+        data.setAuthorizationId(123L);
         
         List<OrderLineItem> newItems = Arrays.asList(
             new OrderLineItem(5L, "Salad", new Money(BigDecimal.valueOf(8.99)), 1)
@@ -383,7 +394,7 @@ class ReviseOrderSagaTest {
         // Verify modifications
         assertEquals(2L, data.getOrderId());
         assertEquals(200L, data.getTicketId());
-        assertEquals("auth-modified", data.getAuthorizationId());
+        assertEquals(123L, data.getAuthorizationId());
         assertEquals(1, data.getRevisedLineItems().size());
         assertEquals("Salad", data.getRevisedLineItems().get(0).getName());
     }
@@ -394,48 +405,36 @@ class ReviseOrderSagaTest {
     void testSagaData_WithLargeIds() {
         Long largeOrderId = Long.MAX_VALUE;
         Long largeTicketId = Long.MAX_VALUE - 1;
-        String longAuthId = "auth-" + "x".repeat(100);
+        Long largeAuthId = Long.MAX_VALUE - 2;
         
         ReviseOrderSagaData data = new ReviseOrderSagaData(
             largeOrderId, 
+            50L,
             sagaData.getRevisedLineItems(), 
             sagaData.getRevisedTotal(), 
             largeTicketId, 
-            longAuthId
+            largeAuthId
         );
         
         assertEquals(largeOrderId, data.getOrderId());
         assertEquals(largeTicketId, data.getTicketId());
-        assertEquals(longAuthId, data.getAuthorizationId());
+        assertEquals(largeAuthId, data.getAuthorizationId());
     }
     
     @Test
-    void testSagaData_WithEmptyAuthorizationId() {
+    void testSagaData_WithZeroAuthorizationId() {
         ReviseOrderSagaData data = new ReviseOrderSagaData(
             1L, 
+            50L,
             sagaData.getRevisedLineItems(), 
             sagaData.getRevisedTotal(), 
             100L, 
-            ""
+            0L
         );
         
         assertEquals(1L, data.getOrderId());
         assertEquals(100L, data.getTicketId());
-        assertEquals("", data.getAuthorizationId());
-    }
-    
-    @Test
-    void testSagaData_WithSpecialCharactersInAuthorizationId() {
-        String specialAuthId = "auth-!@#$%^&*()_+-=[]{}|;':\",./<>?";
-        ReviseOrderSagaData data = new ReviseOrderSagaData(
-            1L, 
-            sagaData.getRevisedLineItems(), 
-            sagaData.getRevisedTotal(), 
-            100L, 
-            specialAuthId
-        );
-        
-        assertEquals(specialAuthId, data.getAuthorizationId());
+        assertEquals(0L, data.getAuthorizationId());
     }
     
     // ========== Multiple Saga Instance Tests ==========
@@ -456,17 +455,19 @@ class ReviseOrderSagaTest {
     void testMultipleSagaDataInstances_AreIndependent() {
         ReviseOrderSagaData data1 = new ReviseOrderSagaData(
             1L, 
+            50L,
             sagaData.getRevisedLineItems(), 
             sagaData.getRevisedTotal(), 
             100L, 
-            "auth-1"
+            123L
         );
         ReviseOrderSagaData data2 = new ReviseOrderSagaData(
             2L, 
+            60L,
             sagaData.getRevisedLineItems(), 
             sagaData.getRevisedTotal(), 
             200L, 
-            "auth-2"
+            456L
         );
         
         assertEquals(1L, data1.getOrderId());
@@ -498,10 +499,11 @@ class ReviseOrderSagaTest {
         // When: Creating saga data with matching total
         ReviseOrderSagaData data = new ReviseOrderSagaData(
             1L, 
+            50L,
             lineItems, 
             expectedTotal, 
             100L, 
-            "auth-123"
+            123L
         );
         
         // Then: Total matches expected value

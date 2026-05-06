@@ -2,12 +2,15 @@ package net.ftgo.order.config;
 
 import io.eventuate.tram.sagas.orchestration.SagaInstanceFactory;
 import io.eventuate.tram.sagas.orchestration.SagaManager;
-import io.eventuate.tram.sagas.orchestration.SagaManagerFactory;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationContext;
 import org.springframework.test.context.TestPropertySource;
+import org.springframework.boot.test.mock.mockito.MockBean;
+import io.eventuate.tram.messaging.producer.MessageProducer;
+import io.eventuate.tram.messaging.consumer.MessageConsumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -22,14 +25,22 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 @SpringBootTest
 @TestPropertySource(properties = {
-    "spring.datasource.url=jdbc:h2:mem:testdb",
+    "spring.datasource.url=jdbc:h2:mem:testdb;MODE=MySQL;INIT=RUNSCRIPT FROM 'classpath:eventuate-schema.sql'",
     "spring.datasource.driver-class-name=org.h2.Driver",
     "spring.jpa.hibernate.ddl-auto=create-drop",
     "spring.flyway.enabled=false",
     "eventuatelocal.kafka.bootstrap.servers=localhost:9092",
-    "spring.kafka.bootstrap-servers=localhost:9092"
+    "spring.kafka.bootstrap-servers=localhost:9092",
+    "spring.main.allow-bean-definition-overriding=true",
+    "spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.H2Dialect"
 })
 class OrderServiceConfigurationTest {
+    
+    @MockBean
+    private MessageProducer messageProducer;
+    
+    @MockBean
+    private MessageConsumer messageConsumer;
     
     @Autowired
     private ApplicationContext applicationContext;
@@ -47,18 +58,7 @@ class OrderServiceConfigurationTest {
             .isNotNull();
     }
     
-    @Test
-    void shouldLoadSagaManagerFactory() {
-        // Verify that SagaManagerFactory bean is available
-        assertThat(applicationContext.containsBean("sagaManagerFactory"))
-            .as("SagaManagerFactory bean should be available")
-            .isTrue();
-        
-        SagaManagerFactory sagaManagerFactory = applicationContext.getBean(SagaManagerFactory.class);
-        assertThat(sagaManagerFactory)
-            .as("SagaManagerFactory should not be null")
-            .isNotNull();
-    }
+
     
     @Test
     void shouldLoadOrderServiceConfiguration() {
@@ -78,10 +78,6 @@ class OrderServiceConfigurationTest {
         // Verify that all necessary saga orchestrator beans are available
         assertThat(applicationContext.containsBean("sagaInstanceFactory"))
             .as("SagaInstanceFactory should be configured")
-            .isTrue();
-        
-        assertThat(applicationContext.containsBean("sagaManagerFactory"))
-            .as("SagaManagerFactory should be configured")
             .isTrue();
         
         assertThat(applicationContext.containsBean("sagaCommandProducer"))

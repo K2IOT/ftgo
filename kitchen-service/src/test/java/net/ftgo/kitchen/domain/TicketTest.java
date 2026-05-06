@@ -298,8 +298,8 @@ class TicketTest {
         // When
         assertDoesNotThrow(ticket::beginCancel);
         
-        // Then - state should not change yet
-        assertEquals(TicketState.AWAITING_ACCEPTANCE, ticket.getState());
+        // Then - state should transition to CANCEL_PENDING (semantic lock)
+        assertEquals(TicketState.CANCEL_PENDING, ticket.getState());
     }
     
     @Test
@@ -333,18 +333,18 @@ class TicketTest {
     }
     
     @Test
-    @DisplayName("Should undo cancellation")
+    @DisplayName("Should undo cancellation from CANCEL_PENDING")
     void shouldUndoCancellation() {
         // Given
         Ticket ticket = new Ticket(RESTAURANT_ID, ORDER_ID, createSampleLineItems());
         ticket.approve();
-        ticket.cancel();
-        assertEquals(TicketState.CANCELLED, ticket.getState());
+        ticket.beginCancel();
+        assertEquals(TicketState.CANCEL_PENDING, ticket.getState());
         
         // When
         ticket.undoCancel();
         
-        // Then
+        // Then - should restore to AWAITING_ACCEPTANCE (the state before beginCancel)
         assertEquals(TicketState.AWAITING_ACCEPTANCE, ticket.getState());
     }
     
@@ -362,7 +362,8 @@ class TicketTest {
         // When
         assertDoesNotThrow(() -> ticket.beginRevise(revisedItems));
         
-        // Then - line items should not change yet
+        // Then - state should transition to REVISION_PENDING, line items should not change yet
+        assertEquals(TicketState.REVISION_PENDING, ticket.getState());
         assertEquals(2, ticket.getLineItems().size());
     }
     
@@ -417,36 +418,37 @@ class TicketTest {
             new TicketLineItem(3L, "Salad", 1)
         );
         ticket.beginRevise(revisedItems);
+        assertEquals(TicketState.REVISION_PENDING, ticket.getState());
         
         // When
         ticket.confirmRevise(revisedItems);
         
-        // Then
+        // Then - line items updated, state restored to AWAITING_ACCEPTANCE
+        assertEquals(TicketState.AWAITING_ACCEPTANCE, ticket.getState());
         assertEquals(2, ticket.getLineItems().size());
         assertEquals(3, ticket.getLineItems().get(0).getQuantity());
         assertEquals("Salad", ticket.getLineItems().get(1).getName());
     }
     
     @Test
-    @DisplayName("Should undo revision and restore original line items")
-    void shouldUndoRevisionAndRestoreOriginalLineItems() {
+    @DisplayName("Should undo revision and restore state without changing line items")
+    void shouldUndoRevisionAndRestoreState() {
         // Given
         Ticket ticket = new Ticket(RESTAURANT_ID, ORDER_ID, createSampleLineItems());
         ticket.approve();
-        List<TicketLineItem> originalItems = ticket.getLineItems();
         List<TicketLineItem> revisedItems = Arrays.asList(
             new TicketLineItem(1L, "Burger", 3)
         );
-        ticket.confirmRevise(revisedItems);
-        assertEquals(1, ticket.getLineItems().size());
+        ticket.beginRevise(revisedItems);
+        assertEquals(TicketState.REVISION_PENDING, ticket.getState());
+        // Line items unchanged during beginRevise
+        assertEquals(2, ticket.getLineItems().size());
         
         // When
-        ticket.undoRevise(Arrays.asList(
-            new TicketLineItem(1L, "Burger", 2),
-            new TicketLineItem(2L, "Fries", 1)
-        ));
+        ticket.undoRevise();
         
-        // Then
+        // Then - state restored to AWAITING_ACCEPTANCE, line items unchanged
+        assertEquals(TicketState.AWAITING_ACCEPTANCE, ticket.getState());
         assertEquals(2, ticket.getLineItems().size());
         assertEquals(2, ticket.getLineItems().get(0).getQuantity());
         assertEquals("Fries", ticket.getLineItems().get(1).getName());

@@ -24,12 +24,13 @@ import java.util.List;
 public class ReviseOrderSagaData {
     
     private Long orderId;
+    private Long consumerId;
     private List<OrderLineItem> revisedLineItems;
     private Money revisedTotal;
     
     // IDs of resources to update (populated from existing order)
     private Long ticketId;
-    private String authorizationId;
+    private Long authorizationId;
     
     /**
      * Default constructor for serialization.
@@ -41,14 +42,16 @@ public class ReviseOrderSagaData {
      * Creates saga data for order revision.
      * 
      * @param orderId the order ID to revise
+     * @param consumerId the consumer ID (needed for accounting commands)
      * @param revisedLineItems the new line items
      * @param revisedTotal the new order total
      * @param ticketId the ticket ID to update
      * @param authorizationId the authorization ID to revise
      */
-    public ReviseOrderSagaData(Long orderId, List<OrderLineItem> revisedLineItems, 
-                               Money revisedTotal, Long ticketId, String authorizationId) {
+    public ReviseOrderSagaData(Long orderId, Long consumerId, List<OrderLineItem> revisedLineItems, 
+                               Money revisedTotal, Long ticketId, Long authorizationId) {
         this.orderId = orderId;
+        this.consumerId = consumerId;
         this.revisedLineItems = revisedLineItems;
         this.revisedTotal = revisedTotal;
         this.ticketId = ticketId;
@@ -63,6 +66,14 @@ public class ReviseOrderSagaData {
     
     public void setOrderId(Long orderId) {
         this.orderId = orderId;
+    }
+    
+    public Long getConsumerId() {
+        return consumerId;
+    }
+    
+    public void setConsumerId(Long consumerId) {
+        this.consumerId = consumerId;
     }
     
     public List<OrderLineItem> getRevisedLineItems() {
@@ -89,17 +100,17 @@ public class ReviseOrderSagaData {
         this.ticketId = ticketId;
     }
     
-    public String getAuthorizationId() {
+    public Long getAuthorizationId() {
         return authorizationId;
     }
     
-    public void setAuthorizationId(String authorizationId) {
+    public void setAuthorizationId(Long authorizationId) {
         this.authorizationId = authorizationId;
     }
     
     @Override
     public String toString() {
-        return String.format("ReviseOrderSagaData{orderId=%d, revisedTotal=%s, ticketId=%d, authorizationId=%s}",
-            orderId, revisedTotal, ticketId, authorizationId);
+        return String.format("ReviseOrderSagaData{orderId=%d, consumerId=%d, revisedTotal=%s, ticketId=%d, authorizationId=%d}",
+            orderId, consumerId, revisedTotal, ticketId, authorizationId);
     }
 }

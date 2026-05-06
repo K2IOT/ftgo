@@ -49,6 +49,14 @@ public class Ticket {
     @Column(name = "prepared_at")
     private LocalDateTime preparedAt;
     
+    /**
+     * Stores the state before a pending operation (cancel/revise) was initiated.
+     * Used by undoCancel()/undoRevise() to restore to the correct previous state.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "previous_state", length = 50)
+    private TicketState previousState;
+    
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
     
@@ -184,73 +192,105 @@ public class Ticket {
     
     /**
      * Begins cancellation process (for CancelOrderSaga).
-     * Semantic lock to prevent concurrent modifications.
+     * Sets CANCEL_PENDING semantic lock to prevent concurrent modifications.
+     * Stores the previous state for proper undo.
+     * 
+     * @throws IllegalStateException if ticket is already cancelled or in a pending state
      */
     public void beginCancel() {
         if (state == TicketState.CANCELLED) {
             throw new IllegalStateException("Ticket is already cancelled");
         }
-        // In a full implementation, this might set a CANCEL_PENDING state
-        // For now, we'll just validate the ticket can be cancelled
+        if (state == TicketState.CANCEL_PENDING || state == TicketState.REVISION_PENDING) {
+            throw new IllegalStateException(
+                String.format("Cannot cancel ticket in state %s. Operation already in progress.", state)
+            );
+        }
+        this.previousState = this.state;
+        this.state = TicketState.CANCEL_PENDING;
     }
     
     /**
      * Confirms cancellation (for CancelOrderSaga).
+     * 
+     * @throws IllegalStateException if ticket is not in CANCEL_PENDING state
      */
     public void confirmCancel() {
+        if (state != TicketState.CANCEL_PENDING) {
+            throw new IllegalStateException(
+                String.format("Cannot confirm cancel in state %s. Expected CANCEL_PENDING.", state)
+            );
+        }
         this.state = TicketState.CANCELLED;
+        this.previousState = null;
     }
     
     /**
      * Undoes cancellation (compensation for CancelOrderSaga).
-     * Restores ticket to previous state.
+     * Restores ticket to its actual previous state (not hardcoded).
      */
     public void undoCancel() {
-        // In a full implementation, this would restore the previous state
-        // For now, we'll transition back to AWAITING_ACCEPTANCE
-        if (state == TicketState.CANCELLED) {
-            this.state = TicketState.AWAITING_ACCEPTANCE;
+        if (state == TicketState.CANCEL_PENDING && previousState != null) {
+            this.state = previousState;
+            this.previousState = null;
         }
     }
     
     /**
      * Begins revision process (for ReviseOrderSaga).
+     * Sets REVISION_PENDING semantic lock to prevent concurrent modifications.
+     * Stores the previous state for proper undo.
      * 
-     * @param revisedLineItems the new line items
+     * @param revisedLineItems the new line items (validated but not applied until confirmRevise)
+     * @throws IllegalStateException if ticket cannot be revised in current state
      */
     public void beginRevise(List<TicketLineItem> revisedLineItems) {
         validateLineItems(revisedLineItems);
-        // In a full implementation, this might set a REVISION_PENDING state
-        // For now, we'll just validate the ticket can be revised
         if (state == TicketState.CANCELLED || state == TicketState.PICKED_UP) {
             throw new IllegalStateException(
                 String.format("Cannot revise ticket in state %s", state)
             );
         }
+        if (state == TicketState.CANCEL_PENDING || state == TicketState.REVISION_PENDING) {
+            throw new IllegalStateException(
+                String.format("Cannot revise ticket in state %s. Operation already in progress.", state)
+            );
+        }
+        this.previousState = this.state;
+        this.state = TicketState.REVISION_PENDING;
     }
     
     /**
      * Confirms revision (for ReviseOrderSaga).
-     * Updates line items to the revised version.
+     * Updates line items to the revised version and restores to the previous state.
      * 
      * @param revisedLineItems the new line items
+     * @throws IllegalStateException if ticket is not in REVISION_PENDING state
      */
     public void confirmRevise(List<TicketLineItem> revisedLineItems) {
         validateLineItems(revisedLineItems);
+        if (state != TicketState.REVISION_PENDING) {
+            throw new IllegalStateException(
+                String.format("Cannot confirm revise in state %s. Expected REVISION_PENDING.", state)
+            );
+        }
         this.lineItems.clear();
         this.lineItems.addAll(revisedLineItems);
+        // Restore to the state before revision started
+        this.state = previousState != null ? previousState : TicketState.AWAITING_ACCEPTANCE;
+        this.previousState = null;
     }
     
     /**
      * Undoes revision (compensation for ReviseOrderSaga).
-     * Restores original line items.
-     * 
-     * @param originalLineItems the original line items
+     * Restores ticket to its actual previous state. Line items are not modified
+     * because beginRevise() only sets the pending state without applying changes.
      */
-    public void undoRevise(List<TicketLineItem> originalLineItems) {
-        validateLineItems(originalLineItems);
-        this.lineItems.clear();
-        this.lineItems.addAll(originalLineItems);
+    public void undoRevise() {
+        if (state == TicketState.REVISION_PENDING && previousState != null) {
+            this.state = previousState;
+            this.previousState = null;
+        }
     }
     
     // Getters

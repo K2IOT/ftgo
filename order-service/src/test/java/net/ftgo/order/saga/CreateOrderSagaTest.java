@@ -93,7 +93,7 @@ class CreateOrderSagaTest {
      */
     @Test
     void testSagaData_StoresAuthorizationId() {
-        String expectedAuthorizationId = "auth-456";
+        Long expectedAuthorizationId = 123L;
         
         sagaData.setAuthorizationId(expectedAuthorizationId);
         
@@ -107,7 +107,7 @@ class CreateOrderSagaTest {
     @Test
     void testSagaData_StoresBothIds() {
         Long expectedTicketId = 999L;
-        String expectedAuthorizationId = "auth-xyz-123";
+        Long expectedAuthorizationId = 123L;
         
         sagaData.setTicketId(expectedTicketId);
         sagaData.setAuthorizationId(expectedAuthorizationId);
@@ -132,7 +132,7 @@ class CreateOrderSagaTest {
      */
     @Test
     void testAuthorizeCardReply() {
-        String authorizationId = "auth-abc-123";
+        Long authorizationId = 123L;
         AuthorizeCardReply reply = new AuthorizeCardReply(authorizationId);
         
         assertEquals(authorizationId, reply.getAuthorizationId());
@@ -215,7 +215,7 @@ class CreateOrderSagaTest {
         data.setOrderTotal(total);
         
         data.setTicketId(40L);
-        data.setAuthorizationId("auth-test");
+        data.setAuthorizationId(123L);
         
         assertEquals(10L, data.getOrderId());
         assertEquals(20L, data.getConsumerId());
@@ -223,6 +223,6 @@ class CreateOrderSagaTest {
         assertEquals(items, data.getLineItems());
         assertEquals(total, data.getOrderTotal());
         assertEquals(40L, data.getTicketId());
-        assertEquals("auth-test", data.getAuthorizationId());
+        assertEquals(123L, data.getAuthorizationId());
     }
 }

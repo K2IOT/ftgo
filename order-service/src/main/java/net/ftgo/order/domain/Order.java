@@ -72,6 +72,12 @@ public class Order {
     })
     private Money orderTotal;
     
+    @Column(name = "ticket_id")
+    private Long ticketId;
+    
+    @Column(name = "authorization_id")
+    private Long authorizationId;
+    
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
     
@@ -407,6 +413,22 @@ public class Order {
     
     public Money getOrderTotal() {
         return orderTotal;
+    }
+    
+    public Long getTicketId() {
+        return ticketId;
+    }
+    
+    public void setTicketId(Long ticketId) {
+        this.ticketId = ticketId;
+    }
+    
+    public Long getAuthorizationId() {
+        return authorizationId;
+    }
+    
+    public void setAuthorizationId(Long authorizationId) {
+        this.authorizationId = authorizationId;
     }
     
     public LocalDateTime getCreatedAt() {

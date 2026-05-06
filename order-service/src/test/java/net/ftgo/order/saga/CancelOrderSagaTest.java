@@ -41,10 +41,11 @@ class CancelOrderSagaTest {
         
         // Create test saga data
         Long orderId = 1L;
+        Long consumerId = 50L;
         Long ticketId = 100L;
-        String authorizationId = "auth-123";
+        Long authorizationId = 123L;
         
-        sagaData = new CancelOrderSagaData(orderId, ticketId, authorizationId);
+        sagaData = new CancelOrderSagaData(orderId, consumerId, ticketId, authorizationId);
     }
     
     // ========== Saga Definition Tests ==========
@@ -73,16 +74,18 @@ class CancelOrderSagaTest {
     @Test
     void testSagaDataCreation() {
         assertEquals(1L, sagaData.getOrderId());
+        assertEquals(50L, sagaData.getConsumerId());
         assertEquals(100L, sagaData.getTicketId());
-        assertEquals("auth-123", sagaData.getAuthorizationId());
+        assertEquals(123L, sagaData.getAuthorizationId());
     }
     
     @Test
     void testSagaDataToString() {
         String result = sagaData.toString();
         assertTrue(result.contains("orderId=1"));
+        assertTrue(result.contains("consumerId=50"));
         assertTrue(result.contains("ticketId=100"));
-        assertTrue(result.contains("authorizationId=auth-123"));
+        assertTrue(result.contains("authorizationId=123"));
     }
     
     @Test
@@ -90,6 +93,7 @@ class CancelOrderSagaTest {
         CancelOrderSagaData emptyData = new CancelOrderSagaData();
         
         assertNull(emptyData.getOrderId());
+        assertNull(emptyData.getConsumerId());
         assertNull(emptyData.getTicketId());
         assertNull(emptyData.getAuthorizationId());
     }
@@ -99,23 +103,27 @@ class CancelOrderSagaTest {
         CancelOrderSagaData data = new CancelOrderSagaData();
         
         data.setOrderId(10L);
+        data.setConsumerId(50L);
         data.setTicketId(20L);
-        data.setAuthorizationId("auth-xyz");
+        data.setAuthorizationId(30L);
         
         assertEquals(10L, data.getOrderId());
+        assertEquals(50L, data.getConsumerId());
         assertEquals(20L, data.getTicketId());
-        assertEquals("auth-xyz", data.getAuthorizationId());
+        assertEquals(30L, data.getAuthorizationId());
     }
     
     @Test
     void testSagaData_AllFieldsSet() {
         Long orderId = 999L;
+        Long consumerId = 500L;
         Long ticketId = 888L;
-        String authorizationId = "auth-test-999";
+        Long authorizationId = 777L;
         
-        CancelOrderSagaData data = new CancelOrderSagaData(orderId, ticketId, authorizationId);
+        CancelOrderSagaData data = new CancelOrderSagaData(orderId, consumerId, ticketId, authorizationId);
         
         assertEquals(orderId, data.getOrderId());
+        assertEquals(consumerId, data.getConsumerId());
         assertEquals(ticketId, data.getTicketId());
         assertEquals(authorizationId, data.getAuthorizationId());
     }
@@ -124,25 +132,25 @@ class CancelOrderSagaTest {
     
     @Test
     void testSagaData_WithNullOrderId() {
-        CancelOrderSagaData data = new CancelOrderSagaData(null, 100L, "auth-123");
+        CancelOrderSagaData data = new CancelOrderSagaData(null, 50L, 100L, 123L);
         
         assertNull(data.getOrderId());
         assertEquals(100L, data.getTicketId());
-        assertEquals("auth-123", data.getAuthorizationId());
+        assertEquals(123L, data.getAuthorizationId());
     }
     
     @Test
     void testSagaData_WithNullTicketId() {
-        CancelOrderSagaData data = new CancelOrderSagaData(1L, null, "auth-123");
+        CancelOrderSagaData data = new CancelOrderSagaData(1L, 50L, null, 123L);
         
         assertEquals(1L, data.getOrderId());
         assertNull(data.getTicketId());
-        assertEquals("auth-123", data.getAuthorizationId());
+        assertEquals(123L, data.getAuthorizationId());
     }
     
     @Test
     void testSagaData_WithNullAuthorizationId() {
-        CancelOrderSagaData data = new CancelOrderSagaData(1L, 100L, null);
+        CancelOrderSagaData data = new CancelOrderSagaData(1L, 50L, 100L, null);
         
         assertEquals(1L, data.getOrderId());
         assertEquals(100L, data.getTicketId());
@@ -151,9 +159,10 @@ class CancelOrderSagaTest {
     
     @Test
     void testSagaData_WithAllNullFields() {
-        CancelOrderSagaData data = new CancelOrderSagaData(null, null, null);
+        CancelOrderSagaData data = new CancelOrderSagaData(null, null, null, null);
         
         assertNull(data.getOrderId());
+        assertNull(data.getConsumerId());
         assertNull(data.getTicketId());
         assertNull(data.getAuthorizationId());
     }
@@ -162,7 +171,7 @@ class CancelOrderSagaTest {
     
     @Test
     void testSagaData_ToStringWithNullFields() {
-        CancelOrderSagaData data = new CancelOrderSagaData(null, null, null);
+        CancelOrderSagaData data = new CancelOrderSagaData(null, null, null, null);
         String result = data.toString();
         
         assertNotNull(result);
@@ -171,29 +180,31 @@ class CancelOrderSagaTest {
     
     @Test
     void testSagaData_ToStringFormat() {
-        CancelOrderSagaData data = new CancelOrderSagaData(123L, 456L, "auth-789");
+        CancelOrderSagaData data = new CancelOrderSagaData(123L, 50L, 456L, 789L);
         String result = data.toString();
         
         assertTrue(result.contains("orderId=123"));
         assertTrue(result.contains("ticketId=456"));
-        assertTrue(result.contains("authorizationId=auth-789"));
+        assertTrue(result.contains("authorizationId=789"));
     }
     
     // ========== Saga Data Immutability Tests ==========
     
     @Test
     void testSagaData_CanBeModifiedAfterCreation() {
-        CancelOrderSagaData data = new CancelOrderSagaData(1L, 100L, "auth-original");
+        CancelOrderSagaData data = new CancelOrderSagaData(1L, 50L, 100L, 200L);
         
         // Modify fields
         data.setOrderId(2L);
+        data.setConsumerId(60L);
         data.setTicketId(200L);
-        data.setAuthorizationId("auth-modified");
+        data.setAuthorizationId(300L);
         
         // Verify modifications
         assertEquals(2L, data.getOrderId());
+        assertEquals(60L, data.getConsumerId());
         assertEquals(200L, data.getTicketId());
-        assertEquals("auth-modified", data.getAuthorizationId());
+        assertEquals(300L, data.getAuthorizationId());
     }
     
     // ========== Saga Data Edge Cases ==========
@@ -201,31 +212,16 @@ class CancelOrderSagaTest {
     @Test
     void testSagaData_WithLargeIds() {
         Long largeOrderId = Long.MAX_VALUE;
+        Long largeConsumerId = Long.MAX_VALUE - 2;
         Long largeTicketId = Long.MAX_VALUE - 1;
-        String longAuthId = "auth-" + "x".repeat(100);
+        Long largeAuthId = Long.MAX_VALUE - 3;
         
-        CancelOrderSagaData data = new CancelOrderSagaData(largeOrderId, largeTicketId, longAuthId);
+        CancelOrderSagaData data = new CancelOrderSagaData(largeOrderId, largeConsumerId, largeTicketId, largeAuthId);
         
         assertEquals(largeOrderId, data.getOrderId());
+        assertEquals(largeConsumerId, data.getConsumerId());
         assertEquals(largeTicketId, data.getTicketId());
-        assertEquals(longAuthId, data.getAuthorizationId());
-    }
-    
-    @Test
-    void testSagaData_WithEmptyAuthorizationId() {
-        CancelOrderSagaData data = new CancelOrderSagaData(1L, 100L, "");
-        
-        assertEquals(1L, data.getOrderId());
-        assertEquals(100L, data.getTicketId());
-        assertEquals("", data.getAuthorizationId());
-    }
-    
-    @Test
-    void testSagaData_WithSpecialCharactersInAuthorizationId() {
-        String specialAuthId = "auth-!@#$%^&*()_+-=[]{}|;':\",./<>?";
-        CancelOrderSagaData data = new CancelOrderSagaData(1L, 100L, specialAuthId);
-        
-        assertEquals(specialAuthId, data.getAuthorizationId());
+        assertEquals(largeAuthId, data.getAuthorizationId());
     }
     
     // ========== Multiple Saga Instance Tests ==========
@@ -244,8 +240,8 @@ class CancelOrderSagaTest {
     
     @Test
     void testMultipleSagaDataInstances_AreIndependent() {
-        CancelOrderSagaData data1 = new CancelOrderSagaData(1L, 100L, "auth-1");
-        CancelOrderSagaData data2 = new CancelOrderSagaData(2L, 200L, "auth-2");
+        CancelOrderSagaData data1 = new CancelOrderSagaData(1L, 50L, 100L, 111L);
+        CancelOrderSagaData data2 = new CancelOrderSagaData(2L, 60L, 200L, 222L);
         
         assertEquals(1L, data1.getOrderId());
         assertEquals(2L, data2.getOrderId());

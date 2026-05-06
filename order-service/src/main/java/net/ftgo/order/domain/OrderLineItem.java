@@ -21,8 +21,7 @@ public class OrderLineItem {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
     
-    @NotNull(message = "Order ID is required")
-    @Column(name = "order_id", nullable = false)
+    @Column(name = "order_id", nullable = false, insertable = false, updatable = false)
     private Long orderId;
     
     @NotNull(message = "Menu item ID is required")

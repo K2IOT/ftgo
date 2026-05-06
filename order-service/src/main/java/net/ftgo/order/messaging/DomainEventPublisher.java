@@ -24,7 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
  * 5. Debezium publishes event to Kafka topic
  * 6. Debezium marks outbox entry as published
  */
-@Component
+@Component("ftgoDomainEventPublisher")
 public class DomainEventPublisher {
     
     private static final Logger logger = LoggerFactory.getLogger(DomainEventPublisher.class);

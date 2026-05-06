@@ -68,7 +68,7 @@ public class AccountingServiceCommandHandlers {
      * @return success reply with CardAuthorized or failure reply with error message
      */
     @Transactional
-    private Message handleAuthorizeCard(CommandMessage<AuthorizeCardCommand> cm) {
+    public Message handleAuthorizeCard(CommandMessage<AuthorizeCardCommand> cm) {
         AuthorizeCardCommand command = cm.getCommand();
         
         logger.info("Authorizing card for consumer {} with requestId {} and amount {}", 
@@ -126,7 +126,7 @@ public class AccountingServiceCommandHandlers {
      * @return success reply with AuthorizationReversed or failure reply with error message
      */
     @Transactional
-    private Message handleReverseAuthorization(CommandMessage<ReverseAuthorizationCommand> cm) {
+    public Message handleReverseAuthorization(CommandMessage<ReverseAuthorizationCommand> cm) {
         ReverseAuthorizationCommand command = cm.getCommand();
         
         logger.info("Reversing authorization {} for consumer {}", 
@@ -183,7 +183,7 @@ public class AccountingServiceCommandHandlers {
      * @return success reply with AuthorizationRevised or failure reply with error message
      */
     @Transactional
-    private Message handleReviseAuthorization(CommandMessage<ReviseAuthorizationCommand> cm) {
+    public Message handleReviseAuthorization(CommandMessage<ReviseAuthorizationCommand> cm) {
         ReviseAuthorizationCommand command = cm.getCommand();
         
         logger.info("Revising authorization {} for consumer {} to new amount {}", 

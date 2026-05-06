@@ -17,7 +17,7 @@ public class OrderApproved {
     private Long restaurantId;
     private Money orderTotal;
     private Long ticketId;
-    private String authorizationId;
+    private Long authorizationId;
     
     /**
      * Default constructor for serialization.
@@ -36,7 +36,7 @@ public class OrderApproved {
      * @param authorizationId the payment authorization ID
      */
     public OrderApproved(Long orderId, Long consumerId, Long restaurantId, Money orderTotal,
-                        Long ticketId, String authorizationId) {
+                        Long ticketId, Long authorizationId) {
         this.orderId = orderId;
         this.consumerId = consumerId;
         this.restaurantId = restaurantId;
@@ -85,11 +85,11 @@ public class OrderApproved {
         this.ticketId = ticketId;
     }
     
-    public String getAuthorizationId() {
+    public Long getAuthorizationId() {
         return authorizationId;
     }
     
-    public void setAuthorizationId(String authorizationId) {
+    public void setAuthorizationId(Long authorizationId) {
         this.authorizationId = authorizationId;
     }
 }

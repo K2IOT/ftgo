@@ -253,7 +253,11 @@ public class CreateOrderSaga implements SimpleSaga<CreateOrderSagaData> {
         logger.info("CreateOrderSaga: Step 6 (retriable) - approveOrder for orderId={}", 
             data.getOrderId());
         
-        return send(new CreateOrderSagaLocalSteps.ApproveOrderCommand(data.getOrderId()))
+        return send(new CreateOrderSagaLocalSteps.ApproveOrderCommand(
+                data.getOrderId(),
+                data.getTicketId(),
+                data.getAuthorizationId()
+            ))
             .to(ChannelNames.ORDER_SERVICE_COMMAND_CHANNEL)
             .build();
     }

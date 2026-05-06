@@ -378,7 +378,8 @@ public class KitchenServiceCommandHandlers {
     
     /**
      * Handles UndoReviseTicketCommand (compensation for ReviseOrderSaga).
-     * Undoes revision and restores original line items.
+     * Restores ticket from REVISION_PENDING to its previous state.
+     * Line items are not modified because beginRevise() only sets the pending state.
      * 
      * @param cm the command message
      * @return success reply or failure reply with error message
@@ -395,12 +396,7 @@ public class KitchenServiceCommandHandlers {
                     String.format("Ticket %d not found", command.getTicketId())
                 ));
             
-            // Convert DTOs to entities
-            List<TicketLineItem> originalLineItems = command.getOriginalLineItems().stream()
-                .map(dto -> new TicketLineItem(dto.getMenuItemId(), dto.getName(), dto.getQuantity()))
-                .collect(Collectors.toList());
-            
-            ticket.undoRevise(originalLineItems);
+            ticket.undoRevise();
             ticketRepository.save(ticket);
             
             logger.info("Revision undone for ticket {}", command.getTicketId());
