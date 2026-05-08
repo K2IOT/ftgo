@@ -3,9 +3,14 @@ spring:
     name: api-gateway
   cloud:
     gateway:
+      # Global defaults
+      default-filters:
+        - name: RequestSize
+          args:
+            maxSize: 10MB
       routes:
         - id: order-service
-          uri: http://localhost:8081
+          uri: ${services.order-service.url:http://localhost:8081}
           predicates:
             - Path=/orders/**
           filters:
@@ -17,9 +22,22 @@ spring:
               args:
                 redis-rate-limiter.replenishRate: 100
                 redis-rate-limiter.burstCapacity: 200
+                redis-rate-limiter.requestedTokens: 1
                 key-resolver: "#{@userKeyResolver}"
+                deny-empty-key: false
+            - name: Retry
+              args:
+                retries: 3
+                statuses: BAD_GATEWAY,SERVICE_UNAVAILABLE,GATEWAY_TIMEOUT
+                methods: GET
+                backoff:
+                  firstBackoff: 500ms
+                  maxBackoff: 2000ms
+                  factor: 2
+                  basedOnPreviousValue: false
+
         - id: consumer-service
-          uri: http://localhost:8082
+          uri: ${services.consumer-service.url:http://localhost:8082}
           predicates:
             - Path=/consumers/**
           filters:
@@ -31,9 +49,22 @@ spring:
               args:
                 redis-rate-limiter.replenishRate: 100
                 redis-rate-limiter.burstCapacity: 200
+                redis-rate-limiter.requestedTokens: 1
                 key-resolver: "#{@userKeyResolver}"
+                deny-empty-key: false
+            - name: Retry
+              args:
+                retries: 3
+                statuses: BAD_GATEWAY,SERVICE_UNAVAILABLE,GATEWAY_TIMEOUT
+                methods: GET
+                backoff:
+                  firstBackoff: 500ms
+                  maxBackoff: 2000ms
+                  factor: 2
+                  basedOnPreviousValue: false
+
         - id: restaurant-service
-          uri: http://localhost:8083
+          uri: ${services.restaurant-service.url:http://localhost:8083}
           predicates:
             - Path=/restaurants/**
           filters:
@@ -45,9 +76,22 @@ spring:
               args:
                 redis-rate-limiter.replenishRate: 100
                 redis-rate-limiter.burstCapacity: 200
+                redis-rate-limiter.requestedTokens: 1
                 key-resolver: "#{@userKeyResolver}"
+                deny-empty-key: false
+            - name: Retry
+              args:
+                retries: 3
+                statuses: BAD_GATEWAY,SERVICE_UNAVAILABLE,GATEWAY_TIMEOUT
+                methods: GET
+                backoff:
+                  firstBackoff: 500ms
+                  maxBackoff: 2000ms
+                  factor: 2
+                  basedOnPreviousValue: false
+
         - id: kitchen-service
-          uri: http://localhost:8084
+          uri: ${services.kitchen-service.url:http://localhost:8084}
           predicates:
             - Path=/tickets/**
           filters:
@@ -59,9 +103,49 @@ spring:
               args:
                 redis-rate-limiter.replenishRate: 100
                 redis-rate-limiter.burstCapacity: 200
+                redis-rate-limiter.requestedTokens: 1
                 key-resolver: "#{@userKeyResolver}"
+                deny-empty-key: false
+            - name: Retry
+              args:
+                retries: 3
+                statuses: BAD_GATEWAY,SERVICE_UNAVAILABLE,GATEWAY_TIMEOUT
+                methods: GET
+                backoff:
+                  firstBackoff: 500ms
+                  maxBackoff: 2000ms
+                  factor: 2
+                  basedOnPreviousValue: false
+
+        - id: accounting-service
+          uri: ${services.accounting-service.url:http://localhost:8085}
+          predicates:
+            - Path=/accounts/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: accountingServiceCircuitBreaker
+                fallbackUri: forward:/fallback/accounts
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 50
+                redis-rate-limiter.burstCapacity: 100
+                redis-rate-limiter.requestedTokens: 1
+                key-resolver: "#{@userKeyResolver}"
+                deny-empty-key: false
+            - name: Retry
+              args:
+                retries: 3
+                statuses: BAD_GATEWAY,SERVICE_UNAVAILABLE,GATEWAY_TIMEOUT
+                methods: GET
+                backoff:
+                  firstBackoff: 500ms
+                  maxBackoff: 2000ms
+                  factor: 2
+                  basedOnPreviousValue: false
+
         - id: delivery-service
-          uri: http://localhost:8086
+          uri: ${services.delivery-service.url:http://localhost:8086}
           predicates:
             - Path=/deliveries/**
           filters:
@@ -73,12 +157,29 @@ spring:
               args:
                 redis-rate-limiter.replenishRate: 100
                 redis-rate-limiter.burstCapacity: 200
+                redis-rate-limiter.requestedTokens: 1
                 key-resolver: "#{@userKeyResolver}"
+                deny-empty-key: false
+            - name: Retry
+              args:
+                retries: 3
+                statuses: BAD_GATEWAY,SERVICE_UNAVAILABLE,GATEWAY_TIMEOUT
+                methods: GET
+                backoff:
+                  firstBackoff: 500ms
+                  maxBackoff: 2000ms
+                  factor: 2
+                  basedOnPreviousValue: false
+
+        # B1 FIX: Order History Service uses @RequestMapping("/api") with
+        # endpoints /api/orders/{id} and /api/consumers/{consumerId}/orders.
+        # Rewrite /order-history/** to /api/** to match the actual service paths.
         - id: order-history-service
-          uri: http://localhost:8087
+          uri: ${services.order-history-service.url:http://localhost:8087}
           predicates:
             - Path=/order-history/**
           filters:
+            - RewritePath=/order-history(?<segment>/?.*), /api${segment}
             - name: CircuitBreaker
               args:
                 name: orderHistoryServiceCircuitBreaker
@@ -87,11 +188,25 @@ spring:
               args:
                 redis-rate-limiter.replenishRate: 100
                 redis-rate-limiter.burstCapacity: 200
+                redis-rate-limiter.requestedTokens: 1
                 key-resolver: "#{@userKeyResolver}"
+                deny-empty-key: false
+            - name: Retry
+              args:
+                retries: 3
+                statuses: BAD_GATEWAY,SERVICE_UNAVAILABLE,GATEWAY_TIMEOUT
+                methods: GET
+                backoff:
+                  firstBackoff: 500ms
+                  maxBackoff: 2000ms
+                  factor: 2
+                  basedOnPreviousValue: false
+
   redis:
-    host: localhost
-    port: 6379
+    host: ${REDIS_HOST:localhost}
+    port: ${REDIS_PORT:6379}
     timeout: 2000ms
+    connect-timeout: 1000ms
   session:
     store-type: redis
     redis:
@@ -107,16 +222,22 @@ spring:
           # jwk-set-uri: ${JWT_JWK_SET_URI:http://localhost:9000/.well-known/jwks.json}
 
 server:
-  port: 8080
+  port: ${SERVER_PORT:8080}
+  # Netty server configuration
+  netty:
+    connection-timeout: 5s
+    idle-timeout: 30s
 
 management:
   endpoints:
     web:
       exposure:
-        include: health,info,prometheus,metrics
+        include: health,info,prometheus,metrics,gateway
   endpoint:
     health:
       show-details: always
+    gateway:
+      enabled: true
   metrics:
     tags:
       application: ${spring.application.name}
@@ -132,10 +253,12 @@ resilience4j:
         waitDurationInOpenState: 30s
         permittedNumberOfCallsInHalfOpenState: 3
         automaticTransitionFromOpenToHalfOpenEnabled: true
+        # B7 FIX: Use WebFlux exceptions, not Spring MVC exceptions
         recordExceptions:
-          - org.springframework.web.client.HttpServerErrorException
+          - org.springframework.web.reactive.function.client.WebClientResponseException
           - java.util.concurrent.TimeoutException
           - java.io.IOException
+          - io.netty.channel.ConnectTimeoutException
     instances:
       orderServiceCircuitBreaker:
         baseConfig: default
@@ -144,6 +267,8 @@ resilience4j:
       restaurantServiceCircuitBreaker:
         baseConfig: default
       kitchenServiceCircuitBreaker:
+        baseConfig: default
+      accountingServiceCircuitBreaker:
         baseConfig: default
       deliveryServiceCircuitBreaker:
         baseConfig: default
@@ -161,19 +286,35 @@ resilience4j:
       default:
         timeoutDuration: 5s
 
-# Service URLs for API composition
+# Service URLs for API composition and routing
 services:
   order-service:
     url: ${ORDER_SERVICE_URL:http://localhost:8081}
+  consumer-service:
+    url: ${CONSUMER_SERVICE_URL:http://localhost:8082}
+  restaurant-service:
+    url: ${RESTAURANT_SERVICE_URL:http://localhost:8083}
   kitchen-service:
     url: ${KITCHEN_SERVICE_URL:http://localhost:8084}
+  accounting-service:
+    url: ${ACCOUNTING_SERVICE_URL:http://localhost:8085}
   delivery-service:
     url: ${DELIVERY_SERVICE_URL:http://localhost:8086}
+  order-history-service:
+    url: ${ORDER_HISTORY_SERVICE_URL:http://localhost:8087}
+
+# WebClient configuration for API composition
+webclient:
+  connect-timeout-ms: 3000
+  read-timeout-ms: 5000
+  max-connections: 500
+  max-idle-time-ms: 20000
 
 logging:
   level:
     root: INFO
     net.ftgo: DEBUG
     org.springframework.cloud.gateway: DEBUG
+    io.github.resilience4j: DEBUG
   pattern:
-    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
+    console: '{"timestamp":"%d{yyyy-MM-dd HH:mm:ss.SSS}","level":"%level","service":"${spring.application.name}","trace":"%X{traceId:-}","span":"%X{spanId:-}","requestId":"%X{requestId:-}","thread":"%thread","class":"%logger{36}","message":"%msg"}%n'

@@ -40,7 +40,7 @@ resilience4j:
         permittedNumberOfCallsInHalfOpenState: 3
         automaticTransitionFromOpenToHalfOpenEnabled: true
         recordExceptions:
-          - org.springframework.web.client.HttpServerErrorException
+          - org.springframework.web.reactive.function.client.WebClientResponseException
           - java.util.concurrent.TimeoutException
           - java.io.IOException
     instances:
@@ -52,9 +52,13 @@ resilience4j:
         baseConfig: default
       kitchenServiceCircuitBreaker:
         baseConfig: default
+      accountingServiceCircuitBreaker:
+        baseConfig: default
       deliveryServiceCircuitBreaker:
         baseConfig: default
       orderHistoryServiceCircuitBreaker:
+        baseConfig: default
+      orderDetails:
         baseConfig: default
 
   timelimiter:
@@ -66,7 +70,22 @@ resilience4j:
 services:
   order-service:
     url: http://localhost:8091
-  kitchen-service:
+  consumer-service:
     url: http://localhost:8092
-  delivery-service:
+  restaurant-service:
     url: http://localhost:8093
+  kitchen-service:
+    url: http://localhost:8094
+  accounting-service:
+    url: http://localhost:8095
+  delivery-service:
+    url: http://localhost:8096
+  order-history-service:
+    url: http://localhost:8097
+
+# WebClient config for tests
+webclient:
+  connect-timeout-ms: 3000
+  read-timeout-ms: 5000
+  max-connections: 50
+  max-idle-time-ms: 10000

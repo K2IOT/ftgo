@@ -1,0 +1,36 @@
+# Kubernetes profile — uses K8s service DNS names in ftgo namespace
+spring:
+  redis:
+    host: redis.ftgo.svc.cluster.local
+    port: 6379
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${JWT_ISSUER_URI:http://auth-server.ftgo.svc.cluster.local:9000}
+
+server:
+  # In K8s, run on port 8080 behind the Service/Ingress
+  port: 8080
+
+services:
+  order-service:
+    url: http://order-service.ftgo.svc.cluster.local:8081
+  consumer-service:
+    url: http://consumer-service.ftgo.svc.cluster.local:8082
+  restaurant-service:
+    url: http://restaurant-service.ftgo.svc.cluster.local:8083
+  kitchen-service:
+    url: http://kitchen-service.ftgo.svc.cluster.local:8084
+  accounting-service:
+    url: http://accounting-service.ftgo.svc.cluster.local:8085
+  delivery-service:
+    url: http://delivery-service.ftgo.svc.cluster.local:8086
+  order-history-service:
+    url: http://order-history-service.ftgo.svc.cluster.local:8087
+
+logging:
+  level:
+    root: WARN
+    net.ftgo: INFO
+    org.springframework.cloud.gateway: INFO

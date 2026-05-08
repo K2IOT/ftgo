@@ -2,89 +2,72 @@ package net.ftgo.gateway.controller;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
  * Fallback controller for circuit breaker responses.
  * Provides graceful degradation when downstream services are unavailable.
+ *
+ * B4 FIX: Uses @RequestMapping(method = {GET, POST}) instead of dual
+ * @GetMapping/@PostMapping annotations to avoid ambiguous handler mappings.
  */
 @RestController
 @RequestMapping("/fallback")
 public class FallbackController {
-    
-    @GetMapping("/orders")
-    @PostMapping("/orders")
-    public ResponseEntity<Map<String, String>> orderServiceFallback() {
-        return ResponseEntity
-            .status(HttpStatus.SERVICE_UNAVAILABLE)
-            .body(Map.of(
-                "error", "service_unavailable",
-                "message", "Order service is temporarily unavailable. Please try again later.",
-                "service", "order-service"
-            ));
+
+    @RequestMapping(value = "/orders", method = {RequestMethod.GET, RequestMethod.POST})
+    public ResponseEntity<Map<String, Object>> orderServiceFallback() {
+        return buildFallbackResponse("order-service", "Order service is temporarily unavailable. Please try again later.");
     }
-    
-    @GetMapping("/consumers")
-    @PostMapping("/consumers")
-    public ResponseEntity<Map<String, String>> consumerServiceFallback() {
-        return ResponseEntity
-            .status(HttpStatus.SERVICE_UNAVAILABLE)
-            .body(Map.of(
-                "error", "service_unavailable",
-                "message", "Consumer service is temporarily unavailable. Please try again later.",
-                "service", "consumer-service"
-            ));
+
+    @RequestMapping(value = "/consumers", method = {RequestMethod.GET, RequestMethod.POST})
+    public ResponseEntity<Map<String, Object>> consumerServiceFallback() {
+        return buildFallbackResponse("consumer-service", "Consumer service is temporarily unavailable. Please try again later.");
     }
-    
-    @GetMapping("/restaurants")
-    @PostMapping("/restaurants")
-    public ResponseEntity<Map<String, String>> restaurantServiceFallback() {
-        return ResponseEntity
-            .status(HttpStatus.SERVICE_UNAVAILABLE)
-            .body(Map.of(
-                "error", "service_unavailable",
-                "message", "Restaurant service is temporarily unavailable. Please try again later.",
-                "service", "restaurant-service"
-            ));
+
+    @RequestMapping(value = "/restaurants", method = {RequestMethod.GET, RequestMethod.POST})
+    public ResponseEntity<Map<String, Object>> restaurantServiceFallback() {
+        return buildFallbackResponse("restaurant-service", "Restaurant service is temporarily unavailable. Please try again later.");
     }
-    
-    @GetMapping("/tickets")
-    @PostMapping("/tickets")
-    public ResponseEntity<Map<String, String>> kitchenServiceFallback() {
-        return ResponseEntity
-            .status(HttpStatus.SERVICE_UNAVAILABLE)
-            .body(Map.of(
-                "error", "service_unavailable",
-                "message", "Kitchen service is temporarily unavailable. Please try again later.",
-                "service", "kitchen-service"
-            ));
+
+    @RequestMapping(value = "/tickets", method = {RequestMethod.GET, RequestMethod.POST})
+    public ResponseEntity<Map<String, Object>> kitchenServiceFallback() {
+        return buildFallbackResponse("kitchen-service", "Kitchen service is temporarily unavailable. Please try again later.");
     }
-    
-    @GetMapping("/deliveries")
-    @PostMapping("/deliveries")
-    public ResponseEntity<Map<String, String>> deliveryServiceFallback() {
-        return ResponseEntity
-            .status(HttpStatus.SERVICE_UNAVAILABLE)
-            .body(Map.of(
-                "error", "service_unavailable",
-                "message", "Delivery service is temporarily unavailable. Please try again later.",
-                "service", "delivery-service"
-            ));
+
+    @RequestMapping(value = "/accounts", method = {RequestMethod.GET, RequestMethod.POST})
+    public ResponseEntity<Map<String, Object>> accountingServiceFallback() {
+        return buildFallbackResponse("accounting-service", "Accounting service is temporarily unavailable. Please try again later.");
     }
-    
-    @GetMapping("/order-history")
-    public ResponseEntity<Map<String, String>> orderHistoryServiceFallback() {
+
+    @RequestMapping(value = "/deliveries", method = {RequestMethod.GET, RequestMethod.POST})
+    public ResponseEntity<Map<String, Object>> deliveryServiceFallback() {
+        return buildFallbackResponse("delivery-service", "Delivery service is temporarily unavailable. Please try again later.");
+    }
+
+    @RequestMapping(value = "/order-history", method = {RequestMethod.GET})
+    public ResponseEntity<Map<String, Object>> orderHistoryServiceFallback() {
+        return buildFallbackResponse("order-history-service", "Order history service is temporarily unavailable. Please try again later.");
+    }
+
+    /**
+     * Build a structured fallback response with timestamp and service identification.
+     */
+    private ResponseEntity<Map<String, Object>> buildFallbackResponse(String service, String message) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("error", "service_unavailable");
+        body.put("message", message);
+        body.put("service", service);
+        body.put("timestamp", Instant.now().toString());
+        body.put("status", HttpStatus.SERVICE_UNAVAILABLE.value());
         return ResponseEntity
-            .status(HttpStatus.SERVICE_UNAVAILABLE)
-            .body(Map.of(
-                "error", "service_unavailable",
-                "message", "Order history service is temporarily unavailable. Please try again later.",
-                "service", "order-history-service"
-            ));
+                .status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(body);
     }
 }
