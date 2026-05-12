@@ -2,16 +2,12 @@ package net.ftgo.kitchen.api;
 
 import net.ftgo.kitchen.domain.Ticket;
 import net.ftgo.kitchen.domain.TicketState;
-import net.ftgo.kitchen.messaging.DomainEventPublisher;
-import net.ftgo.kitchen.messaging.TicketAcceptedEvent;
-import net.ftgo.kitchen.messaging.TicketPreparingEvent;
-import net.ftgo.kitchen.messaging.TicketReadyEvent;
 import net.ftgo.kitchen.repository.TicketRepository;
+import net.ftgo.kitchen.service.KitchenService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -33,11 +29,11 @@ public class KitchenController {
     private static final Logger logger = LoggerFactory.getLogger(KitchenController.class);
     
     private final TicketRepository ticketRepository;
-    private final DomainEventPublisher eventPublisher;
+    private final KitchenService kitchenService;
     
-    public KitchenController(TicketRepository ticketRepository, DomainEventPublisher eventPublisher) {
+    public KitchenController(TicketRepository ticketRepository, KitchenService kitchenService) {
         this.ticketRepository = ticketRepository;
-        this.eventPublisher = eventPublisher;
+        this.kitchenService = kitchenService;
     }
     
     /**
@@ -78,25 +74,11 @@ public class KitchenController {
      * @return the updated ticket
      */
     @PostMapping("/{ticketId}/accept")
-    @Transactional
     public ResponseEntity<?> acceptTicket(@PathVariable Long ticketId) {
         logger.info("Accepting ticket {}", ticketId);
         
         try {
-            Ticket ticket = ticketRepository.findById(ticketId)
-                .orElseThrow(() -> new IllegalArgumentException(
-                    String.format("Ticket %d not found", ticketId)
-                ));
-            
-            ticket.accept();
-            ticketRepository.save(ticket);
-            
-            // Publish TicketAccepted event
-            eventPublisher.publishTicketEvent(ticket.getId(), 
-                new TicketAcceptedEvent(ticket.getId(), ticket.getOrderId(), ticket.getAcceptedAt()));
-            
-            logger.info("Ticket {} accepted successfully", ticketId);
-            
+            Ticket ticket = kitchenService.acceptTicket(ticketId);
             return ResponseEntity.ok(new TicketDTO(ticket));
             
         } catch (IllegalArgumentException e) {
@@ -122,25 +104,11 @@ public class KitchenController {
      * @return the updated ticket
      */
     @PostMapping("/{ticketId}/preparing")
-    @Transactional
     public ResponseEntity<?> markPreparing(@PathVariable Long ticketId) {
         logger.info("Marking ticket {} as preparing", ticketId);
         
         try {
-            Ticket ticket = ticketRepository.findById(ticketId)
-                .orElseThrow(() -> new IllegalArgumentException(
-                    String.format("Ticket %d not found", ticketId)
-                ));
-            
-            ticket.preparing();
-            ticketRepository.save(ticket);
-            
-            // Publish TicketPreparing event
-            eventPublisher.publishTicketEvent(ticket.getId(), 
-                new TicketPreparingEvent(ticket.getId(), ticket.getOrderId()));
-            
-            logger.info("Ticket {} marked as preparing", ticketId);
-            
+            Ticket ticket = kitchenService.markPreparing(ticketId);
             return ResponseEntity.ok(new TicketDTO(ticket));
             
         } catch (IllegalArgumentException e) {
@@ -166,25 +134,11 @@ public class KitchenController {
      * @return the updated ticket
      */
     @PostMapping("/{ticketId}/ready")
-    @Transactional
     public ResponseEntity<?> markReady(@PathVariable Long ticketId) {
         logger.info("Marking ticket {} as ready", ticketId);
         
         try {
-            Ticket ticket = ticketRepository.findById(ticketId)
-                .orElseThrow(() -> new IllegalArgumentException(
-                    String.format("Ticket %d not found", ticketId)
-                ));
-            
-            ticket.readyForPickup();
-            ticketRepository.save(ticket);
-            
-            // Publish TicketReady event
-            eventPublisher.publishTicketEvent(ticket.getId(), 
-                new TicketReadyEvent(ticket.getId(), ticket.getOrderId(), ticket.getReadyBy()));
-            
-            logger.info("Ticket {} marked as ready", ticketId);
-            
+            Ticket ticket = kitchenService.markReady(ticketId);
             return ResponseEntity.ok(new TicketDTO(ticket));
             
         } catch (IllegalArgumentException e) {
