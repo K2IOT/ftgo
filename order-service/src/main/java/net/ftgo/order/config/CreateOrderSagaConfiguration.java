@@ -1,5 +1,8 @@
 package net.ftgo.order.config;
 
+import io.eventuate.tram.commands.consumer.CommandDispatcher;
+import io.eventuate.tram.commands.consumer.CommandHandlers;
+import io.eventuate.tram.sagas.participant.SagaCommandDispatcherFactory;
 import io.eventuate.tram.sagas.spring.participant.SagaParticipantConfiguration;
 import io.micrometer.core.instrument.MeterRegistry;
 import net.ftgo.order.messaging.DomainEventPublisher;
@@ -44,5 +47,20 @@ public class CreateOrderSagaConfiguration {
             DomainEventPublisher eventPublisher,
             MeterRegistry meterRegistry) {
         return new CreateOrderSagaLocalSteps(orderRepository, eventPublisher, meterRegistry);
+    }
+
+    @Bean
+    public CommandHandlers createOrderSagaCommandHandlers(CreateOrderSagaLocalSteps localSteps) {
+        return localSteps.commandHandlers();
+    }
+
+    @Bean
+    public CommandDispatcher createOrderSagaCommandDispatcher(
+            SagaCommandDispatcherFactory sagaCommandDispatcherFactory,
+            CommandHandlers createOrderSagaCommandHandlers) {
+        return sagaCommandDispatcherFactory.make(
+            "createOrderSagaCommandDispatcher",
+            createOrderSagaCommandHandlers
+        );
     }
 }

@@ -2,6 +2,10 @@ package net.ftgo.order.config;
 
 import io.eventuate.tram.spring.events.publisher.TramEventsPublisherConfiguration;
 import io.eventuate.tram.spring.commands.producer.TramCommandProducerConfiguration;
+import io.eventuate.tram.spring.jdbckafka.TramJdbcKafkaConfiguration;
+import io.eventuate.messaging.kafka.basic.consumer.DefaultKafkaConsumerFactory;
+import io.eventuate.messaging.kafka.basic.consumer.KafkaConsumerFactory;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 
@@ -32,9 +36,14 @@ import org.springframework.context.annotation.Import;
 @Configuration
 @Import({
     TramEventsPublisherConfiguration.class,
-    TramCommandProducerConfiguration.class
+    TramCommandProducerConfiguration.class,
+    TramJdbcKafkaConfiguration.class
 })
 public class EventuateTramConfiguration {
-    // Configuration is provided by imported classes
-    // Additional beans can be added here if needed
+    // Provide a dedicated Eventuate KafkaConsumerFactory bean to avoid name/type
+    // collisions with Spring Kafka's own kafkaConsumerFactory bean.
+    @Bean
+    public KafkaConsumerFactory eventuateKafkaConsumerFactory() {
+        return new DefaultKafkaConsumerFactory();
+    }
 }

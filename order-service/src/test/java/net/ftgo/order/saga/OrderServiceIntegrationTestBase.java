@@ -33,5 +33,8 @@ public abstract class OrderServiceIntegrationTestBase {
         registry.add("spring.datasource.password", mysql::getPassword);
         registry.add("spring.kafka.bootstrap-servers", kafka::getBootstrapServers);
         registry.add("eventuatelocal.kafka.bootstrap.servers", kafka::getBootstrapServers);
+        registry.add("eventuate.database.schema", () -> "none");
+        registry.add("spring.sql.init.mode", () -> "always");
+        registry.add("spring.sql.init.schema-locations", () -> "classpath:eventuate-schema-mysql.sql");
     }
 }
