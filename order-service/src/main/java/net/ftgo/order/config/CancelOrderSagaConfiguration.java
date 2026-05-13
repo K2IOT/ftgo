@@ -36,8 +36,8 @@ public class CancelOrderSagaConfiguration {
      * @return the CancelOrderSaga instance
      */
     @Bean
-    public CancelOrderSaga cancelOrderSaga() {
-        return new CancelOrderSaga();
+    public CancelOrderSaga cancelOrderSaga(CancelOrderSagaLocalSteps localSteps) {
+        return new CancelOrderSaga(localSteps);
     }
     
     /**

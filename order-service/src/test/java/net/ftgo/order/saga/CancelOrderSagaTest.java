@@ -1,9 +1,15 @@
 package net.ftgo.order.saga;
 
+import io.eventuate.tram.sagas.testing.SagaUnitTestSupport;
+import net.ftgo.common.channels.ChannelNames;
+import net.ftgo.order.saga.commands.BeginCancelTicketCommand;
+import net.ftgo.order.saga.commands.ConfirmCancelTicketCommand;
+import net.ftgo.order.saga.commands.ReverseAuthorizationCommand;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 /**
  * Unit tests for CancelOrderSaga.
@@ -250,5 +256,56 @@ class CancelOrderSagaTest {
         data1.setOrderId(999L);
         assertEquals(999L, data1.getOrderId());
         assertEquals(2L, data2.getOrderId());
+    }
+
+    @Test
+    void cancellationAcceptedByKitchenReversesAuthorizationAndCompletesCancellation() {
+        CancelOrderSagaLocalSteps localSteps = mock(CancelOrderSagaLocalSteps.class);
+        CancelOrderSaga saga = new CancelOrderSaga(localSteps);
+
+        SagaUnitTestSupport.given()
+            .saga(saga, sagaData)
+            .expect()
+            .command(new BeginCancelTicketCommand(100L))
+            .to(ChannelNames.KITCHEN_SERVICE_COMMAND_CHANNEL)
+            .andGiven()
+            .successReply()
+            .expect()
+            .command(new ReverseAuthorizationCommand(50L, 123L))
+            .to(ChannelNames.ACCOUNTING_SERVICE_COMMAND_CHANNEL)
+            .andGiven()
+            .successReply()
+            .expect()
+            .command(new ConfirmCancelTicketCommand(100L))
+            .to(ChannelNames.KITCHEN_SERVICE_COMMAND_CHANNEL)
+            .andGiven()
+            .successReply()
+            .expect()
+            .command(new CancelOrderSagaLocalSteps.ConfirmCancelCommand(1L))
+            .to(ChannelNames.ORDER_SERVICE_COMMAND_CHANNEL)
+            .andGiven()
+            .successReply()
+            .expectCompletedSuccessfully();
+
+        verify(localSteps).beginCancelOrder(1L);
+        verify(localSteps, never()).undoCancelOrder(anyLong());
+    }
+
+    @Test
+    void kitchenRejectionRestoresOrderWithoutReversingAuthorization() {
+        CancelOrderSagaLocalSteps localSteps = mock(CancelOrderSagaLocalSteps.class);
+        CancelOrderSaga saga = new CancelOrderSaga(localSteps);
+
+        SagaUnitTestSupport.given()
+            .saga(saga, sagaData)
+            .expect()
+            .command(new BeginCancelTicketCommand(100L))
+            .to(ChannelNames.KITCHEN_SERVICE_COMMAND_CHANNEL)
+            .andGiven()
+            .failureReply()
+            .expectRolledBack();
+
+        verify(localSteps).beginCancelOrder(1L);
+        verify(localSteps).undoCancelOrder(1L);
     }
 }

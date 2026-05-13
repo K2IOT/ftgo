@@ -206,8 +206,17 @@ public class Ticket {
                 String.format("Cannot cancel ticket in state %s. Operation already in progress.", state)
             );
         }
+        if (hasPreparationBegun()) {
+            throw new IllegalStateException("Cannot cancel ticket after preparation has begun");
+        }
         this.previousState = this.state;
         this.state = TicketState.CANCEL_PENDING;
+    }
+
+    private boolean hasPreparationBegun() {
+        return state == TicketState.PREPARING
+            || state == TicketState.READY_FOR_PICKUP
+            || state == TicketState.PICKED_UP;
     }
     
     /**
@@ -255,6 +264,9 @@ public class Ticket {
             throw new IllegalStateException(
                 String.format("Cannot revise ticket in state %s. Operation already in progress.", state)
             );
+        }
+        if (hasPreparationBegun()) {
+            throw new IllegalStateException("Cannot revise ticket after preparation has begun");
         }
         this.previousState = this.state;
         this.state = TicketState.REVISION_PENDING;

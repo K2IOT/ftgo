@@ -11,6 +11,7 @@ import net.ftgo.order.domain.PaymentInfo;
 import net.ftgo.order.messaging.DomainEventPublisher;
 import net.ftgo.order.repository.OrderRepository;
 import net.ftgo.order.saga.CancelOrderSaga;
+import net.ftgo.order.saga.CancelOrderSagaData;
 import net.ftgo.order.saga.CreateOrderSaga;
 import net.ftgo.order.saga.CreateOrderSagaData;
 import net.ftgo.order.saga.ReviseOrderSaga;
@@ -25,11 +26,13 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -106,6 +109,29 @@ class OrderServiceTest {
         assertEquals("Burger", event.getLineItems().get(0).getName());
         assertEquals(new BigDecimal("12.99"), event.getLineItems().get(0).getPrice().getAmount());
         assertEquals(2, event.getLineItems().get(0).getQuantity());
+    }
+
+    @Test
+    void cancelOrderUsesCurrentAuthorizationReference() {
+        Order order = new Order(
+            456L,
+            789L,
+            List.of(new OrderLineItem(10L, "Burger", new Money("12.99"), 2)),
+            new DeliveryInfo("123 Main St", LocalDateTime.now().plusHours(2)),
+            new PaymentInfo("tok_test_123")
+        );
+        setOrderId(order, 123L);
+        order.approve();
+        order.setTicketId(999L);
+        order.setAuthorizationId(456L);
+
+        when(orderRepository.findById(123L)).thenReturn(Optional.of(order));
+
+        orderService.cancelOrder(123L);
+
+        ArgumentCaptor<CancelOrderSagaData> dataCaptor = ArgumentCaptor.forClass(CancelOrderSagaData.class);
+        verify(sagaInstanceFactory).create(eq(cancelOrderSaga), dataCaptor.capture());
+        assertEquals(456L, dataCaptor.getValue().getAuthorizationId());
     }
 
     private void setOrderId(Order order, Long orderId) {

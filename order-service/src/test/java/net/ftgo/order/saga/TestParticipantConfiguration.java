@@ -12,6 +12,7 @@ import net.ftgo.common.orderflow.commands.AuthorizeCardCommand;
 import net.ftgo.common.orderflow.commands.CancelTicketCommand;
 import net.ftgo.common.orderflow.commands.CreateTicketCommand;
 import net.ftgo.common.orderflow.commands.VerifyConsumerCommand;
+import net.ftgo.common.orderflow.replies.AuthorizationRevised;
 import net.ftgo.common.orderflow.replies.CardAuthorized;
 import net.ftgo.common.orderflow.replies.TicketCreated;
 import net.ftgo.order.saga.commands.*;
@@ -125,7 +126,7 @@ public class TestParticipantConfiguration {
     }
 
     private Message handleReviseAuthorization(CommandMessage<ReviseAuthorizationCommand> cm) {
-        return withSuccess();
+        return withSuccess(new AuthorizationRevised(777L));
     }
 
     private Message handleVerifyConsumer(CommandMessage<VerifyConsumerCommand> cm) {

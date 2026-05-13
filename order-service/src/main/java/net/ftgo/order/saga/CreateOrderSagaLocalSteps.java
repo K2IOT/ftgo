@@ -6,6 +6,7 @@ import io.eventuate.tram.messaging.common.Message;
 import io.eventuate.tram.sagas.participant.SagaCommandHandlersBuilder;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
+import net.ftgo.common.Address;
 import net.ftgo.common.orderflow.events.OrderApproved;
 import net.ftgo.common.orderflow.events.OrderRejected;
 import net.ftgo.order.domain.Order;
@@ -157,7 +158,9 @@ public class CreateOrderSagaLocalSteps {
             order.getRestaurantId(),
             order.getOrderTotal(),
             command.getTicketId(),
-            command.getAuthorizationId()
+            command.getAuthorizationId(),
+            toAddress(order.getDeliveryInfo().getDeliveryAddress()),
+            order.getDeliveryInfo().getDeliveryTime()
         );
         eventPublisher.publishOrderEvent(order.getId(), event);
         
@@ -168,6 +171,20 @@ public class CreateOrderSagaLocalSteps {
             orderId, order.getState(), command.getTicketId(), command.getAuthorizationId());
         
         return withSuccess();
+    }
+
+    private Address toAddress(String deliveryAddress) {
+        String[] streetCityStateZip = deliveryAddress.split(", ", 3);
+        if (streetCityStateZip.length != 3) {
+            return new Address(deliveryAddress, "Unknown", "NA", "00000");
+        }
+
+        String[] stateZip = streetCityStateZip[2].split(" ", 2);
+        if (stateZip.length != 2) {
+            return new Address(deliveryAddress, "Unknown", "NA", "00000");
+        }
+
+        return new Address(streetCityStateZip[0], streetCityStateZip[1], stateZip[0], stateZip[1]);
     }
     
     /**

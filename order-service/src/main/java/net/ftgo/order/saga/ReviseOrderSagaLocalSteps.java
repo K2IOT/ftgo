@@ -92,8 +92,12 @@ public class ReviseOrderSagaLocalSteps {
      */
     @Transactional
     public Message beginRevise(CommandMessage<BeginReviseCommand> cm) {
-        BeginReviseCommand command = cm.getCommand();
-        Long orderId = command.getOrderId();
+        beginReviseOrder(cm.getCommand().getOrderId());
+        return withSuccess();
+    }
+
+    @Transactional
+    public void beginReviseOrder(Long orderId) {
         
         logger.info("Beginning order revision: orderId={}", orderId);
         
@@ -105,8 +109,6 @@ public class ReviseOrderSagaLocalSteps {
         orderRepository.save(order);
         
         logger.info("Order revision initiated: orderId={}, state={}", orderId, order.getState());
-        
-        return withSuccess();
     }
     
     /**
@@ -121,8 +123,12 @@ public class ReviseOrderSagaLocalSteps {
      */
     @Transactional
     public Message undoRevise(CommandMessage<UndoReviseCommand> cm) {
-        UndoReviseCommand command = cm.getCommand();
-        Long orderId = command.getOrderId();
+        undoReviseOrder(cm.getCommand().getOrderId());
+        return withSuccess();
+    }
+
+    @Transactional
+    public void undoReviseOrder(Long orderId) {
         
         logger.warn("Undoing order revision due to saga failure: orderId={}", orderId);
         
@@ -137,8 +143,6 @@ public class ReviseOrderSagaLocalSteps {
         sagaFailuresCounter.increment();
         
         logger.warn("Order revision undone: orderId={}, state={}", orderId, order.getState());
-        
-        return withSuccess();
     }
     
     /**
@@ -156,6 +160,7 @@ public class ReviseOrderSagaLocalSteps {
         ConfirmReviseCommand command = cm.getCommand();
         Long orderId = command.getOrderId();
         List<OrderLineItem> revisedLineItems = command.getRevisedLineItems();
+        Long authorizationId = command.getAuthorizationId();
         
         logger.info("Confirming order revision after successful saga: orderId={}", orderId);
         
@@ -164,6 +169,9 @@ public class ReviseOrderSagaLocalSteps {
         
         // Transition to APPROVED state and update line items
         order.confirmRevise(revisedLineItems);
+        if (authorizationId != null) {
+            order.setAuthorizationId(authorizationId);
+        }
         orderRepository.save(order);
         
         // Publish OrderRevised event via transactional outbox
@@ -246,13 +254,19 @@ public class ReviseOrderSagaLocalSteps {
     public static class ConfirmReviseCommand implements io.eventuate.tram.commands.common.Command {
         private Long orderId;
         private List<OrderLineItem> revisedLineItems;
+        private Long authorizationId;
         
         public ConfirmReviseCommand() {
         }
         
         public ConfirmReviseCommand(Long orderId, List<OrderLineItem> revisedLineItems) {
+            this(orderId, revisedLineItems, null);
+        }
+
+        public ConfirmReviseCommand(Long orderId, List<OrderLineItem> revisedLineItems, Long authorizationId) {
             this.orderId = orderId;
             this.revisedLineItems = revisedLineItems;
+            this.authorizationId = authorizationId;
         }
         
         public Long getOrderId() {
@@ -269,6 +283,14 @@ public class ReviseOrderSagaLocalSteps {
         
         public void setRevisedLineItems(List<OrderLineItem> revisedLineItems) {
             this.revisedLineItems = revisedLineItems;
+        }
+
+        public Long getAuthorizationId() {
+            return authorizationId;
+        }
+
+        public void setAuthorizationId(Long authorizationId) {
+            this.authorizationId = authorizationId;
         }
     }
 }

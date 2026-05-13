@@ -6,6 +6,7 @@ import net.ftgo.common.orderflow.commands.ApproveTicketCommand;
 import net.ftgo.common.orderflow.commands.CancelTicketCommand;
 import net.ftgo.common.orderflow.commands.CreateTicketCommand;
 import net.ftgo.kitchen.domain.Ticket;
+import net.ftgo.kitchen.domain.TicketLineItem;
 import net.ftgo.kitchen.domain.TicketState;
 import net.ftgo.kitchen.repository.TicketRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -64,6 +65,13 @@ class KitchenServiceCommandHandlersTest {
         return Arrays.asList(
             new CreateTicketCommand.TicketLineItemDTO(1L, "Burger", 2),
             new CreateTicketCommand.TicketLineItemDTO(2L, "Fries", 1)
+        );
+    }
+
+    private List<TicketLineItem> createSampleTicketLineItems() {
+        return Arrays.asList(
+            new TicketLineItem(1L, "Burger", 2),
+            new TicketLineItem(2L, "Fries", 1)
         );
     }
     
@@ -218,6 +226,29 @@ class KitchenServiceCommandHandlersTest {
         verify(ticket).beginCancel();
         verify(ticketRepository).save(ticket);
     }
+
+    @Test
+    @DisplayName("Should reject BeginCancelTicketCommand after preparation has begun")
+    void shouldRejectBeginCancelTicketCommandAfterPreparationHasBegun() {
+        // Given
+        Ticket ticket = new Ticket(RESTAURANT_ID, ORDER_ID, createSampleTicketLineItems());
+        ticket.approve();
+        ticket.accept();
+        ticket.preparing();
+        when(ticketRepository.findById(TICKET_ID)).thenReturn(Optional.of(ticket));
+
+        BeginCancelTicketCommand command = new BeginCancelTicketCommand(TICKET_ID);
+        CommandMessage<BeginCancelTicketCommand> cm = mock(CommandMessage.class);
+        when(cm.getCommand()).thenReturn(command);
+
+        // When
+        Message reply = commandHandlers.handleBeginCancelTicket(cm);
+
+        // Then
+        assertNotNull(reply);
+        assertEquals(TicketState.PREPARING, ticket.getState());
+        verify(ticketRepository, never()).save(any(Ticket.class));
+    }
     
     @Test
     @DisplayName("Should handle ConfirmCancelTicketCommand successfully")
@@ -283,6 +314,32 @@ class KitchenServiceCommandHandlersTest {
         assertNotNull(reply);
         verify(ticket).beginRevise(any());
         verify(ticketRepository).save(ticket);
+    }
+
+    @Test
+    @DisplayName("Should reject BeginReviseTicketCommand after preparation has begun")
+    void shouldRejectBeginReviseTicketCommandAfterPreparationHasBegun() {
+        // Given
+        Ticket ticket = new Ticket(RESTAURANT_ID, ORDER_ID, createSampleTicketLineItems());
+        ticket.approve();
+        ticket.accept();
+        ticket.preparing();
+        when(ticketRepository.findById(TICKET_ID)).thenReturn(Optional.of(ticket));
+
+        List<CreateTicketCommand.TicketLineItemDTO> revisedItems = Arrays.asList(
+            new CreateTicketCommand.TicketLineItemDTO(1L, "Burger", 3)
+        );
+        BeginReviseTicketCommand command = new BeginReviseTicketCommand(TICKET_ID, revisedItems);
+        CommandMessage<BeginReviseTicketCommand> cm = mock(CommandMessage.class);
+        when(cm.getCommand()).thenReturn(command);
+
+        // When
+        Message reply = commandHandlers.handleBeginReviseTicket(cm);
+
+        // Then
+        assertNotNull(reply);
+        assertEquals(TicketState.PREPARING, ticket.getState());
+        verify(ticketRepository, never()).save(any(Ticket.class));
     }
     
     @Test

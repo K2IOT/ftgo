@@ -1,6 +1,9 @@
 package net.ftgo.common.orderflow.events;
 
+import net.ftgo.common.Address;
 import net.ftgo.common.Money;
+
+import java.time.LocalDateTime;
 
 public class OrderApproved {
 
@@ -10,6 +13,8 @@ public class OrderApproved {
     private Money orderTotal;
     private Long ticketId;
     private Long authorizationId;
+    private Address deliveryAddress;
+    private LocalDateTime deliveryTime;
 
     public OrderApproved() {
     }
@@ -22,12 +27,27 @@ public class OrderApproved {
         Long ticketId,
         Long authorizationId
     ) {
+        this(orderId, consumerId, restaurantId, orderTotal, ticketId, authorizationId, null, null);
+    }
+
+    public OrderApproved(
+        Long orderId,
+        Long consumerId,
+        Long restaurantId,
+        Money orderTotal,
+        Long ticketId,
+        Long authorizationId,
+        Address deliveryAddress,
+        LocalDateTime deliveryTime
+    ) {
         this.orderId = orderId;
         this.consumerId = consumerId;
         this.restaurantId = restaurantId;
         this.orderTotal = orderTotal;
         this.ticketId = ticketId;
         this.authorizationId = authorizationId;
+        this.deliveryAddress = deliveryAddress;
+        this.deliveryTime = deliveryTime;
     }
 
     public Long getOrderId() {
@@ -76,5 +96,21 @@ public class OrderApproved {
 
     public void setAuthorizationId(Long authorizationId) {
         this.authorizationId = authorizationId;
+    }
+
+    public Address getDeliveryAddress() {
+        return deliveryAddress;
+    }
+
+    public void setDeliveryAddress(Address deliveryAddress) {
+        this.deliveryAddress = deliveryAddress;
+    }
+
+    public LocalDateTime getDeliveryTime() {
+        return deliveryTime;
+    }
+
+    public void setDeliveryTime(LocalDateTime deliveryTime) {
+        this.deliveryTime = deliveryTime;
     }
 }

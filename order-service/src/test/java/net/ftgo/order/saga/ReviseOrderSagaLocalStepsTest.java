@@ -88,6 +88,7 @@ class ReviseOrderSagaLocalStepsTest {
         Long orderId = 1L;
         Order order = createTestOrder(orderId);
         order.approve();
+        order.setAuthorizationId(123L);
         order.beginRevise(); // Move to REVISION_PENDING
         
         ReviseOrderSagaLocalSteps.UndoReviseCommand command = 
@@ -119,7 +120,7 @@ class ReviseOrderSagaLocalStepsTest {
         );
         
         ReviseOrderSagaLocalSteps.ConfirmReviseCommand command = 
-            new ReviseOrderSagaLocalSteps.ConfirmReviseCommand(orderId, revisedLineItems);
+            new ReviseOrderSagaLocalSteps.ConfirmReviseCommand(orderId, revisedLineItems, 456L);
         
         when(confirmReviseCommandMessage.getCommand()).thenReturn(command);
         when(orderRepository.findById(orderId)).thenReturn(Optional.of(order));
@@ -130,8 +131,37 @@ class ReviseOrderSagaLocalStepsTest {
         // Assert
         assertNotNull(result);
         assertEquals(OrderState.APPROVED, order.getState());
+        assertEquals(456L, order.getAuthorizationId());
+        assertEquals(3, order.getLineItems().get(0).getQuantity());
         verify(orderRepository).save(order);
         verify(eventPublisher).publishOrderEvent(eq(orderId), any());
+    }
+
+    @Test
+    void testUndoRevise_KeepsOriginalLineItemsAndAuthorization() {
+        // Arrange
+        Long orderId = 1L;
+        Order order = createTestOrder(orderId);
+        order.approve();
+        order.setAuthorizationId(123L);
+        order.beginRevise();
+
+        ReviseOrderSagaLocalSteps.UndoReviseCommand command =
+            new ReviseOrderSagaLocalSteps.UndoReviseCommand(orderId);
+
+        when(undoReviseCommandMessage.getCommand()).thenReturn(command);
+        when(orderRepository.findById(orderId)).thenReturn(Optional.of(order));
+
+        // Act
+        Message result = localSteps.undoRevise(undoReviseCommandMessage);
+
+        // Assert
+        assertNotNull(result);
+        assertEquals(OrderState.APPROVED, order.getState());
+        assertEquals(123L, order.getAuthorizationId());
+        assertEquals(2, order.getLineItems().get(0).getQuantity());
+        assertEquals("Fries", order.getLineItems().get(1).getName());
+        verify(orderRepository).save(order);
     }
     
     @Test

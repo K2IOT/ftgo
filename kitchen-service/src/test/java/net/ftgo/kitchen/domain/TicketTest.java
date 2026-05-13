@@ -301,6 +301,24 @@ class TicketTest {
         // Then - state should transition to CANCEL_PENDING (semantic lock)
         assertEquals(TicketState.CANCEL_PENDING, ticket.getState());
     }
+
+    @Test
+    @DisplayName("Should reject beginCancel after preparation has begun")
+    void shouldRejectBeginCancelAfterPreparationHasBegun() {
+        // Given
+        Ticket ticket = new Ticket(RESTAURANT_ID, ORDER_ID, createSampleLineItems());
+        ticket.approve();
+        ticket.accept();
+        ticket.preparing();
+
+        // When & Then
+        IllegalStateException exception = assertThrows(
+            IllegalStateException.class,
+            ticket::beginCancel
+        );
+        assertEquals("Cannot cancel ticket after preparation has begun", exception.getMessage());
+        assertEquals(TicketState.PREPARING, ticket.getState());
+    }
     
     @Test
     @DisplayName("Should reject beginCancel when already cancelled")
@@ -365,6 +383,27 @@ class TicketTest {
         // Then - state should transition to REVISION_PENDING, line items should not change yet
         assertEquals(TicketState.REVISION_PENDING, ticket.getState());
         assertEquals(2, ticket.getLineItems().size());
+    }
+
+    @Test
+    @DisplayName("Should reject beginRevise after preparation has begun")
+    void shouldRejectBeginReviseAfterPreparationHasBegun() {
+        // Given
+        Ticket ticket = new Ticket(RESTAURANT_ID, ORDER_ID, createSampleLineItems());
+        ticket.approve();
+        ticket.accept();
+        ticket.preparing();
+        List<TicketLineItem> revisedItems = Arrays.asList(
+            new TicketLineItem(1L, "Burger", 3)
+        );
+
+        // When & Then
+        IllegalStateException exception = assertThrows(
+            IllegalStateException.class,
+            () -> ticket.beginRevise(revisedItems)
+        );
+        assertEquals("Cannot revise ticket after preparation has begun", exception.getMessage());
+        assertEquals(TicketState.PREPARING, ticket.getState());
     }
     
     @Test

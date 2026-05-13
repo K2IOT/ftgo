@@ -31,6 +31,7 @@ public class ReviseOrderSagaData {
     // IDs of resources to update (populated from existing order)
     private Long ticketId;
     private Long authorizationId;
+    private Long revisedAuthorizationId;
     
     /**
      * Default constructor for serialization.
@@ -107,10 +108,22 @@ public class ReviseOrderSagaData {
     public void setAuthorizationId(Long authorizationId) {
         this.authorizationId = authorizationId;
     }
+
+    public Long getRevisedAuthorizationId() {
+        return revisedAuthorizationId;
+    }
+
+    public void setRevisedAuthorizationId(Long revisedAuthorizationId) {
+        this.revisedAuthorizationId = revisedAuthorizationId;
+    }
+
+    public Long getCurrentAuthorizationId() {
+        return revisedAuthorizationId != null ? revisedAuthorizationId : authorizationId;
+    }
     
     @Override
     public String toString() {
-        return String.format("ReviseOrderSagaData{orderId=%d, consumerId=%d, revisedTotal=%s, ticketId=%d, authorizationId=%d}",
-            orderId, consumerId, revisedTotal, ticketId, authorizationId);
+        return String.format("ReviseOrderSagaData{orderId=%d, consumerId=%d, revisedTotal=%s, ticketId=%d, authorizationId=%d, revisedAuthorizationId=%d}",
+            orderId, consumerId, revisedTotal, ticketId, authorizationId, revisedAuthorizationId);
     }
 }

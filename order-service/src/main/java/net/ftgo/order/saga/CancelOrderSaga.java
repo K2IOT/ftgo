@@ -54,12 +54,18 @@ public class CancelOrderSaga implements SimpleSaga<CancelOrderSagaData> {
     
     private static final Logger logger = LoggerFactory.getLogger(CancelOrderSaga.class);
     
+    private final CancelOrderSagaLocalSteps localSteps;
     private final SagaDefinition<CancelOrderSagaData> sagaDefinition;
     
     /**
      * Creates the CancelOrderSaga with its step definitions.
      */
     public CancelOrderSaga() {
+        this(null);
+    }
+
+    public CancelOrderSaga(CancelOrderSagaLocalSteps localSteps) {
+        this.localSteps = localSteps;
         this.sagaDefinition = step()
             .invokeLocal(this::beginCancel)
             .withCompensation(this::undoCancel)
@@ -84,7 +90,8 @@ public class CancelOrderSaga implements SimpleSaga<CancelOrderSagaData> {
     
     /**
      * Begins order cancellation by transitioning to CANCEL_PENDING state.
-     * This is a local step that sends a command to Order Service.
+     * This local saga step performs the real aggregate transition before
+     * participant work begins.
      * 
      * Implements semantic lock to prevent concurrent modifications.
      * 
@@ -92,23 +99,23 @@ public class CancelOrderSaga implements SimpleSaga<CancelOrderSagaData> {
      */
     private void beginCancel(CancelOrderSagaData data) {
         logger.info("CancelOrderSaga: Step 1 - beginCancel for orderId={}", data.getOrderId());
-        // The actual state transition happens in the command handler
-        // This step exists for saga definition structure and compensation chain
+        requireLocalSteps().beginCancelOrder(data.getOrderId());
     }
     
     /**
      * Compensation for beginCancel: Restores order to APPROVED state.
-     * Sends command to Order Service to undo the cancellation.
-     * 
      * @param data the saga data
-     * @return command to send to Order Service
      */
-    private CommandWithDestination undoCancel(CancelOrderSagaData data) {
+    private void undoCancel(CancelOrderSagaData data) {
         logger.warn("CancelOrderSaga: Compensation - undoCancel for orderId={}", data.getOrderId());
-        
-        return send(new CancelOrderSagaLocalSteps.UndoCancelCommand(data.getOrderId()))
-            .to(ChannelNames.ORDER_SERVICE_COMMAND_CHANNEL)
-            .build();
+        requireLocalSteps().undoCancelOrder(data.getOrderId());
+    }
+
+    private CancelOrderSagaLocalSteps requireLocalSteps() {
+        if (localSteps == null) {
+            throw new IllegalStateException("CancelOrderSagaLocalSteps is required to execute CancelOrderSaga");
+        }
+        return localSteps;
     }
     
     // Step 2: Begin cancel ticket

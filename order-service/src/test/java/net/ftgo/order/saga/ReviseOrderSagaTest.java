@@ -1,7 +1,13 @@
 package net.ftgo.order.saga;
 
+import io.eventuate.tram.sagas.testing.SagaUnitTestSupport;
 import net.ftgo.common.Money;
+import net.ftgo.common.channels.ChannelNames;
+import net.ftgo.common.orderflow.replies.AuthorizationRevised;
 import net.ftgo.order.domain.OrderLineItem;
+import net.ftgo.order.saga.commands.BeginReviseTicketCommand;
+import net.ftgo.order.saga.commands.ConfirmReviseTicketCommand;
+import net.ftgo.order.saga.commands.ReviseAuthorizationCommand;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -10,6 +16,7 @@ import java.util.Arrays;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 /**
  * Unit tests for ReviseOrderSaga.
@@ -477,6 +484,61 @@ class ReviseOrderSagaTest {
         data1.setOrderId(999L);
         assertEquals(999L, data1.getOrderId());
         assertEquals(2L, data2.getOrderId());
+    }
+
+    @Test
+    void successfulRevisionStoresNewAuthorizationOnOrderConfirmation() {
+        ReviseOrderSagaLocalSteps localSteps = mock(ReviseOrderSagaLocalSteps.class);
+        ReviseOrderSaga saga = new ReviseOrderSaga(localSteps);
+
+        SagaUnitTestSupport.given()
+            .saga(saga, sagaData)
+            .expect()
+            .command(new BeginReviseTicketCommand(100L, sagaData.getRevisedLineItems()))
+            .to(ChannelNames.KITCHEN_SERVICE_COMMAND_CHANNEL)
+            .andGiven()
+            .successReply()
+            .expect()
+            .command(new ReviseAuthorizationCommand(50L, 123L, sagaData.getRevisedTotal().getAmount()))
+            .to(ChannelNames.ACCOUNTING_SERVICE_COMMAND_CHANNEL)
+            .andGiven()
+            .successReply(new AuthorizationRevised(456L))
+            .expect()
+            .command(new ConfirmReviseTicketCommand(100L))
+            .to(ChannelNames.KITCHEN_SERVICE_COMMAND_CHANNEL)
+            .andGiven()
+            .successReply()
+            .expect()
+            .command(new ReviseOrderSagaLocalSteps.ConfirmReviseCommand(
+                1L,
+                sagaData.getRevisedLineItems(),
+                456L
+            ))
+            .to(ChannelNames.ORDER_SERVICE_COMMAND_CHANNEL)
+            .andGiven()
+            .successReply()
+            .expectCompletedSuccessfully();
+
+        verify(localSteps).beginReviseOrder(1L);
+        verify(localSteps, never()).undoReviseOrder(anyLong());
+    }
+
+    @Test
+    void kitchenRejectionRestoresOrderWithoutRevisingAuthorization() {
+        ReviseOrderSagaLocalSteps localSteps = mock(ReviseOrderSagaLocalSteps.class);
+        ReviseOrderSaga saga = new ReviseOrderSaga(localSteps);
+
+        SagaUnitTestSupport.given()
+            .saga(saga, sagaData)
+            .expect()
+            .command(new BeginReviseTicketCommand(100L, sagaData.getRevisedLineItems()))
+            .to(ChannelNames.KITCHEN_SERVICE_COMMAND_CHANNEL)
+            .andGiven()
+            .failureReply()
+            .expectRolledBack();
+
+        verify(localSteps).beginReviseOrder(1L);
+        verify(localSteps).undoReviseOrder(1L);
     }
     
     // ========== Requirement 3.8 Validation Tests ==========

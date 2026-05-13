@@ -87,9 +87,12 @@ public class CancelOrderSagaLocalSteps {
      */
     @Transactional
     public Message beginCancel(CommandMessage<BeginCancelCommand> cm) {
-        BeginCancelCommand command = cm.getCommand();
-        Long orderId = command.getOrderId();
-        
+        beginCancelOrder(cm.getCommand().getOrderId());
+        return withSuccess();
+    }
+
+    @Transactional
+    public void beginCancelOrder(Long orderId) {
         logger.info("Beginning order cancellation: orderId={}", orderId);
         
         Order order = orderRepository.findById(orderId)
@@ -100,8 +103,6 @@ public class CancelOrderSagaLocalSteps {
         orderRepository.save(order);
         
         logger.info("Order cancellation initiated: orderId={}, state={}", orderId, order.getState());
-        
-        return withSuccess();
     }
     
     /**
@@ -116,9 +117,12 @@ public class CancelOrderSagaLocalSteps {
      */
     @Transactional
     public Message undoCancel(CommandMessage<UndoCancelCommand> cm) {
-        UndoCancelCommand command = cm.getCommand();
-        Long orderId = command.getOrderId();
-        
+        undoCancelOrder(cm.getCommand().getOrderId());
+        return withSuccess();
+    }
+
+    @Transactional
+    public void undoCancelOrder(Long orderId) {
         logger.warn("Undoing order cancellation due to saga failure: orderId={}", orderId);
         
         Order order = orderRepository.findById(orderId)
@@ -132,8 +136,6 @@ public class CancelOrderSagaLocalSteps {
         sagaFailuresCounter.increment();
         
         logger.warn("Order cancellation undone: orderId={}, state={}", orderId, order.getState());
-        
-        return withSuccess();
     }
     
     /**

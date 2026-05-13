@@ -100,18 +100,25 @@ class CancelOrderSagaIntegrationTest extends OrderServiceIntegrationTestBase {
         SagaInstance sagaInstance = sagaInstanceFactory.create(cancelOrderSaga, sagaData);
         assertNotNull(sagaInstance);
         assertNotNull(sagaInstance.getId());
+        assertEquals(OrderState.CANCEL_PENDING,
+            orderRepository.findById(order.getId()).orElseThrow().getState(),
+            "Order must enter CANCEL_PENDING before Kitchen receives cancellation work");
 
         ArgumentCaptor<String> destinationCaptor = ArgumentCaptor.forClass(String.class);
         ArgumentCaptor<Message> messageCaptor = ArgumentCaptor.forClass(Message.class);
         verify(messageProducer, timeout(5000).atLeastOnce()).send(destinationCaptor.capture(), messageCaptor.capture());
 
-        assertCommandSent(
-            destinationCaptor.getAllValues(),
-            messageCaptor.getAllValues(),
+        List<String> destinations = destinationCaptor.getAllValues();
+        List<Message> messages = messageCaptor.getAllValues();
+
+        int beginTicketCancelIndex = findCommandIndex(
+            destinations,
+            messages,
             ChannelNames.KITCHEN_SERVICE_COMMAND_CHANNEL,
             "BeginCancelTicketCommand"
         );
-        assertEquals(OrderState.APPROVED, orderRepository.findById(order.getId()).orElseThrow().getState());
+
+        assertTrue(beginTicketCancelIndex >= 0, "Expected BeginCancelTicketCommand to Kitchen Service");
     }
 
     @Test
@@ -175,8 +182,8 @@ class CancelOrderSagaIntegrationTest extends OrderServiceIntegrationTestBase {
             .build();
     }
 
-    private void assertCommandSent(List<String> destinations, List<Message> messages,
-                                   String expectedDestination, String expectedCommandTypeFragment) {
+    private int findCommandIndex(List<String> destinations, List<Message> messages,
+                                 String expectedDestination, String expectedCommandTypeFragment) {
         for (int i = 0; i < destinations.size(); i++) {
             String destination = destinations.get(i);
             Message message = messages.get(i);
@@ -185,15 +192,9 @@ class CancelOrderSagaIntegrationTest extends OrderServiceIntegrationTestBase {
             if (expectedDestination.equals(destination)
                 && commandType != null
                 && commandType.contains(expectedCommandTypeFragment)) {
-                return;
+                return i;
             }
         }
-
-        fail("Expected command was not sent. destination=" + expectedDestination
-            + ", commandType contains=" + expectedCommandTypeFragment
-            + ", captured destinations=" + destinations
-            + ", captured command types=" + messages.stream()
-            .map(m -> m.getHeaders().get(CommandMessageHeaders.COMMAND_TYPE))
-            .toList());
+        return -1;
     }
 }

@@ -1,7 +1,7 @@
 package net.ftgo.delivery.messaging;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import net.ftgo.common.orderflow.events.OrderApproved;
 import net.ftgo.delivery.domain.Delivery;
 import net.ftgo.delivery.repository.DeliveryRepository;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -21,17 +21,21 @@ import org.springframework.transaction.annotation.Transactional;
 public class OrderEventConsumer {
     
     private static final Logger logger = LoggerFactory.getLogger(OrderEventConsumer.class);
+    private static final String ORDER_APPROVED_EVENT_TYPE = "OrderApproved";
     
     private final DeliveryRepository deliveryRepository;
     private final ProcessedMessageRepository processedMessageRepository;
+    private final RestaurantPickupAddressResolver pickupAddressResolver;
     private final ObjectMapper objectMapper;
     
     public OrderEventConsumer(DeliveryRepository deliveryRepository,
-                             ProcessedMessageRepository processedMessageRepository) {
+                             ProcessedMessageRepository processedMessageRepository,
+                             RestaurantPickupAddressResolver pickupAddressResolver,
+                             ObjectMapper objectMapper) {
         this.deliveryRepository = deliveryRepository;
         this.processedMessageRepository = processedMessageRepository;
-        this.objectMapper = new ObjectMapper();
-        this.objectMapper.registerModule(new JavaTimeModule());
+        this.pickupAddressResolver = pickupAddressResolver;
+        this.objectMapper = objectMapper;
     }
     
     /**
@@ -44,8 +48,14 @@ public class OrderEventConsumer {
     public void handleOrderEvent(ConsumerRecord<String, String> record) {
         String messageId = record.key();
         String payload = record.value();
+        String eventType = eventType(record);
         
-        logger.info("Received Order event, messageId: {}", messageId);
+        logger.info("Received Order event, messageId: {}, eventType: {}", messageId, eventType);
+
+        if (!ORDER_APPROVED_EVENT_TYPE.equals(eventType)) {
+            logger.info("Ignoring non-OrderApproved event, messageId: {}, eventType: {}", messageId, eventType);
+            return;
+        }
         
         // Check if message has already been processed (idempotency)
         if (processedMessageRepository.existsById(messageId)) {
@@ -54,17 +64,20 @@ public class OrderEventConsumer {
         }
         
         try {
-            // Parse the event payload to determine event type
-            // For now, we'll assume it's an OrderApproved event
-            // In a real system, you'd check the event type field
             OrderApproved orderApproved = objectMapper.readValue(payload, OrderApproved.class);
+
+            if (deliveryRepository.findByOrderId(orderApproved.getOrderId()).isPresent()) {
+                logger.info("Delivery for order {} already exists, skipping", orderApproved.getOrderId());
+                processedMessageRepository.save(new ProcessedMessage(messageId));
+                return;
+            }
             
             // Create delivery record
             Delivery delivery = new Delivery(
                 orderApproved.getOrderId(),
-                orderApproved.getPickupAddress(),
+                pickupAddressResolver.resolvePickupAddress(orderApproved.getRestaurantId()),
                 orderApproved.getDeliveryAddress(),
-                orderApproved.getScheduledTime()
+                orderApproved.getDeliveryTime()
             );
             
             deliveryRepository.save(delivery);
@@ -77,5 +90,13 @@ public class OrderEventConsumer {
             logger.error("Failed to handle Order event, messageId: {}", messageId, e);
             throw new RuntimeException("Failed to process event", e);
         }
+    }
+
+    private String eventType(ConsumerRecord<String, String> record) {
+        var header = record.headers().lastHeader("eventType");
+        if (header == null) {
+            return null;
+        }
+        return new String(header.value(), java.nio.charset.StandardCharsets.UTF_8);
     }
 }

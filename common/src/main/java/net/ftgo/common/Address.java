@@ -1,6 +1,7 @@
 package net.ftgo.common;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.Embeddable;
 import jakarta.validation.constraints.NotBlank;
@@ -72,6 +73,7 @@ public class Address {
         return zipCode;
     }
     
+    @JsonIgnore
     public String getFullAddress() {
         return String.format("%s, %s, %s %s", street, city, state, zipCode);
     }

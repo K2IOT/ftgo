@@ -4,6 +4,7 @@ import io.eventuate.tram.commands.consumer.CommandWithDestination;
 import io.eventuate.tram.sagas.orchestration.SagaDefinition;
 import io.eventuate.tram.sagas.simpledsl.SimpleSaga;
 import net.ftgo.common.channels.ChannelNames;
+import net.ftgo.common.orderflow.replies.AuthorizationRevised;
 import net.ftgo.order.saga.commands.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -55,12 +56,18 @@ public class ReviseOrderSaga implements SimpleSaga<ReviseOrderSagaData> {
     
     private static final Logger logger = LoggerFactory.getLogger(ReviseOrderSaga.class);
     
+    private final ReviseOrderSagaLocalSteps localSteps;
     private final SagaDefinition<ReviseOrderSagaData> sagaDefinition;
     
     /**
      * Creates the ReviseOrderSaga with its step definitions.
      */
     public ReviseOrderSaga() {
+        this(null);
+    }
+
+    public ReviseOrderSaga(ReviseOrderSagaLocalSteps localSteps) {
+        this.localSteps = localSteps;
         this.sagaDefinition = step()
             .invokeLocal(this::beginRevise)
             .withCompensation(this::undoRevise)
@@ -69,6 +76,7 @@ public class ReviseOrderSaga implements SimpleSaga<ReviseOrderSagaData> {
             .withCompensation(this::undoReviseTicket)
         .step()
             .invokeParticipant(this::reviseCreditCardAuthorization)
+            .onReply(AuthorizationRevised.class, this::handleReviseAuthorizationReply)
         .step()
             .invokeParticipant(this::confirmReviseTicket)
         .step()
@@ -93,8 +101,7 @@ public class ReviseOrderSaga implements SimpleSaga<ReviseOrderSagaData> {
      */
     private void beginRevise(ReviseOrderSagaData data) {
         logger.info("ReviseOrderSaga: Step 1 - beginRevise for orderId={}", data.getOrderId());
-        // The actual state transition happens in the command handler
-        // This step exists for saga definition structure and compensation chain
+        requireLocalSteps().beginReviseOrder(data.getOrderId());
     }
     
     /**
@@ -104,12 +111,16 @@ public class ReviseOrderSaga implements SimpleSaga<ReviseOrderSagaData> {
      * @param data the saga data
      * @return command to send to Order Service
      */
-    private CommandWithDestination undoRevise(ReviseOrderSagaData data) {
+    private void undoRevise(ReviseOrderSagaData data) {
         logger.warn("ReviseOrderSaga: Compensation - undoRevise for orderId={}", data.getOrderId());
-        
-        return send(new ReviseOrderSagaLocalSteps.UndoReviseCommand(data.getOrderId()))
-            .to(ChannelNames.ORDER_SERVICE_COMMAND_CHANNEL)
-            .build();
+        requireLocalSteps().undoReviseOrder(data.getOrderId());
+    }
+
+    private ReviseOrderSagaLocalSteps requireLocalSteps() {
+        if (localSteps == null) {
+            throw new IllegalStateException("ReviseOrderSagaLocalSteps is required to execute ReviseOrderSaga");
+        }
+        return localSteps;
     }
     
     // Step 2: Begin revise ticket
@@ -170,6 +181,12 @@ public class ReviseOrderSaga implements SimpleSaga<ReviseOrderSagaData> {
             .to(ChannelNames.ACCOUNTING_SERVICE_COMMAND_CHANNEL)
             .build();
     }
+
+    private void handleReviseAuthorizationReply(ReviseOrderSagaData data, AuthorizationRevised reply) {
+        logger.info("ReviseOrderSaga: Received AuthorizationRevised with authorizationId={}",
+            reply.getAuthorizationId());
+        data.setRevisedAuthorizationId(reply.getAuthorizationId());
+    }
     
     // Step 4: Confirm revise ticket (retriable)
     
@@ -209,7 +226,8 @@ public class ReviseOrderSaga implements SimpleSaga<ReviseOrderSagaData> {
         
         return send(new ReviseOrderSagaLocalSteps.ConfirmReviseCommand(
                 data.getOrderId(), 
-                data.getRevisedLineItems()
+                data.getRevisedLineItems(),
+                data.getCurrentAuthorizationId()
             ))
             .to(ChannelNames.ORDER_SERVICE_COMMAND_CHANNEL)
             .build();

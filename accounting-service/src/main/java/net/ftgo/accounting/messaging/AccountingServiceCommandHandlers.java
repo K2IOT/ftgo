@@ -9,6 +9,7 @@ import net.ftgo.accounting.domain.Authorization;
 import net.ftgo.accounting.repository.AccountRepository;
 import net.ftgo.common.Money;
 import net.ftgo.common.orderflow.commands.AuthorizeCardCommand;
+import net.ftgo.common.orderflow.replies.AuthorizationRevised;
 import net.ftgo.common.orderflow.replies.CardAuthorized;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
