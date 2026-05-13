@@ -52,8 +52,7 @@ docker-compose -f docker-compose.infra.yml up -d
 ```
 
 This starts:
-- ✅ Zookeeper
-- ✅ 3 Kafka brokers
+- ✅ 3 Kafka brokers (KRaft mode, no Zookeeper)
 - ✅ 6 MySQL databases
 - ✅ ScyllaDB
 - ✅ Redis
@@ -69,8 +68,7 @@ This starts:
 # Check all containers are running
 docker ps
 
-# You should see 14 containers running:
-# - ftgo-zookeeper
+# You should see the infrastructure containers running:
 # - ftgo-kafka-1, ftgo-kafka-2, ftgo-kafka-3
 # - ftgo-mysql-order, ftgo-mysql-consumer, ftgo-mysql-restaurant
 # - ftgo-mysql-kitchen, ftgo-mysql-accounting, ftgo-mysql-delivery
@@ -80,6 +78,17 @@ docker ps
 # - ftgo-vault
 # - ftgo-config-server
 ```
+
+Local service database ports:
+
+| Service | JDBC host/port | Database |
+|---------|----------------|----------|
+| Order | localhost:3306 | ftgo_order |
+| Consumer | localhost:3307 | ftgo_consumer |
+| Restaurant | localhost:3308 | ftgo_restaurant |
+| Kitchen | localhost:3309 | ftgo_kitchen |
+| Accounting | localhost:3310 | ftgo_accounting |
+| Delivery | localhost:3311 | ftgo_delivery |
 
 ### 6. Check Kafka Topics
 
@@ -279,8 +288,8 @@ docker-compose -f docker-compose.infra.yml down -v
 
 **Solution**:
 ```bash
-# Check Zookeeper logs
-docker logs ftgo-zookeeper
+# Check broker logs
+docker logs ftgo-kafka-1
 
 # Restart Kafka
 docker-compose -f docker-compose.infra.yml restart kafka-1 kafka-2 kafka-3

@@ -9,6 +9,8 @@ CREATE TABLE orders (
     delivery_time TIMESTAMP NOT NULL,
     payment_token VARCHAR(255) NOT NULL,
     order_total DECIMAL(10,2) NOT NULL,
+    ticket_id BIGINT,
+    authorization_id BIGINT,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_consumer_id (consumer_id),
@@ -72,10 +74,10 @@ CREATE TABLE saga_instance (
 -- Create saga_instance_participants table for Eventuate Tram Sagas
 -- Tracks saga participants and their state
 CREATE TABLE saga_instance_participants (
-    saga_type VARCHAR(255) NOT NULL,
-    saga_id VARCHAR(255) NOT NULL,
-    destination VARCHAR(255) NOT NULL,
-    resource VARCHAR(255) NOT NULL,
+    saga_type VARCHAR(100) NOT NULL,
+    saga_id VARCHAR(100) NOT NULL,
+    destination VARCHAR(100) NOT NULL,
+    resource VARCHAR(100) NOT NULL,
     PRIMARY KEY (saga_type, saga_id, destination, resource)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

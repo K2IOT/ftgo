@@ -2,7 +2,7 @@ spring:
   application:
     name: kitchen-service
   datasource:
-    url: jdbc:mysql://localhost:3306/ftgo_kitchen?createDatabaseIfNotExist=true
+    url: jdbc:mysql://localhost:3309/ftgo_kitchen?createDatabaseIfNotExist=true
     username: ftgo_user
     password: ftgo_password
     driver-class-name: com.mysql.cj.jdbc.Driver

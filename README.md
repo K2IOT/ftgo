@@ -375,9 +375,9 @@ Secrets management:
 
 ### Kafka not starting
 
-Check Zookeeper is running:
+Check the KRaft broker logs:
 ```bash
-docker logs ftgo-zookeeper
+docker logs ftgo-kafka-1
 ```
 
 ### Debezium connector fails

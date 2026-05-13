@@ -2,7 +2,7 @@ spring:
   application:
     name: restaurant-service
   datasource:
-    url: jdbc:mysql://localhost:3306/ftgo_restaurant?createDatabaseIfNotExist=true
+    url: jdbc:mysql://localhost:3308/ftgo_restaurant?createDatabaseIfNotExist=true
     username: ftgo_user
     password: ftgo_password
     driver-class-name: com.mysql.cj.jdbc.Driver
