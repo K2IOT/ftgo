@@ -1,6 +1,9 @@
 package net.ftgo.orderhistory.messaging;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import net.ftgo.common.Money;
+import net.ftgo.common.orderflow.events.OrderApproved;
+import net.ftgo.common.orderflow.events.OrderRejected;
 import net.ftgo.orderhistory.domain.LineItem;
 import net.ftgo.orderhistory.domain.OrderHistoryRecord;
 import net.ftgo.orderhistory.domain.ProcessedMessage;
@@ -18,6 +21,7 @@ import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -53,6 +57,124 @@ class OrderHistoryEventHandlersTest {
             processedMessageRepository,
             objectMapper
         );
+    }
+
+    @Test
+    void sharedOrderCreatedThenOrderApprovedUpdatesSameHistoryRecord() throws Exception {
+        LocalDateTime deliveryTime = LocalDateTime.now().plusHours(1);
+        LocalDateTime createdAt = LocalDateTime.now();
+        net.ftgo.common.orderflow.events.OrderCreated orderCreated =
+            new net.ftgo.common.orderflow.events.OrderCreated(
+                123L,
+                456L,
+                789L,
+                "APPROVAL_PENDING",
+                new Money("30.97"),
+                List.of(
+                    new net.ftgo.common.orderflow.events.OrderCreated.LineItem(
+                        1L,
+                        "Burger",
+                        new Money("12.99"),
+                        2
+                    ),
+                    new net.ftgo.common.orderflow.events.OrderCreated.LineItem(
+                        2L,
+                        "Fries",
+                        new Money("4.99"),
+                        1
+                    )
+                ),
+                "123 Main St",
+                deliveryTime,
+                createdAt
+            );
+
+        AtomicReference<OrderHistoryRecord> savedRecord = new AtomicReference<>();
+        when(processedMessageRepository.existsById(anyString())).thenReturn(false);
+        when(orderHistoryRepository.save(any(OrderHistoryRecord.class))).thenAnswer(invocation -> {
+            OrderHistoryRecord record = invocation.getArgument(0);
+            savedRecord.set(record);
+            return record;
+        });
+        when(orderHistoryRepository.findById("123")).thenAnswer(invocation -> Optional.ofNullable(savedRecord.get()));
+
+        eventHandlers.handleOrderEvent(
+            objectMapper.writeValueAsString(orderCreated),
+            "Order#123",
+            "OrderCreated"
+        );
+        eventHandlers.handleOrderEvent(
+            objectMapper.writeValueAsString(new OrderApproved(123L, 456L, 789L, new Money("30.97"), 99L, 88L)),
+            "Order#123",
+            "OrderApproved"
+        );
+
+        OrderHistoryRecord record = savedRecord.get();
+        assertEquals("123", record.getOrderId());
+        assertEquals(456L, record.getConsumerId());
+        assertEquals(789L, record.getRestaurantId());
+        assertEquals("APPROVED", record.getStatus());
+        assertEquals(new BigDecimal("30.97"), record.getOrderTotal());
+        assertEquals("123 Main St", record.getDeliveryAddress());
+        assertEquals(deliveryTime, record.getDeliveryTime());
+        assertEquals(createdAt, record.getCreationDate());
+        assertEquals(2, record.getLineItems().size());
+        assertEquals("Burger", record.getLineItems().get(0).getName());
+    }
+
+    @Test
+    void duplicateSharedOrderCreatedDeliveryIsIdempotent() throws Exception {
+        net.ftgo.common.orderflow.events.OrderCreated orderCreated =
+            new net.ftgo.common.orderflow.events.OrderCreated(
+                123L,
+                456L,
+                789L,
+                "APPROVAL_PENDING",
+                new Money("12.99"),
+                List.of(new net.ftgo.common.orderflow.events.OrderCreated.LineItem(
+                    1L,
+                    "Burger",
+                    new Money("12.99"),
+                    1
+                )),
+                "123 Main St",
+                LocalDateTime.now().plusHours(1),
+                LocalDateTime.now()
+            );
+        String payload = objectMapper.writeValueAsString(orderCreated);
+        String key = "Order#123";
+        String eventType = "OrderCreated";
+        String messageId = key + "-" + eventType;
+
+        when(processedMessageRepository.existsById(messageId)).thenReturn(false, true);
+
+        eventHandlers.handleOrderEvent(payload, key, eventType);
+        eventHandlers.handleOrderEvent(payload, key, eventType);
+
+        verify(orderHistoryRepository, times(1)).save(any(OrderHistoryRecord.class));
+        verify(processedMessageRepository, times(1)).save(any(ProcessedMessage.class));
+    }
+
+    @Test
+    void sharedOrderRejectedUpdatesExistingHistoryRecord() throws Exception {
+        OrderRejected event = new OrderRejected(123L, 456L, 789L, "Consumer verification failed");
+        String payload = objectMapper.writeValueAsString(event);
+        String key = "Order#123";
+        String eventType = "OrderRejected";
+        String messageId = key + "-" + eventType;
+
+        OrderHistoryRecord existingRecord = new OrderHistoryRecord("123");
+        existingRecord.setStatus("APPROVAL_PENDING");
+
+        when(processedMessageRepository.existsById(messageId)).thenReturn(false);
+        when(orderHistoryRepository.findById("123")).thenReturn(Optional.of(existingRecord));
+
+        eventHandlers.handleOrderEvent(payload, key, eventType);
+
+        ArgumentCaptor<OrderHistoryRecord> recordCaptor = ArgumentCaptor.forClass(OrderHistoryRecord.class);
+        verify(orderHistoryRepository).save(recordCaptor.capture());
+        assertEquals("REJECTED", recordCaptor.getValue().getStatus());
+        verify(processedMessageRepository).save(any(ProcessedMessage.class));
     }
     
     @Test

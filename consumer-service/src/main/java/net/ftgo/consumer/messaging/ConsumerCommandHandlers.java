@@ -4,7 +4,8 @@ import io.eventuate.tram.commands.consumer.CommandHandlers;
 import io.eventuate.tram.commands.consumer.CommandMessage;
 import io.eventuate.tram.messaging.common.Message;
 import io.eventuate.tram.sagas.participant.SagaCommandHandlersBuilder;
-import net.ftgo.common.Money;
+import net.ftgo.common.orderflow.commands.VerifyConsumerCommand;
+import net.ftgo.common.orderflow.replies.ConsumerVerified;
 import net.ftgo.consumer.service.ConsumerService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -59,10 +60,9 @@ public class ConsumerCommandHandlers {
             command.getConsumerId(), command.getOrderTotal());
         
         try {
-            Money orderTotal = new Money(command.getOrderTotal());
             boolean verified = consumerService.verifyConsumerCredit(
                 command.getConsumerId(), 
-                orderTotal
+                command.getOrderTotal()
             );
             
             if (verified) {

@@ -4,7 +4,9 @@ import io.eventuate.tram.sagas.orchestration.SagaInstanceFactory;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import net.ftgo.common.Money;
+import net.ftgo.common.orderflow.events.OrderCreated;
 import net.ftgo.order.domain.*;
+import net.ftgo.order.messaging.DomainEventPublisher;
 import net.ftgo.order.repository.OrderRepository;
 import net.ftgo.order.saga.*;
 import org.slf4j.Logger;
@@ -34,6 +36,7 @@ public class OrderService {
     private final CreateOrderSaga createOrderSaga;
     private final CancelOrderSaga cancelOrderSaga;
     private final ReviseOrderSaga reviseOrderSaga;
+    private final DomainEventPublisher eventPublisher;
     private final Counter ordersPlacedCounter;
     
     public OrderService(OrderRepository orderRepository,
@@ -41,12 +44,14 @@ public class OrderService {
                        CreateOrderSaga createOrderSaga,
                        CancelOrderSaga cancelOrderSaga,
                        ReviseOrderSaga reviseOrderSaga,
+                       DomainEventPublisher eventPublisher,
                        MeterRegistry meterRegistry) {
         this.orderRepository = orderRepository;
         this.sagaInstanceFactory = sagaInstanceFactory;
         this.createOrderSaga = createOrderSaga;
         this.cancelOrderSaga = cancelOrderSaga;
         this.reviseOrderSaga = reviseOrderSaga;
+        this.eventPublisher = eventPublisher;
         
         // Initialize metrics counter
         this.ordersPlacedCounter = Counter.builder("order_service_placed_orders_total")
@@ -86,6 +91,8 @@ public class OrderService {
         
         logger.info("Order created with id={}, state={}, total={}",
             order.getId(), order.getState(), order.getOrderTotal());
+
+        eventPublisher.publishOrderEvent(order.getId(), toOrderCreated(order));
         
         // Create saga data
         CreateOrderSagaData sagaData = new CreateOrderSagaData(
@@ -105,6 +112,29 @@ public class OrderService {
         ordersPlacedCounter.increment();
         
         return order.getId();
+    }
+
+    private OrderCreated toOrderCreated(Order order) {
+        List<OrderCreated.LineItem> lineItems = order.getLineItems().stream()
+            .map(item -> new OrderCreated.LineItem(
+                item.getMenuItemId(),
+                item.getName(),
+                item.getPrice(),
+                item.getQuantity()
+            ))
+            .collect(Collectors.toList());
+
+        return new OrderCreated(
+            order.getId(),
+            order.getConsumerId(),
+            order.getRestaurantId(),
+            order.getState().name(),
+            order.getOrderTotal(),
+            lineItems,
+            order.getDeliveryInfo().getDeliveryAddress(),
+            order.getDeliveryInfo().getDeliveryTime(),
+            order.getCreatedAt()
+        );
     }
     
     /**

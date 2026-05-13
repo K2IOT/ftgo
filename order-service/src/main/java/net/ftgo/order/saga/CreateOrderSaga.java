@@ -4,9 +4,13 @@ import io.eventuate.tram.commands.consumer.CommandWithDestination;
 import io.eventuate.tram.sagas.orchestration.SagaDefinition;
 import io.eventuate.tram.sagas.simpledsl.SimpleSaga;
 import net.ftgo.common.channels.ChannelNames;
-import net.ftgo.order.saga.commands.*;
-import net.ftgo.order.saga.replies.AuthorizeCardReply;
-import net.ftgo.order.saga.replies.CreateTicketReply;
+import net.ftgo.common.orderflow.commands.ApproveTicketCommand;
+import net.ftgo.common.orderflow.commands.AuthorizeCardCommand;
+import net.ftgo.common.orderflow.commands.CancelTicketCommand;
+import net.ftgo.common.orderflow.commands.CreateTicketCommand;
+import net.ftgo.common.orderflow.commands.VerifyConsumerCommand;
+import net.ftgo.common.orderflow.replies.CardAuthorized;
+import net.ftgo.common.orderflow.replies.TicketCreated;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -61,11 +65,11 @@ public class CreateOrderSaga implements SimpleSaga<CreateOrderSagaData> {
             .invokeParticipant(this::verifyConsumer)
         .step()
             .invokeParticipant(this::createTicket)
-            .onReply(CreateTicketReply.class, this::handleCreateTicketReply)
+            .onReply(TicketCreated.class, this::handleCreateTicketReply)
             .withCompensation(this::cancelTicket)
         .step()
             .invokeParticipant(this::authorizeCard)
-            .onReply(AuthorizeCardReply.class, this::handleAuthorizeCardReply)
+            .onReply(CardAuthorized.class, this::handleAuthorizeCardReply)
         .step()
             .invokeParticipant(this::approveTicket)
         .step()
@@ -142,7 +146,13 @@ public class CreateOrderSaga implements SimpleSaga<CreateOrderSagaData> {
         return send(new CreateTicketCommand(
                 data.getOrderId(),
                 data.getRestaurantId(),
-                data.getLineItems()
+                data.getLineItems().stream()
+                    .map(item -> new CreateTicketCommand.TicketLineItemDTO(
+                        item.getMenuItemId(),
+                        item.getName(),
+                        item.getQuantity()
+                    ))
+                    .toList()
             ))
             .to(ChannelNames.KITCHEN_SERVICE_COMMAND_CHANNEL)
             .build();
@@ -155,8 +165,8 @@ public class CreateOrderSaga implements SimpleSaga<CreateOrderSagaData> {
      * @param data the saga data
      * @param reply the create ticket reply
      */
-    private void handleCreateTicketReply(CreateOrderSagaData data, CreateTicketReply reply) {
-        logger.info("CreateOrderSaga: Received CreateTicketReply with ticketId={}", reply.getTicketId());
+    private void handleCreateTicketReply(CreateOrderSagaData data, TicketCreated reply) {
+        logger.info("CreateOrderSaga: Received TicketCreated with ticketId={}", reply.getTicketId());
         data.setTicketId(reply.getTicketId());
     }
     
@@ -211,8 +221,8 @@ public class CreateOrderSaga implements SimpleSaga<CreateOrderSagaData> {
      * @param data the saga data
      * @param reply the authorize card reply
      */
-    private void handleAuthorizeCardReply(CreateOrderSagaData data, AuthorizeCardReply reply) {
-        logger.info("CreateOrderSaga: Received AuthorizeCardReply with authorizationId={}", 
+    private void handleAuthorizeCardReply(CreateOrderSagaData data, CardAuthorized reply) {
+        logger.info("CreateOrderSaga: Received CardAuthorized with authorizationId={}",
             reply.getAuthorizationId());
         data.setAuthorizationId(reply.getAuthorizationId());
     }

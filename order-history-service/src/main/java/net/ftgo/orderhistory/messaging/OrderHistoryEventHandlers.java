@@ -3,6 +3,12 @@ package net.ftgo.orderhistory.messaging;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import net.ftgo.common.Money;
+import net.ftgo.common.orderflow.events.OrderApproved;
+import net.ftgo.common.orderflow.events.OrderCancelled;
+import net.ftgo.common.orderflow.events.OrderCreated;
+import net.ftgo.common.orderflow.events.OrderRejected;
+import net.ftgo.common.orderflow.events.OrderRevised;
 import net.ftgo.orderhistory.domain.LineItem;
 import net.ftgo.orderhistory.domain.OrderHistoryRecord;
 import net.ftgo.orderhistory.domain.ProcessedMessage;
@@ -96,21 +102,41 @@ public class OrderHistoryEventHandlers {
             }
             
             switch (eventType) {
+                case "OrderCreated":
+                    OrderCreated sharedOrderCreated = objectMapper.treeToValue(eventNode, OrderCreated.class);
+                    handleOrderCreated(sharedOrderCreated);
+                    break;
                 case "OrderCreatedEvent":
                     OrderCreatedEvent orderCreated = objectMapper.treeToValue(eventNode, OrderCreatedEvent.class);
-                    handleOrderCreated(orderCreated);
+                    handleOrderCreated(toSharedOrderCreated(orderCreated));
+                    break;
+                case "OrderApproved":
+                    OrderApproved sharedOrderApproved = objectMapper.treeToValue(eventNode, OrderApproved.class);
+                    handleOrderApproved(sharedOrderApproved.getOrderId());
                     break;
                 case "OrderApprovedEvent":
                     OrderApprovedEvent orderApproved = objectMapper.treeToValue(eventNode, OrderApprovedEvent.class);
-                    handleOrderApproved(orderApproved);
+                    handleOrderApproved(orderApproved.getOrderId());
+                    break;
+                case "OrderRejected":
+                    OrderRejected sharedOrderRejected = objectMapper.treeToValue(eventNode, OrderRejected.class);
+                    handleOrderRejected(sharedOrderRejected.getOrderId());
+                    break;
+                case "OrderCancelled":
+                    OrderCancelled sharedOrderCancelled = objectMapper.treeToValue(eventNode, OrderCancelled.class);
+                    handleOrderCancelled(sharedOrderCancelled.getOrderId());
                     break;
                 case "OrderCancelledEvent":
                     OrderCancelledEvent orderCancelled = objectMapper.treeToValue(eventNode, OrderCancelledEvent.class);
-                    handleOrderCancelled(orderCancelled);
+                    handleOrderCancelled(orderCancelled.getOrderId());
+                    break;
+                case "OrderRevised":
+                    OrderRevised sharedOrderRevised = objectMapper.treeToValue(eventNode, OrderRevised.class);
+                    handleOrderRevised(sharedOrderRevised);
                     break;
                 case "OrderRevisedEvent":
                     OrderRevisedEvent orderRevised = objectMapper.treeToValue(eventNode, OrderRevisedEvent.class);
-                    handleOrderRevised(orderRevised);
+                    handleOrderRevised(toSharedOrderRevised(orderRevised));
                     break;
                 default:
                     logger.warn("Unknown event type: {}", eventType);
@@ -263,21 +289,21 @@ public class OrderHistoryEventHandlers {
     
     // ========== Event Handler Methods ==========
     
-    private void handleOrderCreated(OrderCreatedEvent event) {
+    private void handleOrderCreated(OrderCreated event) {
         logger.info("Handling OrderCreated: orderId={}", event.getOrderId());
         
         OrderHistoryRecord record = new OrderHistoryRecord(event.getOrderId().toString());
         record.setConsumerId(event.getConsumerId());
         record.setRestaurantId(event.getRestaurantId());
         record.setStatus(event.getStatus());
-        record.setOrderTotal(event.getOrderTotal());
+        record.setOrderTotal(event.getOrderTotal().getAmount());
         record.setDeliveryAddress(event.getDeliveryAddress());
         record.setDeliveryTime(event.getDeliveryTime());
         record.setCreationDate(event.getCreatedAt());
         
         // Convert line items
         List<LineItem> lineItems = event.getLineItems().stream()
-            .map(dto -> new LineItem(dto.getMenuItemId(), dto.getName(), dto.getPrice(), dto.getQuantity()))
+            .map(dto -> new LineItem(dto.getMenuItemId(), dto.getName(), dto.getPrice().getAmount(), dto.getQuantity()))
             .collect(Collectors.toList());
         record.setLineItems(lineItems);
         
@@ -294,45 +320,82 @@ public class OrderHistoryEventHandlers {
         logger.info("Created order history record: orderId={}", event.getOrderId());
     }
     
-    private void handleOrderApproved(OrderApprovedEvent event) {
-        logger.info("Handling OrderApproved: orderId={}", event.getOrderId());
+    private void handleOrderApproved(Long orderId) {
+        logger.info("Handling OrderApproved: orderId={}", orderId);
         
-        Optional<OrderHistoryRecord> optionalRecord = orderHistoryRepository.findById(event.getOrderId().toString());
+        Optional<OrderHistoryRecord> optionalRecord = orderHistoryRepository.findById(orderId.toString());
         if (optionalRecord.isPresent()) {
             OrderHistoryRecord record = optionalRecord.get();
             record.setStatus("APPROVED");
             orderHistoryRepository.save(record);
-            logger.info("Updated order status to APPROVED: orderId={}", event.getOrderId());
+            logger.info("Updated order status to APPROVED: orderId={}", orderId);
         } else {
-            logger.warn("Order history record not found for OrderApproved: orderId={}", event.getOrderId());
+            logger.warn("Order history record not found for OrderApproved: orderId={}", orderId);
         }
     }
+
+    private OrderCreated toSharedOrderCreated(OrderCreatedEvent event) {
+        List<OrderCreated.LineItem> lineItems = event.getLineItems().stream()
+            .map(item -> new OrderCreated.LineItem(
+                item.getMenuItemId(),
+                item.getName(),
+                new Money(item.getPrice()),
+                item.getQuantity()
+            ))
+            .collect(Collectors.toList());
+
+        return new OrderCreated(
+            event.getOrderId(),
+            event.getConsumerId(),
+            event.getRestaurantId(),
+            event.getStatus(),
+            new Money(event.getOrderTotal()),
+            lineItems,
+            event.getDeliveryAddress(),
+            event.getDeliveryTime(),
+            event.getCreatedAt()
+        );
+    }
     
-    private void handleOrderCancelled(OrderCancelledEvent event) {
-        logger.info("Handling OrderCancelled: orderId={}", event.getOrderId());
+    private void handleOrderRejected(Long orderId) {
+        logger.info("Handling OrderRejected: orderId={}", orderId);
         
-        Optional<OrderHistoryRecord> optionalRecord = orderHistoryRepository.findById(event.getOrderId().toString());
+        Optional<OrderHistoryRecord> optionalRecord = orderHistoryRepository.findById(orderId.toString());
+        if (optionalRecord.isPresent()) {
+            OrderHistoryRecord record = optionalRecord.get();
+            record.setStatus("REJECTED");
+            orderHistoryRepository.save(record);
+            logger.info("Updated order status to REJECTED: orderId={}", orderId);
+        } else {
+            logger.warn("Order history record not found for OrderRejected: orderId={}", orderId);
+        }
+    }
+
+    private void handleOrderCancelled(Long orderId) {
+        logger.info("Handling OrderCancelled: orderId={}", orderId);
+        
+        Optional<OrderHistoryRecord> optionalRecord = orderHistoryRepository.findById(orderId.toString());
         if (optionalRecord.isPresent()) {
             OrderHistoryRecord record = optionalRecord.get();
             record.setStatus("CANCELLED");
             orderHistoryRepository.save(record);
-            logger.info("Updated order status to CANCELLED: orderId={}", event.getOrderId());
+            logger.info("Updated order status to CANCELLED: orderId={}", orderId);
         } else {
-            logger.warn("Order history record not found for OrderCancelled: orderId={}", event.getOrderId());
+            logger.warn("Order history record not found for OrderCancelled: orderId={}", orderId);
         }
     }
     
-    private void handleOrderRevised(OrderRevisedEvent event) {
+    private void handleOrderRevised(OrderRevised event) {
         logger.info("Handling OrderRevised: orderId={}", event.getOrderId());
         
         Optional<OrderHistoryRecord> optionalRecord = orderHistoryRepository.findById(event.getOrderId().toString());
         if (optionalRecord.isPresent()) {
             OrderHistoryRecord record = optionalRecord.get();
-            record.setOrderTotal(event.getOrderTotal());
+            record.setOrderTotal(event.getOrderTotal().getAmount());
             
             // Update line items
             List<LineItem> lineItems = event.getLineItems().stream()
-                .map(dto -> new LineItem(dto.getMenuItemId(), dto.getName(), dto.getPrice(), dto.getQuantity()))
+                .map(dto -> new LineItem(dto.getMenuItemId(), dto.getName(), dto.getPrice().getAmount(), dto.getQuantity()))
                 .collect(Collectors.toList());
             record.setLineItems(lineItems);
             
@@ -350,6 +413,25 @@ public class OrderHistoryEventHandlers {
         } else {
             logger.warn("Order history record not found for OrderRevised: orderId={}", event.getOrderId());
         }
+    }
+
+    private OrderRevised toSharedOrderRevised(OrderRevisedEvent event) {
+        List<OrderCreated.LineItem> lineItems = event.getLineItems().stream()
+            .map(item -> new OrderCreated.LineItem(
+                item.getMenuItemId(),
+                item.getName(),
+                new Money(item.getPrice()),
+                item.getQuantity()
+            ))
+            .collect(Collectors.toList());
+
+        return new OrderRevised(
+            event.getOrderId(),
+            null,
+            null,
+            lineItems,
+            new Money(event.getOrderTotal())
+        );
     }
     
     private void handleTicketAccepted(TicketAcceptedEvent event) {

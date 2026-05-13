@@ -2,6 +2,9 @@ package net.ftgo.kitchen;
 
 import io.eventuate.tram.commands.consumer.CommandMessage;
 import io.eventuate.tram.messaging.common.Message;
+import net.ftgo.common.orderflow.commands.ApproveTicketCommand;
+import net.ftgo.common.orderflow.commands.CancelTicketCommand;
+import net.ftgo.common.orderflow.commands.CreateTicketCommand;
 import net.ftgo.kitchen.domain.Ticket;
 import net.ftgo.kitchen.domain.TicketState;
 import net.ftgo.kitchen.messaging.*;

@@ -8,6 +8,8 @@ import net.ftgo.accounting.domain.Account;
 import net.ftgo.accounting.domain.Authorization;
 import net.ftgo.accounting.repository.AccountRepository;
 import net.ftgo.common.Money;
+import net.ftgo.common.orderflow.commands.AuthorizeCardCommand;
+import net.ftgo.common.orderflow.replies.CardAuthorized;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -84,8 +86,7 @@ public class AccountingServiceCommandHandlers {
                 });
             
             // Authorize with idempotency check
-            Money amount = new Money(command.getAmount());
-            Authorization authorization = account.authorize(command.getRequestId(), amount);
+            Authorization authorization = account.authorize(command.getRequestId(), command.getAmount());
             
             // Save account (cascades to authorization)
             accountRepository.save(account);

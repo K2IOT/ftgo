@@ -6,9 +6,10 @@ import io.eventuate.tram.messaging.common.Message;
 import io.eventuate.tram.sagas.participant.SagaCommandHandlersBuilder;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
+import net.ftgo.common.orderflow.events.OrderCreated;
+import net.ftgo.common.orderflow.events.OrderRevised;
 import net.ftgo.order.domain.Order;
 import net.ftgo.order.domain.OrderLineItem;
-import net.ftgo.order.domain.events.OrderRevised;
 import net.ftgo.order.messaging.DomainEventPublisher;
 import net.ftgo.order.repository.OrderRepository;
 import org.slf4j.Logger;
@@ -170,7 +171,7 @@ public class ReviseOrderSagaLocalSteps {
             order.getId(),
             order.getConsumerId(),
             order.getRestaurantId(),
-            order.getLineItems(),
+            toEventLineItems(order.getLineItems()),
             order.getOrderTotal()
         );
         eventPublisher.publishOrderEvent(order.getId(), event);
@@ -182,6 +183,17 @@ public class ReviseOrderSagaLocalSteps {
             orderId, order.getState(), order.getOrderTotal());
         
         return withSuccess();
+    }
+
+    private List<OrderCreated.LineItem> toEventLineItems(List<OrderLineItem> lineItems) {
+        return lineItems.stream()
+            .map(item -> new OrderCreated.LineItem(
+                item.getMenuItemId(),
+                item.getName(),
+                item.getPrice(),
+                item.getQuantity()
+            ))
+            .toList();
     }
     
     /**

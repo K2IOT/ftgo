@@ -1,6 +1,7 @@
 package net.ftgo.kitchen.messaging;
 
 import io.eventuate.tram.commands.common.Command;
+import net.ftgo.common.orderflow.commands.CreateTicketCommand;
 
 import java.util.List;
 

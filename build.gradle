@@ -123,6 +123,9 @@ project(':order-service') {
         
         // Saga testing support
         testImplementation 'io.eventuate.tram.sagas:eventuate-tram-sagas-testing-support'
+        testImplementation project(':consumer-service')
+        testImplementation project(':kitchen-service')
+        testImplementation project(':accounting-service')
         implementation 'com.zaxxer:HikariCP'
     }
 }

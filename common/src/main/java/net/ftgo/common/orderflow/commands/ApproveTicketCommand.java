@@ -1,25 +1,22 @@
-package net.ftgo.kitchen.messaging;
+package net.ftgo.common.orderflow.commands;
 
 import io.eventuate.tram.commands.common.Command;
 
-/**
- * Command to cancel a ticket (compensation for CreateOrderSaga).
- */
-public class CancelTicketCommand implements Command {
-    
+public class ApproveTicketCommand implements Command {
+
     private Long ticketId;
-    
-    public CancelTicketCommand() {
+
+    public ApproveTicketCommand() {
     }
-    
-    public CancelTicketCommand(Long ticketId) {
+
+    public ApproveTicketCommand(Long ticketId) {
         this.ticketId = ticketId;
     }
-    
+
     public Long getTicketId() {
         return ticketId;
     }
-    
+
     public void setTicketId(Long ticketId) {
         this.ticketId = ticketId;
     }

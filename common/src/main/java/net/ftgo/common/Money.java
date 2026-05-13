@@ -1,6 +1,7 @@
 package net.ftgo.common;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.Embeddable;
 import jakarta.validation.constraints.NotNull;
@@ -85,6 +86,7 @@ public class Money {
         return this.amount.compareTo(other.amount) < 0;
     }
     
+    @JsonIgnore
     public boolean isZero() {
         return this.amount.compareTo(BigDecimal.ZERO) == 0;
     }

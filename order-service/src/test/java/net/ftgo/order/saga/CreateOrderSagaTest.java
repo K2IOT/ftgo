@@ -1,9 +1,9 @@
 package net.ftgo.order.saga;
 
 import net.ftgo.common.Money;
+import net.ftgo.common.orderflow.replies.CardAuthorized;
+import net.ftgo.common.orderflow.replies.TicketCreated;
 import net.ftgo.order.domain.OrderLineItem;
-import net.ftgo.order.saga.replies.AuthorizeCardReply;
-import net.ftgo.order.saga.replies.CreateTicketReply;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -76,7 +76,7 @@ class CreateOrderSagaTest {
     }
     
     /**
-     * Test that saga data can store ticketId from CreateTicketReply.
+     * Test that saga data can store ticketId from TicketCreated.
      */
     @Test
     void testSagaData_StoresTicketId() {
@@ -89,7 +89,7 @@ class CreateOrderSagaTest {
     }
     
     /**
-     * Test that saga data can store authorizationId from AuthorizeCardReply.
+     * Test that saga data can store authorizationId from CardAuthorized.
      */
     @Test
     void testSagaData_StoresAuthorizationId() {
@@ -117,23 +117,23 @@ class CreateOrderSagaTest {
     }
     
     /**
-     * Test CreateTicketReply structure.
+     * Test TicketCreated reply structure.
      */
     @Test
-    void testCreateTicketReply() {
+    void testTicketCreatedReply() {
         Long ticketId = 777L;
-        CreateTicketReply reply = new CreateTicketReply(ticketId);
+        TicketCreated reply = new TicketCreated(ticketId);
         
         assertEquals(ticketId, reply.getTicketId());
     }
     
     /**
-     * Test AuthorizeCardReply structure.
+     * Test CardAuthorized reply structure.
      */
     @Test
-    void testAuthorizeCardReply() {
+    void testCardAuthorizedReply() {
         Long authorizationId = 123L;
-        AuthorizeCardReply reply = new AuthorizeCardReply(authorizationId);
+        CardAuthorized reply = new CardAuthorized(authorizationId);
         
         assertEquals(authorizationId, reply.getAuthorizationId());
     }

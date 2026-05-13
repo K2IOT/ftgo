@@ -7,9 +7,14 @@ import io.eventuate.tram.messaging.common.Message;
 import io.eventuate.tram.sagas.participant.SagaCommandDispatcherFactory;
 import io.eventuate.tram.sagas.participant.SagaCommandHandlersBuilder;
 import net.ftgo.common.channels.ChannelNames;
+import net.ftgo.common.orderflow.commands.ApproveTicketCommand;
+import net.ftgo.common.orderflow.commands.AuthorizeCardCommand;
+import net.ftgo.common.orderflow.commands.CancelTicketCommand;
+import net.ftgo.common.orderflow.commands.CreateTicketCommand;
+import net.ftgo.common.orderflow.commands.VerifyConsumerCommand;
+import net.ftgo.common.orderflow.replies.CardAuthorized;
+import net.ftgo.common.orderflow.replies.TicketCreated;
 import net.ftgo.order.saga.commands.*;
-import net.ftgo.order.saga.replies.AuthorizeCardReply;
-import net.ftgo.order.saga.replies.CreateTicketReply;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -72,7 +77,7 @@ public class TestParticipantConfiguration {
         if (cm.getCommand().getRestaurantId() == 999L) {
             return withFailure();
         }
-        return withSuccess(new CreateTicketReply(999L));
+        return withSuccess(new TicketCreated(999L));
     }
 
     private Message handleApproveTicket(CommandMessage<ApproveTicketCommand> cm) {
@@ -112,7 +117,7 @@ public class TestParticipantConfiguration {
     }
 
     private Message handleAuthorizeCard(CommandMessage<AuthorizeCardCommand> cm) {
-        return withSuccess(new AuthorizeCardReply(888L));
+        return withSuccess(new CardAuthorized(888L));
     }
 
     private Message handleReverseAuthorization(CommandMessage<ReverseAuthorizationCommand> cm) {
