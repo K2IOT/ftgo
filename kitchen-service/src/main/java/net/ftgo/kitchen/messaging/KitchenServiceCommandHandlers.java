@@ -5,8 +5,16 @@ import io.eventuate.tram.commands.consumer.CommandMessage;
 import io.eventuate.tram.messaging.common.Message;
 import io.eventuate.tram.sagas.participant.SagaCommandHandlersBuilder;
 import net.ftgo.common.orderflow.commands.ApproveTicketCommand;
+import net.ftgo.common.orderflow.commands.BeginCancelTicketCommand;
 import net.ftgo.common.orderflow.commands.CancelTicketCommand;
+import net.ftgo.common.orderflow.commands.ConfirmCancelTicketCommand;
+import net.ftgo.common.orderflow.commands.ConfirmReviseTicketCommand;
 import net.ftgo.common.orderflow.commands.CreateTicketCommand;
+import net.ftgo.common.orderflow.commands.BeginReviseTicketCommand;
+import net.ftgo.common.orderflow.commands.UndoCancelTicketCommand;
+import net.ftgo.common.orderflow.commands.UndoReviseTicketCommand;
+import net.ftgo.common.orderflow.replies.TicketCancellationRefused;
+import net.ftgo.common.orderflow.replies.TicketRevisionRefused;
 import net.ftgo.common.orderflow.replies.TicketCreated;
 import net.ftgo.kitchen.domain.Ticket;
 import net.ftgo.kitchen.domain.TicketLineItem;
@@ -207,7 +215,17 @@ public class KitchenServiceCommandHandlers {
             
             return withSuccess();
             
-        } catch (IllegalArgumentException | IllegalStateException e) {
+        } catch (IllegalStateException e) {
+            logger.error("Failed to begin cancellation for ticket {}: {}",
+                command.getTicketId(), e.getMessage());
+            if ("Cannot cancel ticket after preparation has begun".equals(e.getMessage())) {
+                return withFailure(new TicketCancellationRefused(
+                    TicketCancellationRefused.PREPARATION_ALREADY_STARTED,
+                    e.getMessage()
+                ));
+            }
+            return withFailure(e.getMessage());
+        } catch (IllegalArgumentException e) {
             logger.error("Failed to begin cancellation for ticket {}: {}", 
                 command.getTicketId(), e.getMessage());
             return withFailure(e.getMessage());
@@ -327,7 +345,17 @@ public class KitchenServiceCommandHandlers {
             
             return withSuccess();
             
-        } catch (IllegalArgumentException | IllegalStateException e) {
+        } catch (IllegalStateException e) {
+            logger.error("Failed to begin revision for ticket {}: {}",
+                command.getTicketId(), e.getMessage());
+            if ("Cannot revise ticket after preparation has begun".equals(e.getMessage())) {
+                return withFailure(new TicketRevisionRefused(
+                    TicketRevisionRefused.PREPARATION_ALREADY_STARTED,
+                    e.getMessage()
+                ));
+            }
+            return withFailure(e.getMessage());
+        } catch (IllegalArgumentException e) {
             logger.error("Failed to begin revision for ticket {}: {}", 
                 command.getTicketId(), e.getMessage());
             return withFailure(e.getMessage());
@@ -357,12 +385,7 @@ public class KitchenServiceCommandHandlers {
                     String.format("Ticket %d not found", command.getTicketId())
                 ));
             
-            // Convert DTOs to entities
-            List<TicketLineItem> revisedLineItems = command.getRevisedLineItems().stream()
-                .map(dto -> new TicketLineItem(dto.getMenuItemId(), dto.getName(), dto.getQuantity()))
-                .collect(Collectors.toList());
-            
-            ticket.confirmRevise(revisedLineItems);
+            ticket.confirmPendingRevise();
             ticketRepository.save(ticket);
             
             logger.info("Revision confirmed for ticket {}", command.getTicketId());

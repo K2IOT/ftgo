@@ -39,6 +39,10 @@ public class Ticket {
     @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
     @JoinColumn(name = "ticket_id", nullable = false)
     private List<TicketLineItem> lineItems = new ArrayList<>();
+
+    @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
+    @JoinColumn(name = "ticket_id", nullable = false)
+    private List<PendingTicketLineItem> pendingRevisionLineItems = new ArrayList<>();
     
     @Column(name = "ready_by")
     private LocalDateTime readyBy;
@@ -269,6 +273,12 @@ public class Ticket {
             throw new IllegalStateException("Cannot revise ticket after preparation has begun");
         }
         this.previousState = this.state;
+        this.pendingRevisionLineItems.clear();
+        this.pendingRevisionLineItems.addAll(
+            revisedLineItems.stream()
+                .map(item -> new PendingTicketLineItem(item.getMenuItemId(), item.getName(), item.getQuantity()))
+                .toList()
+        );
         this.state = TicketState.REVISION_PENDING;
     }
     
@@ -291,6 +301,14 @@ public class Ticket {
         // Restore to the state before revision started
         this.state = previousState != null ? previousState : TicketState.AWAITING_ACCEPTANCE;
         this.previousState = null;
+        this.pendingRevisionLineItems.clear();
+    }
+
+    public void confirmPendingRevise() {
+        List<TicketLineItem> revisedLineItems = this.pendingRevisionLineItems.stream()
+            .map(item -> new TicketLineItem(item.getMenuItemId(), item.getName(), item.getQuantity()))
+            .toList();
+        confirmRevise(revisedLineItems);
     }
     
     /**
@@ -302,6 +320,7 @@ public class Ticket {
         if (state == TicketState.REVISION_PENDING && previousState != null) {
             this.state = previousState;
             this.previousState = null;
+            this.pendingRevisionLineItems.clear();
         }
     }
     

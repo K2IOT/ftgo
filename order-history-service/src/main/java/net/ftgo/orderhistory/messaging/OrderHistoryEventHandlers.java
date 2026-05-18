@@ -3,7 +3,6 @@ package net.ftgo.orderhistory.messaging;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import net.ftgo.common.Money;
 import net.ftgo.common.orderflow.events.OrderApproved;
 import net.ftgo.common.orderflow.events.OrderCancelled;
 import net.ftgo.common.orderflow.events.OrderCreated;
@@ -85,17 +84,6 @@ public class OrderHistoryEventHandlers {
                 return;
             }
             
-            // Route to appropriate handler based on event type
-            if (eventType == null) {
-                // Try to infer event type from payload
-                if (eventNode.has("createdAt") && eventNode.has("lineItems")) {
-                    eventType = "OrderCreatedEvent";
-                } else if (eventNode.has("orderId") && eventNode.size() == 1) {
-                    // Could be OrderApproved or OrderCancelled
-                    eventType = "OrderApprovedEvent"; // Default assumption
-                }
-            }
-            
             if (eventType == null) {
                 logger.warn("Could not determine event type for messageId={}, skipping", messageId);
                 return;
@@ -106,17 +94,9 @@ public class OrderHistoryEventHandlers {
                     OrderCreated sharedOrderCreated = objectMapper.treeToValue(eventNode, OrderCreated.class);
                     handleOrderCreated(sharedOrderCreated);
                     break;
-                case "OrderCreatedEvent":
-                    OrderCreatedEvent orderCreated = objectMapper.treeToValue(eventNode, OrderCreatedEvent.class);
-                    handleOrderCreated(toSharedOrderCreated(orderCreated));
-                    break;
                 case "OrderApproved":
                     OrderApproved sharedOrderApproved = objectMapper.treeToValue(eventNode, OrderApproved.class);
                     handleOrderApproved(sharedOrderApproved.getOrderId());
-                    break;
-                case "OrderApprovedEvent":
-                    OrderApprovedEvent orderApproved = objectMapper.treeToValue(eventNode, OrderApprovedEvent.class);
-                    handleOrderApproved(orderApproved.getOrderId());
                     break;
                 case "OrderRejected":
                     OrderRejected sharedOrderRejected = objectMapper.treeToValue(eventNode, OrderRejected.class);
@@ -126,17 +106,9 @@ public class OrderHistoryEventHandlers {
                     OrderCancelled sharedOrderCancelled = objectMapper.treeToValue(eventNode, OrderCancelled.class);
                     handleOrderCancelled(sharedOrderCancelled.getOrderId());
                     break;
-                case "OrderCancelledEvent":
-                    OrderCancelledEvent orderCancelled = objectMapper.treeToValue(eventNode, OrderCancelledEvent.class);
-                    handleOrderCancelled(orderCancelled.getOrderId());
-                    break;
                 case "OrderRevised":
                     OrderRevised sharedOrderRevised = objectMapper.treeToValue(eventNode, OrderRevised.class);
                     handleOrderRevised(sharedOrderRevised);
-                    break;
-                case "OrderRevisedEvent":
-                    OrderRevisedEvent orderRevised = objectMapper.treeToValue(eventNode, OrderRevisedEvent.class);
-                    handleOrderRevised(toSharedOrderRevised(orderRevised));
                     break;
                 default:
                     logger.warn("Unknown event type: {}", eventType);
@@ -327,6 +299,7 @@ public class OrderHistoryEventHandlers {
         if (optionalRecord.isPresent()) {
             OrderHistoryRecord record = optionalRecord.get();
             record.setStatus("APPROVED");
+            record.setAuthorizationStatus("APPROVED");
             orderHistoryRepository.save(record);
             logger.info("Updated order status to APPROVED: orderId={}", orderId);
         } else {
@@ -334,29 +307,6 @@ public class OrderHistoryEventHandlers {
         }
     }
 
-    private OrderCreated toSharedOrderCreated(OrderCreatedEvent event) {
-        List<OrderCreated.LineItem> lineItems = event.getLineItems().stream()
-            .map(item -> new OrderCreated.LineItem(
-                item.getMenuItemId(),
-                item.getName(),
-                new Money(item.getPrice()),
-                item.getQuantity()
-            ))
-            .collect(Collectors.toList());
-
-        return new OrderCreated(
-            event.getOrderId(),
-            event.getConsumerId(),
-            event.getRestaurantId(),
-            event.getStatus(),
-            new Money(event.getOrderTotal()),
-            lineItems,
-            event.getDeliveryAddress(),
-            event.getDeliveryTime(),
-            event.getCreatedAt()
-        );
-    }
-    
     private void handleOrderRejected(Long orderId) {
         logger.info("Handling OrderRejected: orderId={}", orderId);
         
@@ -415,25 +365,6 @@ public class OrderHistoryEventHandlers {
         }
     }
 
-    private OrderRevised toSharedOrderRevised(OrderRevisedEvent event) {
-        List<OrderCreated.LineItem> lineItems = event.getLineItems().stream()
-            .map(item -> new OrderCreated.LineItem(
-                item.getMenuItemId(),
-                item.getName(),
-                new Money(item.getPrice()),
-                item.getQuantity()
-            ))
-            .collect(Collectors.toList());
-
-        return new OrderRevised(
-            event.getOrderId(),
-            null,
-            null,
-            lineItems,
-            new Money(event.getOrderTotal())
-        );
-    }
-    
     private void handleTicketAccepted(TicketAcceptedEvent event) {
         logger.info("Handling TicketAccepted: orderId={}", event.getOrderId());
         
@@ -491,22 +422,8 @@ public class OrderHistoryEventHandlers {
     }
     
     private void handleCardAuthorized(CardAuthorizedEvent event) {
-        logger.info("Handling CardAuthorized: orderId={}", event.getOrderId());
-        
-        if (event.getOrderId() == null) {
-            logger.warn("CardAuthorized event missing orderId, cannot correlate with order history");
-            return;
-        }
-        
-        Optional<OrderHistoryRecord> optionalRecord = orderHistoryRepository.findById(event.getOrderId().toString());
-        if (optionalRecord.isPresent()) {
-            OrderHistoryRecord record = optionalRecord.get();
-            record.setAuthorizationStatus("APPROVED");
-            orderHistoryRepository.save(record);
-            logger.info("Updated authorization status to APPROVED: orderId={}", event.getOrderId());
-        } else {
-            logger.warn("Order history record not found for CardAuthorized: orderId={}", event.getOrderId());
-        }
+        logger.info("Ignoring CardAuthorized for authorization state; derived from OrderApproved: orderId={}",
+            event.getOrderId());
     }
     
     // ========== Idempotency Support ==========

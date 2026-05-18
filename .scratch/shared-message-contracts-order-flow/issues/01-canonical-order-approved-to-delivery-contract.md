@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: done
 
 # Canonical Order Approved to Delivery contract
 
@@ -14,13 +14,18 @@ Existing emitted event type naming must be preserved while the shared contract i
 
 ## Acceptance criteria
 
-- [ ] Order Service and Delivery use the same canonical shared **Order Approved** contract for Delivery creation.
-- [ ] **Order Approved** carries delivery address and delivery time, and does not carry restaurant pickup-location details.
-- [ ] Delivery creation continues to resolve or maintain pickup information from the restaurant reference.
-- [ ] Contract serialization tests cover the **Order Approved** payload and preserve the current emitted event type name.
-- [ ] Delivery event-consumer tests prove that an **Order Approved** message creates one **Delivery** idempotently.
+- [x] Order Service and Delivery use the same canonical shared **Order Approved** contract for Delivery creation.
+- [x] **Order Approved** carries delivery address and delivery time, and does not carry restaurant pickup-location details.
+- [x] Delivery creation continues to resolve or maintain pickup information from the restaurant reference.
+- [x] Contract serialization tests cover the **Order Approved** payload and preserve the current emitted event type name.
+- [x] Delivery event-consumer tests prove that an **Order Approved** message creates one **Delivery** idempotently.
 
 ## Blocked by
 
 None - can start immediately
 
+## Completed notes
+
+- Added shared contract serialization coverage in `common/src/test/java/net/ftgo/common/orderflow/events/OrderApprovedContractSerializationTest.java`.
+- Added Order Service outbox event-type preservation coverage in `order-service/src/test/java/net/ftgo/order/messaging/DomainEventPublisherContractTest.java`.
+- Verified Delivery consumer idempotent creation behavior in `delivery-service/src/test/java/net/ftgo/delivery/messaging/OrderEventConsumerTest.java`.

@@ -2,9 +2,9 @@ package net.ftgo.order.saga;
 
 import io.eventuate.tram.sagas.testing.SagaUnitTestSupport;
 import net.ftgo.common.channels.ChannelNames;
-import net.ftgo.order.saga.commands.BeginCancelTicketCommand;
-import net.ftgo.order.saga.commands.ConfirmCancelTicketCommand;
-import net.ftgo.order.saga.commands.ReverseAuthorizationCommand;
+import net.ftgo.common.orderflow.commands.BeginCancelTicketCommand;
+import net.ftgo.common.orderflow.commands.ConfirmCancelTicketCommand;
+import net.ftgo.common.orderflow.commands.ReverseAuthorizationCommand;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 

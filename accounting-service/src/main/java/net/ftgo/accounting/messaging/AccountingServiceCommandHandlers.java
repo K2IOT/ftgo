@@ -9,6 +9,8 @@ import net.ftgo.accounting.domain.Authorization;
 import net.ftgo.accounting.repository.AccountRepository;
 import net.ftgo.common.Money;
 import net.ftgo.common.orderflow.commands.AuthorizeCardCommand;
+import net.ftgo.common.orderflow.commands.ReverseAuthorizationCommand;
+import net.ftgo.common.orderflow.commands.ReviseAuthorizationCommand;
 import net.ftgo.common.orderflow.replies.AuthorizationRevised;
 import net.ftgo.common.orderflow.replies.CardAuthorized;
 import org.slf4j.Logger;
@@ -198,16 +200,12 @@ public class AccountingServiceCommandHandlers {
                     String.format("Account not found for consumer %d", command.getConsumerId())
                 ));
             
-            // Generate new request ID for the revised authorization (for idempotency)
-            // In a real system, this would come from the command
-            String newRequestId = "revision-" + command.getAuthorizationId() + "-" + System.currentTimeMillis();
-            
             // Revise authorization
             Money newAmount = new Money(command.getNewAmount());
             Authorization newAuthorization = account.reviseAuthorization(
                 command.getAuthorizationId(), 
                 newAmount, 
-                newRequestId
+                command.getRequestId()
             );
             
             // Save account

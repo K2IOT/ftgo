@@ -217,7 +217,8 @@ public class OrderService {
             revisedLineItems,
             revisedTotal,
             order.getTicketId(),
-            order.getAuthorizationId()
+            order.getAuthorizationId(),
+            paymentRevisionRequestId(order, revisedLineItems, revisedTotal)
         );
         
         // Initiate ReviseOrderSaga — Step 1 (local) will validate state
@@ -226,5 +227,13 @@ public class OrderService {
         
         logger.info("ReviseOrderSaga initiated for orderId={}, revisedTotal={}",
             orderId, revisedTotal);
+    }
+
+    private String paymentRevisionRequestId(Order order, List<OrderLineItem> revisedLineItems, Money revisedTotal) {
+        String itemsSignature = revisedLineItems.stream()
+            .map(item -> item.getMenuItemId() + ":" + item.getQuantity())
+            .collect(Collectors.joining("|"));
+        return "revise-auth-" + order.getId() + "-" + order.getAuthorizationId() + "-"
+            + revisedTotal.getAmount() + "-" + itemsSignature;
     }
 }

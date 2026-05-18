@@ -3,11 +3,12 @@ package net.ftgo.order.saga;
 import io.eventuate.tram.sagas.testing.SagaUnitTestSupport;
 import net.ftgo.common.Money;
 import net.ftgo.common.channels.ChannelNames;
+import net.ftgo.common.orderflow.commands.BeginReviseTicketCommand;
+import net.ftgo.common.orderflow.commands.ConfirmReviseTicketCommand;
+import net.ftgo.common.orderflow.commands.CreateTicketCommand;
+import net.ftgo.common.orderflow.commands.ReviseAuthorizationCommand;
 import net.ftgo.common.orderflow.replies.AuthorizationRevised;
 import net.ftgo.order.domain.OrderLineItem;
-import net.ftgo.order.saga.commands.BeginReviseTicketCommand;
-import net.ftgo.order.saga.commands.ConfirmReviseTicketCommand;
-import net.ftgo.order.saga.commands.ReviseAuthorizationCommand;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -70,7 +71,8 @@ class ReviseOrderSagaTest {
             revisedLineItems, 
             revisedTotal, 
             ticketId, 
-            authorizationId
+            authorizationId,
+            "revision-request-1"
         );
     }
     
@@ -159,7 +161,7 @@ class ReviseOrderSagaTest {
         Money total = new Money(BigDecimal.valueOf(25.98));
         
         ReviseOrderSagaData data = new ReviseOrderSagaData(
-            orderId, 50L, lineItems, total, ticketId, authorizationId
+            orderId, 50L, lineItems, total, ticketId, authorizationId, "revision-request-2"
         );
         
         assertEquals(orderId, data.getOrderId());
@@ -174,12 +176,13 @@ class ReviseOrderSagaTest {
     @Test
     void testSagaData_WithNullOrderId() {
         ReviseOrderSagaData data = new ReviseOrderSagaData(
-            null, 
+            null,
             50L,
-            sagaData.getRevisedLineItems(), 
-            sagaData.getRevisedTotal(), 
-            100L, 
-            123L
+            sagaData.getRevisedLineItems(),
+            sagaData.getRevisedTotal(),
+            100L,
+            123L,
+            "revision-request-3"
         );
         
         assertNull(data.getOrderId());
@@ -190,12 +193,13 @@ class ReviseOrderSagaTest {
     @Test
     void testSagaData_WithNullTicketId() {
         ReviseOrderSagaData data = new ReviseOrderSagaData(
-            1L, 
+            1L,
             50L,
-            sagaData.getRevisedLineItems(), 
-            sagaData.getRevisedTotal(), 
-            null, 
-            123L
+            sagaData.getRevisedLineItems(),
+            sagaData.getRevisedTotal(),
+            null,
+            123L,
+            "revision-request-4"
         );
         
         assertEquals(1L, data.getOrderId());
@@ -206,12 +210,13 @@ class ReviseOrderSagaTest {
     @Test
     void testSagaData_WithNullAuthorizationId() {
         ReviseOrderSagaData data = new ReviseOrderSagaData(
-            1L, 
+            1L,
             50L,
-            sagaData.getRevisedLineItems(), 
-            sagaData.getRevisedTotal(), 
-            100L, 
-            null
+            sagaData.getRevisedLineItems(),
+            sagaData.getRevisedTotal(),
+            100L,
+            null,
+            "revision-request-5"
         );
         
         assertEquals(1L, data.getOrderId());
@@ -221,7 +226,7 @@ class ReviseOrderSagaTest {
     
     @Test
     void testSagaData_WithAllNullFields() {
-        ReviseOrderSagaData data = new ReviseOrderSagaData(null, null, null, null, null, null);
+        ReviseOrderSagaData data = new ReviseOrderSagaData(null, null, null, null, null, null, null);
         
         assertNull(data.getOrderId());
         assertNull(data.getRevisedLineItems());
@@ -255,12 +260,13 @@ class ReviseOrderSagaTest {
     @Test
     void testSagaData_WithEmptyLineItems() {
         ReviseOrderSagaData data = new ReviseOrderSagaData(
-            1L, 
+            1L,
             50L,
-            Arrays.asList(), 
-            new Money(BigDecimal.ZERO), 
-            100L, 
-            123L
+            Arrays.asList(),
+            new Money(BigDecimal.ZERO),
+            100L,
+            123L,
+            "revision-request-6"
         );
         
         assertNotNull(data.getRevisedLineItems());
@@ -274,12 +280,13 @@ class ReviseOrderSagaTest {
         );
         
         ReviseOrderSagaData data = new ReviseOrderSagaData(
-            1L, 
+            1L,
             50L,
-            singleItem, 
-            new Money(BigDecimal.valueOf(15.99)), 
-            100L, 
-            123L
+            singleItem,
+            new Money(BigDecimal.valueOf(15.99)),
+            100L,
+            123L,
+            "revision-request-7"
         );
         
         assertEquals(1, data.getRevisedLineItems().size());
@@ -295,12 +302,13 @@ class ReviseOrderSagaTest {
         );
         
         ReviseOrderSagaData data = new ReviseOrderSagaData(
-            1L, 
+            1L,
             50L,
-            multipleItems, 
-            new Money(BigDecimal.valueOf(38.95)), 
-            100L, 
-            123L
+            multipleItems,
+            new Money(BigDecimal.valueOf(38.95)),
+            100L,
+            123L,
+            "revision-request-8"
         );
         
         assertEquals(3, data.getRevisedLineItems().size());
@@ -324,7 +332,8 @@ class ReviseOrderSagaTest {
             Arrays.asList(), 
             new Money(BigDecimal.ZERO), 
             100L, 
-            123L
+            123L,
+            "revision-request-15"
         );
         
         assertEquals(new Money(BigDecimal.ZERO), data.getRevisedTotal());
@@ -335,12 +344,13 @@ class ReviseOrderSagaTest {
         Money largeTotal = new Money(BigDecimal.valueOf(9999.99));
         
         ReviseOrderSagaData data = new ReviseOrderSagaData(
-            1L, 
+            1L,
             50L,
-            sagaData.getRevisedLineItems(), 
-            largeTotal, 
-            100L, 
-            123L
+            sagaData.getRevisedLineItems(),
+            largeTotal,
+            100L,
+            123L,
+            "revision-request-9"
         );
         
         assertEquals(largeTotal, data.getRevisedTotal());
@@ -350,7 +360,7 @@ class ReviseOrderSagaTest {
     
     @Test
     void testSagaData_ToStringWithNullFields() {
-        ReviseOrderSagaData data = new ReviseOrderSagaData(null, null, null, null, null, null);
+        ReviseOrderSagaData data = new ReviseOrderSagaData(null, null, null, null, null, null, null);
         String result = data.toString();
         
         assertNotNull(result);
@@ -365,7 +375,8 @@ class ReviseOrderSagaTest {
             sagaData.getRevisedLineItems(), 
             new Money(BigDecimal.valueOf(45.99)), 
             456L, 
-            789L
+            789L,
+            "revision-request-16"
         );
         String result = data.toString();
         
@@ -384,7 +395,8 @@ class ReviseOrderSagaTest {
             sagaData.getRevisedLineItems(), 
             sagaData.getRevisedTotal(), 
             100L, 
-            123L
+            123L,
+            "revision-request-17"
         );
         
         // Modify fields
@@ -415,12 +427,13 @@ class ReviseOrderSagaTest {
         Long largeAuthId = Long.MAX_VALUE - 2;
         
         ReviseOrderSagaData data = new ReviseOrderSagaData(
-            largeOrderId, 
+            largeOrderId,
             50L,
-            sagaData.getRevisedLineItems(), 
-            sagaData.getRevisedTotal(), 
-            largeTicketId, 
-            largeAuthId
+            sagaData.getRevisedLineItems(),
+            sagaData.getRevisedTotal(),
+            largeTicketId,
+            largeAuthId,
+            "revision-request-10"
         );
         
         assertEquals(largeOrderId, data.getOrderId());
@@ -431,12 +444,13 @@ class ReviseOrderSagaTest {
     @Test
     void testSagaData_WithZeroAuthorizationId() {
         ReviseOrderSagaData data = new ReviseOrderSagaData(
-            1L, 
+            1L,
             50L,
-            sagaData.getRevisedLineItems(), 
-            sagaData.getRevisedTotal(), 
-            100L, 
-            0L
+            sagaData.getRevisedLineItems(),
+            sagaData.getRevisedTotal(),
+            100L,
+            0L,
+            "revision-request-11"
         );
         
         assertEquals(1L, data.getOrderId());
@@ -466,7 +480,8 @@ class ReviseOrderSagaTest {
             sagaData.getRevisedLineItems(), 
             sagaData.getRevisedTotal(), 
             100L, 
-            123L
+            123L,
+            "revision-request-12"
         );
         ReviseOrderSagaData data2 = new ReviseOrderSagaData(
             2L, 
@@ -474,7 +489,8 @@ class ReviseOrderSagaTest {
             sagaData.getRevisedLineItems(), 
             sagaData.getRevisedTotal(), 
             200L, 
-            456L
+            456L,
+            "revision-request-13"
         );
         
         assertEquals(1L, data1.getOrderId());
@@ -494,12 +510,12 @@ class ReviseOrderSagaTest {
         SagaUnitTestSupport.given()
             .saga(saga, sagaData)
             .expect()
-            .command(new BeginReviseTicketCommand(100L, sagaData.getRevisedLineItems()))
+            .command(new BeginReviseTicketCommand(100L, toTicketLineItemDtos(sagaData.getRevisedLineItems())))
             .to(ChannelNames.KITCHEN_SERVICE_COMMAND_CHANNEL)
             .andGiven()
             .successReply()
             .expect()
-            .command(new ReviseAuthorizationCommand(50L, 123L, sagaData.getRevisedTotal().getAmount()))
+            .command(new ReviseAuthorizationCommand(50L, 123L, sagaData.getRevisedTotal().getAmount(), "revision-request-1"))
             .to(ChannelNames.ACCOUNTING_SERVICE_COMMAND_CHANNEL)
             .andGiven()
             .successReply(new AuthorizationRevised(456L))
@@ -531,7 +547,7 @@ class ReviseOrderSagaTest {
         SagaUnitTestSupport.given()
             .saga(saga, sagaData)
             .expect()
-            .command(new BeginReviseTicketCommand(100L, sagaData.getRevisedLineItems()))
+            .command(new BeginReviseTicketCommand(100L, toTicketLineItemDtos(sagaData.getRevisedLineItems())))
             .to(ChannelNames.KITCHEN_SERVICE_COMMAND_CHANNEL)
             .andGiven()
             .failureReply()
@@ -565,10 +581,21 @@ class ReviseOrderSagaTest {
             lineItems, 
             expectedTotal, 
             100L, 
-            123L
+            123L,
+            "revision-request-14"
         );
         
         // Then: Total matches expected value
         assertEquals(expectedTotal, data.getRevisedTotal());
+    }
+
+    private List<CreateTicketCommand.TicketLineItemDTO> toTicketLineItemDtos(List<OrderLineItem> revisedLineItems) {
+        return revisedLineItems.stream()
+            .map(item -> new CreateTicketCommand.TicketLineItemDTO(
+                item.getMenuItemId(),
+                item.getName(),
+                item.getQuantity()
+            ))
+            .toList();
     }
 }

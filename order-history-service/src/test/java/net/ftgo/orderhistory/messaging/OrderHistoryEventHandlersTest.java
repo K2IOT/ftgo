@@ -3,7 +3,10 @@ package net.ftgo.orderhistory.messaging;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import net.ftgo.common.Money;
 import net.ftgo.common.orderflow.events.OrderApproved;
+import net.ftgo.common.orderflow.events.OrderCancelled;
+import net.ftgo.common.orderflow.events.OrderCreated;
 import net.ftgo.common.orderflow.events.OrderRejected;
+import net.ftgo.common.orderflow.events.OrderRevised;
 import net.ftgo.orderhistory.domain.LineItem;
 import net.ftgo.orderhistory.domain.OrderHistoryRecord;
 import net.ftgo.orderhistory.domain.ProcessedMessage;
@@ -180,33 +183,24 @@ class OrderHistoryEventHandlersTest {
     @Test
     void testOrderCreatedCreatesNewRecord() throws Exception {
         // Given
-        OrderCreatedEvent event = new OrderCreatedEvent();
-        event.setOrderId(123L);
-        event.setConsumerId(456L);
-        event.setRestaurantId(789L);
-        event.setStatus("APPROVAL_PENDING");
-        event.setOrderTotal(new BigDecimal("45.99"));
-        event.setDeliveryAddress("123 Main St");
-        event.setDeliveryTime(LocalDateTime.now().plusHours(1));
-        event.setCreatedAt(LocalDateTime.now());
-        
-        OrderCreatedEvent.OrderLineItemDto lineItem1 = new OrderCreatedEvent.OrderLineItemDto();
-        lineItem1.setMenuItemId(1L);
-        lineItem1.setName("Burger");
-        lineItem1.setPrice(new BigDecimal("12.99"));
-        lineItem1.setQuantity(2);
-        
-        OrderCreatedEvent.OrderLineItemDto lineItem2 = new OrderCreatedEvent.OrderLineItemDto();
-        lineItem2.setMenuItemId(2L);
-        lineItem2.setName("Fries");
-        lineItem2.setPrice(new BigDecimal("4.99"));
-        lineItem2.setQuantity(1);
-        
-        event.setLineItems(Arrays.asList(lineItem1, lineItem2));
+        OrderCreated event = new OrderCreated(
+            123L,
+            456L,
+            789L,
+            "APPROVAL_PENDING",
+            new Money("45.99"),
+            Arrays.asList(
+                new OrderCreated.LineItem(1L, "Burger", new Money("12.99"), 2),
+                new OrderCreated.LineItem(2L, "Fries", new Money("4.99"), 1)
+            ),
+            "123 Main St",
+            LocalDateTime.now().plusHours(1),
+            LocalDateTime.now()
+        );
         
         String payload = objectMapper.writeValueAsString(event);
         String key = "Order#123";
-        String eventType = "OrderCreatedEvent";
+        String eventType = "OrderCreated";
         String messageId = key + "-" + eventType;
         
         when(processedMessageRepository.existsById(messageId)).thenReturn(false);
@@ -244,10 +238,10 @@ class OrderHistoryEventHandlersTest {
     @Test
     void testOrderApprovedUpdatesExistingRecord() throws Exception {
         // Given
-        OrderApprovedEvent event = new OrderApprovedEvent(123L);
+        OrderApproved event = new OrderApproved(123L, 456L, 789L, new Money("45.99"), 999L, 555L);
         String payload = objectMapper.writeValueAsString(event);
         String key = "Order#123";
-        String eventType = "OrderApprovedEvent";
+        String eventType = "OrderApproved";
         String messageId = key + "-" + eventType;
         
         OrderHistoryRecord existingRecord = new OrderHistoryRecord("123");
@@ -265,6 +259,7 @@ class OrderHistoryEventHandlersTest {
         
         OrderHistoryRecord updatedRecord = recordCaptor.getValue();
         assertEquals("APPROVED", updatedRecord.getStatus());
+        assertEquals("APPROVED", updatedRecord.getAuthorizationStatus());
         
         // Verify message marked as processed
         verify(processedMessageRepository).save(any(ProcessedMessage.class));
@@ -273,10 +268,10 @@ class OrderHistoryEventHandlersTest {
     @Test
     void testOrderCancelledUpdatesExistingRecord() throws Exception {
         // Given
-        OrderCancelledEvent event = new OrderCancelledEvent(123L);
+        OrderCancelled event = new OrderCancelled(123L, 456L, 789L);
         String payload = objectMapper.writeValueAsString(event);
         String key = "Order#123";
-        String eventType = "OrderCancelledEvent";
+        String eventType = "OrderCancelled";
         String messageId = key + "-" + eventType;
         
         OrderHistoryRecord existingRecord = new OrderHistoryRecord("123");
@@ -302,21 +297,17 @@ class OrderHistoryEventHandlersTest {
     @Test
     void testOrderRevisedUpdatesOrderDetailsAndLineItems() throws Exception {
         // Given
-        OrderRevisedEvent event = new OrderRevisedEvent();
-        event.setOrderId(123L);
-        event.setOrderTotal(new BigDecimal("55.99"));
-        
-        OrderCreatedEvent.OrderLineItemDto lineItem = new OrderCreatedEvent.OrderLineItemDto();
-        lineItem.setMenuItemId(3L);
-        lineItem.setName("Pizza");
-        lineItem.setPrice(new BigDecimal("15.99"));
-        lineItem.setQuantity(3);
-        
-        event.setLineItems(Arrays.asList(lineItem));
+        OrderRevised event = new OrderRevised(
+            123L,
+            456L,
+            789L,
+            Arrays.asList(new OrderCreated.LineItem(3L, "Pizza", new Money("15.99"), 3)),
+            new Money("55.99")
+        );
         
         String payload = objectMapper.writeValueAsString(event);
         String key = "Order#123";
-        String eventType = "OrderRevisedEvent";
+        String eventType = "OrderRevised";
         String messageId = key + "-" + eventType;
         
         OrderHistoryRecord existingRecord = new OrderHistoryRecord("123");
@@ -469,7 +460,7 @@ class OrderHistoryEventHandlersTest {
     }
     
     @Test
-    void testCardAuthorizedUpdatesAuthorizationStatus() throws Exception {
+    void testCardAuthorizedDoesNotUpdateAuthorizationStatus() throws Exception {
         // Given
         CardAuthorizedEvent event = new CardAuthorizedEvent();
         event.setAccountId(777L);
@@ -483,32 +474,23 @@ class OrderHistoryEventHandlersTest {
         String eventType = "CardAuthorizedEvent";
         String messageId = key + "-" + eventType;
         
-        OrderHistoryRecord existingRecord = new OrderHistoryRecord("123");
-        
         when(processedMessageRepository.existsById(messageId)).thenReturn(false);
-        when(orderHistoryRepository.findById("123")).thenReturn(Optional.of(existingRecord));
         
         // When
         eventHandlers.handleAccountEvent(payload, key, eventType);
         
-        // Then
-        ArgumentCaptor<OrderHistoryRecord> recordCaptor = ArgumentCaptor.forClass(OrderHistoryRecord.class);
-        verify(orderHistoryRepository).save(recordCaptor.capture());
-        
-        OrderHistoryRecord updatedRecord = recordCaptor.getValue();
-        assertEquals("APPROVED", updatedRecord.getAuthorizationStatus());
-        
-        // Verify message marked as processed
+        // Then: account events no longer drive authorization status correlation
+        verify(orderHistoryRepository, never()).save(any(OrderHistoryRecord.class));
         verify(processedMessageRepository).save(any(ProcessedMessage.class));
     }
     
     @Test
     void testIdempotencyProcessingSameEventTwiceProducesSameState() throws Exception {
         // Given
-        OrderApprovedEvent event = new OrderApprovedEvent(123L);
+        OrderApproved event = new OrderApproved(123L, 456L, 789L, new Money("45.99"), 999L, 555L);
         String payload = objectMapper.writeValueAsString(event);
         String key = "Order#123";
-        String eventType = "OrderApprovedEvent";
+        String eventType = "OrderApproved";
         String messageId = key + "-" + eventType;
         
         // First processing
@@ -536,10 +518,10 @@ class OrderHistoryEventHandlersTest {
     @Test
     void testEventProcessingWhenOrderNotFound() throws Exception {
         // Given
-        OrderApprovedEvent event = new OrderApprovedEvent(999L);
+        OrderApproved event = new OrderApproved(999L, 456L, 789L, new Money("45.99"), 999L, 555L);
         String payload = objectMapper.writeValueAsString(event);
         String key = "Order#999";
-        String eventType = "OrderApprovedEvent";
+        String eventType = "OrderApproved";
         String messageId = key + "-" + eventType;
         
         when(processedMessageRepository.existsById(messageId)).thenReturn(false);

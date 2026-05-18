@@ -32,6 +32,7 @@ public class ReviseOrderSagaData {
     private Long ticketId;
     private Long authorizationId;
     private Long revisedAuthorizationId;
+    private String paymentRevisionRequestId;
     
     /**
      * Default constructor for serialization.
@@ -49,14 +50,16 @@ public class ReviseOrderSagaData {
      * @param ticketId the ticket ID to update
      * @param authorizationId the authorization ID to revise
      */
-    public ReviseOrderSagaData(Long orderId, Long consumerId, List<OrderLineItem> revisedLineItems, 
-                               Money revisedTotal, Long ticketId, Long authorizationId) {
+    public ReviseOrderSagaData(Long orderId, Long consumerId, List<OrderLineItem> revisedLineItems,
+                               Money revisedTotal, Long ticketId, Long authorizationId,
+                               String paymentRevisionRequestId) {
         this.orderId = orderId;
         this.consumerId = consumerId;
         this.revisedLineItems = revisedLineItems;
         this.revisedTotal = revisedTotal;
         this.ticketId = ticketId;
         this.authorizationId = authorizationId;
+        this.paymentRevisionRequestId = paymentRevisionRequestId;
     }
     
     // Getters and setters
@@ -120,10 +123,18 @@ public class ReviseOrderSagaData {
     public Long getCurrentAuthorizationId() {
         return revisedAuthorizationId != null ? revisedAuthorizationId : authorizationId;
     }
+
+    public String getPaymentRevisionRequestId() {
+        return paymentRevisionRequestId;
+    }
+
+    public void setPaymentRevisionRequestId(String paymentRevisionRequestId) {
+        this.paymentRevisionRequestId = paymentRevisionRequestId;
+    }
     
     @Override
     public String toString() {
-        return String.format("ReviseOrderSagaData{orderId=%d, consumerId=%d, revisedTotal=%s, ticketId=%d, authorizationId=%d, revisedAuthorizationId=%d}",
-            orderId, consumerId, revisedTotal, ticketId, authorizationId, revisedAuthorizationId);
+        return String.format("ReviseOrderSagaData{orderId=%d, consumerId=%d, revisedTotal=%s, ticketId=%d, authorizationId=%d, revisedAuthorizationId=%d, paymentRevisionRequestId=%s}",
+            orderId, consumerId, revisedTotal, ticketId, authorizationId, revisedAuthorizationId, paymentRevisionRequestId);
     }
 }

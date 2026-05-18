@@ -1,10 +1,19 @@
 package net.ftgo.kitchen.messaging;
 
 import io.eventuate.tram.commands.consumer.CommandMessage;
+import io.eventuate.tram.commands.common.ReplyMessageHeaders;
 import io.eventuate.tram.messaging.common.Message;
 import net.ftgo.common.orderflow.commands.ApproveTicketCommand;
+import net.ftgo.common.orderflow.commands.BeginCancelTicketCommand;
 import net.ftgo.common.orderflow.commands.CancelTicketCommand;
+import net.ftgo.common.orderflow.commands.ConfirmCancelTicketCommand;
+import net.ftgo.common.orderflow.commands.ConfirmReviseTicketCommand;
 import net.ftgo.common.orderflow.commands.CreateTicketCommand;
+import net.ftgo.common.orderflow.commands.UndoCancelTicketCommand;
+import net.ftgo.common.orderflow.commands.UndoReviseTicketCommand;
+import net.ftgo.common.orderflow.commands.BeginReviseTicketCommand;
+import net.ftgo.common.orderflow.replies.TicketCancellationRefused;
+import net.ftgo.common.orderflow.replies.TicketRevisionRefused;
 import net.ftgo.kitchen.domain.Ticket;
 import net.ftgo.kitchen.domain.TicketLineItem;
 import net.ftgo.kitchen.domain.TicketState;
@@ -51,6 +60,7 @@ class KitchenServiceCommandHandlersTest {
     private DomainEventPublisher eventPublisher;
     
     private KitchenServiceCommandHandlers commandHandlers;
+    private final com.fasterxml.jackson.databind.ObjectMapper objectMapper = new com.fasterxml.jackson.databind.ObjectMapper();
     
     private static final Long RESTAURANT_ID = 1L;
     private static final Long ORDER_ID = 100L;
@@ -246,6 +256,14 @@ class KitchenServiceCommandHandlersTest {
 
         // Then
         assertNotNull(reply);
+        assertEquals("FAILURE", reply.getRequiredHeader(ReplyMessageHeaders.REPLY_OUTCOME));
+        assertEquals(TicketCancellationRefused.class.getName(), reply.getRequiredHeader(ReplyMessageHeaders.REPLY_TYPE));
+        try {
+            TicketCancellationRefused refusal = objectMapper.readValue(reply.getPayload(), TicketCancellationRefused.class);
+            assertEquals(TicketCancellationRefused.PREPARATION_ALREADY_STARTED, refusal.getReasonCode());
+        } catch (Exception e) {
+            fail(e);
+        }
         assertEquals(TicketState.PREPARING, ticket.getState());
         verify(ticketRepository, never()).save(any(Ticket.class));
     }
@@ -338,6 +356,14 @@ class KitchenServiceCommandHandlersTest {
 
         // Then
         assertNotNull(reply);
+        assertEquals("FAILURE", reply.getRequiredHeader(ReplyMessageHeaders.REPLY_OUTCOME));
+        assertEquals(TicketRevisionRefused.class.getName(), reply.getRequiredHeader(ReplyMessageHeaders.REPLY_TYPE));
+        try {
+            TicketRevisionRefused refusal = objectMapper.readValue(reply.getPayload(), TicketRevisionRefused.class);
+            assertEquals(TicketRevisionRefused.PREPARATION_ALREADY_STARTED, refusal.getReasonCode());
+        } catch (Exception e) {
+            fail(e);
+        }
         assertEquals(TicketState.PREPARING, ticket.getState());
         verify(ticketRepository, never()).save(any(Ticket.class));
     }
@@ -349,10 +375,7 @@ class KitchenServiceCommandHandlersTest {
         Ticket ticket = mock(Ticket.class);
         when(ticketRepository.findById(TICKET_ID)).thenReturn(Optional.of(ticket));
         
-        List<CreateTicketCommand.TicketLineItemDTO> revisedItems = Arrays.asList(
-            new CreateTicketCommand.TicketLineItemDTO(1L, "Burger", 3)
-        );
-        ConfirmReviseTicketCommand command = new ConfirmReviseTicketCommand(TICKET_ID, revisedItems);
+        ConfirmReviseTicketCommand command = new ConfirmReviseTicketCommand(TICKET_ID);
         CommandMessage<ConfirmReviseTicketCommand> cm = mock(CommandMessage.class);
         when(cm.getCommand()).thenReturn(command);
         
@@ -361,7 +384,7 @@ class KitchenServiceCommandHandlersTest {
         
         // Then
         assertNotNull(reply);
-        verify(ticket).confirmRevise(any());
+        verify(ticket).confirmPendingRevise();
         verify(ticketRepository).save(ticket);
     }
     

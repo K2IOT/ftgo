@@ -4,10 +4,17 @@ import io.eventuate.tram.commands.consumer.CommandWithDestination;
 import io.eventuate.tram.sagas.orchestration.SagaDefinition;
 import io.eventuate.tram.sagas.simpledsl.SimpleSaga;
 import net.ftgo.common.channels.ChannelNames;
+import net.ftgo.common.orderflow.commands.BeginReviseTicketCommand;
+import net.ftgo.common.orderflow.commands.ConfirmReviseTicketCommand;
+import net.ftgo.common.orderflow.commands.CreateTicketCommand;
+import net.ftgo.common.orderflow.commands.ReviseAuthorizationCommand;
+import net.ftgo.common.orderflow.commands.UndoReviseTicketCommand;
 import net.ftgo.common.orderflow.replies.AuthorizationRevised;
-import net.ftgo.order.saga.commands.*;
+import net.ftgo.order.domain.OrderLineItem;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.List;
 
 import static io.eventuate.tram.commands.consumer.CommandWithDestinationBuilder.send;
 
@@ -135,7 +142,7 @@ public class ReviseOrderSaga implements SimpleSaga<ReviseOrderSagaData> {
     private CommandWithDestination beginReviseTicket(ReviseOrderSagaData data) {
         logger.info("ReviseOrderSaga: Step 2 - beginReviseTicket for ticketId={}", data.getTicketId());
         
-        return send(new BeginReviseTicketCommand(data.getTicketId(), data.getRevisedLineItems()))
+        return send(new BeginReviseTicketCommand(data.getTicketId(), toTicketLineItemDtos(data.getRevisedLineItems())))
             .to(ChannelNames.KITCHEN_SERVICE_COMMAND_CHANNEL)
             .build();
     }
@@ -176,7 +183,8 @@ public class ReviseOrderSaga implements SimpleSaga<ReviseOrderSagaData> {
         return send(new ReviseAuthorizationCommand(
                 data.getConsumerId(),
                 data.getAuthorizationId(),
-                data.getRevisedTotal().getAmount()
+                data.getRevisedTotal().getAmount(),
+                data.getPaymentRevisionRequestId()
             ))
             .to(ChannelNames.ACCOUNTING_SERVICE_COMMAND_CHANNEL)
             .build();
@@ -231,5 +239,15 @@ public class ReviseOrderSaga implements SimpleSaga<ReviseOrderSagaData> {
             ))
             .to(ChannelNames.ORDER_SERVICE_COMMAND_CHANNEL)
             .build();
+    }
+
+    private List<CreateTicketCommand.TicketLineItemDTO> toTicketLineItemDtos(List<OrderLineItem> revisedLineItems) {
+        return revisedLineItems.stream()
+            .map(item -> new CreateTicketCommand.TicketLineItemDTO(
+                item.getMenuItemId(),
+                item.getName(),
+                item.getQuantity()
+            ))
+            .toList();
     }
 }
