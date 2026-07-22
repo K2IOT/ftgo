@@ -8,6 +8,8 @@
     "database.user": "ftgo_user",
     "database.password": "ftgo_password",
     "database.server.id": "106",
+    "database.allowPublicKeyRetrieval": "true",
+    "database.ssl.mode": "disabled",
     "topic.prefix": "ftgo-delivery",
     "database.include.list": "ftgo_delivery",
     "table.include.list": "ftgo_delivery.outbox",
