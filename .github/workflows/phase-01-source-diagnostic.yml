@@ -20,6 +20,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          echo 'Locating all resolver definitions on the implementation branch'
           grep -Rni -C 4 'RestaurantPickupAddressResolver\|restaurantServicePickupAddressResolver' \
             delivery-service/src/main/java | tee pickup-resolver-sources.txt
       - name: Upload resolver sources
