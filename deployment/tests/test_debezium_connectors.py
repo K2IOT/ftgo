@@ -38,6 +38,8 @@ class DebeziumConnectorContractTest(unittest.TestCase):
             self.assertEqual(hostname, config["database.hostname"])
             self.assertEqual("3306", config["database.port"])
             self.assertEqual(server_id, config["database.server.id"])
+            self.assertEqual("true", config["database.allowPublicKeyRetrieval"])
+            self.assertEqual("disabled", config["database.ssl.mode"])
             self.assertEqual(database, config["database.include.list"])
             self.assertEqual(f"{database}.outbox", config["table.include.list"])
 
@@ -60,6 +62,7 @@ class DebeziumConnectorContractTest(unittest.TestCase):
             self.assertEqual("aggregate_id", config["transforms.outbox.table.field.event.key"])
             self.assertEqual("event_type", config["transforms.outbox.table.field.event.type"])
             self.assertEqual("payload", config["transforms.outbox.table.field.event.payload"])
+            self.assertEqual("true", config["transforms.outbox.table.expand.json.payload"])
             self.assertEqual("destination", config["transforms.outbox.route.by.field"])
             self.assertEqual("${routedByValue}", config["transforms.outbox.route.topic.replacement"])
             self.assertEqual(
