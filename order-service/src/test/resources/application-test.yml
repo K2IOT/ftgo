@@ -14,8 +14,6 @@ spring:
   flyway:
     enabled: true
     locations: filesystem:src/main/resources/db/migration
-  main:
-    allow-bean-definition-overriding: true
   kafka:
     bootstrap-servers: localhost:9092
     consumer:
