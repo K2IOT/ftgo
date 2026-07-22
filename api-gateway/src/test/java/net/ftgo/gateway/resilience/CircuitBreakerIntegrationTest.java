@@ -1,6 +1,7 @@
 package net.ftgo.gateway.resilience;
 
 import com.github.tomakehurst.wiremock.WireMockServer;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import com.github.tomakehurst.wiremock.client.WireMock;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -14,10 +15,8 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.reactive.server.WebTestClient;
 
-import java.time.Duration;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
-import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Integration tests for circuit breaker behavior in API Gateway.
@@ -30,13 +29,19 @@ class CircuitBreakerIntegrationTest {
     @Autowired
     private WebTestClient webTestClient;
 
+    @Autowired
+    private CircuitBreakerRegistry circuitBreakerRegistry;
+
     private static WireMockServer wireMockServer;
 
     @BeforeEach
     void setUp() {
-        wireMockServer = new WireMockServer(8081);
+        circuitBreakerRegistry.circuitBreaker("orderServiceCircuitBreaker").reset();
+        circuitBreakerRegistry.circuitBreaker("consumerServiceCircuitBreaker").reset();
+
+        wireMockServer = new WireMockServer(18081);
         wireMockServer.start();
-        WireMock.configureFor("localhost", 8081);
+        WireMock.configureFor("localhost", 18081);
     }
 
     @AfterEach
@@ -46,9 +51,16 @@ class CircuitBreakerIntegrationTest {
 
     @DynamicPropertySource
     static void configureProperties(DynamicPropertyRegistry registry) {
-        registry.add("services.order-service.url", () -> "http://localhost:8081");
+        registry.add("services.order-service.url", () -> "http://localhost:18081");
+        registry.add("services.consumer-service.url", () -> "http://localhost:18082");
         registry.add("spring.redis.host", () -> "localhost");
         registry.add("spring.redis.port", () -> "6379");
+        registry.add("resilience4j.circuitbreaker.instances.orderServiceCircuitBreaker.slidingWindowSize", () -> "5");
+        registry.add("resilience4j.circuitbreaker.instances.orderServiceCircuitBreaker.minimumNumberOfCalls", () -> "5");
+        registry.add("resilience4j.circuitbreaker.instances.orderServiceCircuitBreaker.failureRateThreshold", () -> "100");
+        registry.add("resilience4j.circuitbreaker.instances.orderServiceCircuitBreaker.waitDurationInOpenState", () -> "100ms");
+        registry.add("resilience4j.circuitbreaker.instances.orderServiceCircuitBreaker.permittedNumberOfCallsInHalfOpenState", () -> "1");
+        registry.add("resilience4j.circuitbreaker.instances.orderServiceCircuitBreaker.automaticTransitionFromOpenToHalfOpenEnabled", () -> "true");
     }
 
     /**
@@ -127,7 +139,7 @@ class CircuitBreakerIntegrationTest {
         // Wait for circuit breaker to transition to half-open (30 seconds in config)
         // For testing, we'll use a shorter wait time and configure the circuit breaker accordingly
         try {
-            Thread.sleep(30000); // Wait for half-open state
+            Thread.sleep(250); // Wait for half-open state
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
@@ -240,10 +252,10 @@ class CircuitBreakerIntegrationTest {
                 .withStatus(500)
                 .withBody("Internal Server Error")));
 
-        // Configure WireMock for consumer service to succeed
-        WireMockServer consumerWireMock = new WireMockServer(8082);
+        // Configur WireMock for consumer service to succeed
+        WireMockServer consumerWireMock = new WireMockServer(18082);
         consumerWireMock.start();
-        WireMock.configureFor("localhost", 8082);
+        WireMock.configureFor("localhost", 18082);
         stubFor(get(urlPathMatching("/consumers/.*"))
             .willReturn(aResponse()
                 .withStatus(200)

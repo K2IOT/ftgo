@@ -3,6 +3,7 @@ package net.ftgo.gateway.client;
 import net.ftgo.gateway.dto.OrderResponse;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.core.context.ReactiveSecurityContextHolder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.stereotype.Component;
@@ -12,8 +13,8 @@ import reactor.core.publisher.Mono;
 /**
  * Client for calling Order Service.
  *
- * B6 FIX: Forwards the Authorization header from the current security context
- * to the downstream service so JWT-protected endpoints accept the call.
+ * Propagates the caller JWT and preserves an Order Service 404 as an empty
+ * result so the API-composition endpoint can return 404 instead of 502/503.
  */
 @Component
 public class OrderServiceClient {
@@ -29,26 +30,31 @@ public class OrderServiceClient {
                 .build();
     }
 
-    /**
-     * Get order details by order ID.
-     * Propagates the caller's JWT to the downstream service.
-     *
-     * @param orderId the order ID
-     * @return Mono of OrderResponse
-     */
     public Mono<OrderResponse> getOrder(Long orderId) {
         return ReactiveSecurityContextHolder.getContext()
-                .map(ctx -> ctx.getAuthentication())
-                .filter(auth -> auth instanceof JwtAuthenticationToken)
-                .map(auth -> ((JwtAuthenticationToken) auth).getToken().getTokenValue())
-                .flatMap(token -> webClient.get()
-                        .uri("/orders/{orderId}", orderId)
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
-                        .retrieve()
-                        .bodyToMono(OrderResponse.class))
-                .switchIfEmpty(webClient.get()
-                        .uri("/orders/{orderId}", orderId)
-                        .retrieve()
-                        .bodyToMono(OrderResponse.class));
+                .map(context -> context.getAuthentication())
+                .filter(authentication -> authentication instanceof JwtAuthenticationToken)
+                .map(authentication -> ((JwtAuthenticationToken) authentication).getToken().getTokenValue())
+                .defaultIfEmpty("")
+                .flatMap(token -> fetchOrder(orderId, token));
+    }
+
+    private Mono<OrderResponse> fetchOrder(Long orderId, String token) {
+        return webClient.get()
+                .uri("/orders/{orderId}", orderId)
+                .headers(headers -> {
+                    if (!token.isBlank()) {
+                        headers.set(HttpHeaders.AUTHORIZATION, "Bearer " + token);
+                    }
+                })
+                .exchangeToMono(response -> {
+                    if (response.statusCode().is2xxSuccessful()) {
+                        return response.bodyToMono(OrderResponse.class);
+                    }
+                    if (response.statusCode().equals(HttpStatus.NOT_FOUND)) {
+                        return Mono.empty();
+                    }
+                    return response.createException().flatMap(Mono::error);
+                });
     }
 }

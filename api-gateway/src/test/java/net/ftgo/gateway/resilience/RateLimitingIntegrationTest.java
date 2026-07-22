@@ -20,8 +20,7 @@ import org.testcontainers.utility.DockerImageName;
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
 
 /**
- * Integration tests for rate limiting in API Gateway.
- * Tests that rate limiting returns 429 after exceeding request limit.
+ * Integration tests for the Redis token-bucket rate limiter used by API Gateway.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureWebTestClient
@@ -39,16 +38,14 @@ class RateLimitingIntegrationTest {
 
     @BeforeEach
     void setUp() {
-        wireMockServer = new WireMockServer(8081);
+        wireMockServer = new WireMockServer(18091);
         wireMockServer.start();
-        WireMock.configureFor("localhost", 8081);
-
-        // Configure WireMock to return success
-        stubFor(get(urlPathMatching("/orders/.*"))
+        WireMock.configureFor("localhost", 18091);
+        stubFor(get(urlPathMatching("/.*"))
             .willReturn(aResponse()
                 .withStatus(200)
                 .withHeader("Content-Type", "application/json")
-                .withBody("{\"orderId\": \"123\", \"status\": \"APPROVED\"}")));
+                .withBody("{\"status\":\"ok\"}")));
     }
 
     @AfterEach
@@ -58,180 +55,82 @@ class RateLimitingIntegrationTest {
 
     @DynamicPropertySource
     static void configureProperties(DynamicPropertyRegistry registry) {
-        registry.add("services.order-service.url", () -> "http://localhost:8081");
         registry.add("spring.redis.host", redis::getHost);
         registry.add("spring.redis.port", redis::getFirstMappedPort);
+
+        // A complete test route avoids partially overriding a production route definition.
+        // replenishRate=1 token/s, requestedTokens=2, burstCapacity=4 => burst of 2
+        // requests and one new request every 2 seconds.
+        registry.add("spring.cloud.gateway.routes[0].id", () -> "rate-limit-test");
+        registry.add("spring.cloud.gateway.routes[0].uri", () -> "http://localhost:18091");
+        registry.add("spring.cloud.gateway.routes[0].predicates[0]", () -> "Path=/rate-limit-test/**");
+        registry.add("spring.cloud.gateway.routes[0].filters[0].name", () -> "RequestRateLimiter");
+        registry.add("spring.cloud.gateway.routes[0].filters[0].args.redis-rate-limiter.replenishRate", () -> "1");
+        registry.add("spring.cloud.gateway.routes[0].filters[0].args.redis-rate-limiter.burstCapacity", () -> "4");
+        registry.add("spring.cloud.gateway.routes[0].filters[0].args.redis-rate-limiter.requestedTokens", () -> "2");
+        registry.add("spring.cloud.gateway.routes[0].filters[0].args.key-resolver", () -> "#{@userKeyResolver}");
+        registry.add("spring.cloud.gateway.routes[0].filters[0].args.deny-empty-key", () -> "false");
     }
 
-    /**
-     * Test that rate limiting returns 429 after 100 requests per minute.
-     * Requirements: 10.5, 10.7
-     */
     @Test
-    void testRateLimitingReturns429After100Requests() {
-        // Make 100 requests (within rate limit)
-        for (int i = 0; i < 100; i++) {
-            webTestClient.get()
-                .uri("/orders/123")
-                .exchange()
-                .expectStatus().isOk();
-        }
-
-        // Wait a small amount to ensure rate limiter processes all requests
-        try {
-            Thread.sleep(100);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-
-        // Next request should be rate limited (exceeds 100 requests per minute)
-        webTestClient.get()
-            .uri("/orders/123")
-            .exchange()
-            .expectStatus().isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+    void rejectsRequestAfterConfiguredBurstIsExhausted() {
+        expectAllowed("burst-user");
+        expectAllowed("burst-user");
+        expectLimited("burst-user");
     }
 
-    /**
-     * Test that rate limiting is per user (based on authentication).
-     * Requirements: 10.5
-     */
     @Test
-    void testRateLimitingPerUser() {
-        // Make 100 requests as user1
-        for (int i = 0; i < 100; i++) {
-            webTestClient.get()
-                .uri("/orders/123")
-                .header("X-User-Id", "user1")
-                .exchange()
-                .expectStatus().isOk();
-        }
+    void rateLimitIsIsolatedPerUser() {
+        expectAllowed("user-one");
+        expectAllowed("user-one");
+        expectLimited("user-one");
+        expectAllowed("user-two");
+    }
 
-        // Wait for rate limiter to process
-        try {
-            Thread.sleep(100);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
+    @Test
+    void tokensAreReplenishedOverTime() throws InterruptedException {
+        expectAllowed("replenish-user");
+        expectAllowed("replenish-user");
+        expectLimited("replenish-user");
 
-        // Next request as user1 should be rate limited
+        Thread.sleep(2200);
+
+        expectAllowed("replenish-user");
+    }
+
+    @Test
+    void responseIncludesRateLimitHeaders() {
         webTestClient.get()
-            .uri("/orders/123")
-            .header("X-User-Id", "user1")
+            .uri("/rate-limit-test/ping")
+            .header("X-User-Id", "headers-user")
             .exchange()
-            .expectStatus().isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+            .expectStatus().isOk()
+            .expectHeader().exists("X-RateLimit-Remaining")
+            .expectHeader().exists("X-RateLimit-Replenish-Rate")
+            .expectHeader().exists("X-RateLimit-Burst-Capacity")
+            .expectHeader().exists("X-RateLimit-Requested-Tokens");
+    }
 
-        // Request as user2 should succeed (different user)
+    @Test
+    void configuredBurstAllowsTwoImmediateRequests() {
+        expectAllowed("capacity-user");
+        expectAllowed("capacity-user");
+        verify(exactly(2), getRequestedFor(urlPathMatching("/rate-limit-test/.*")));
+    }
+
+    private void expectAllowed(String userId) {
         webTestClient.get()
-            .uri("/orders/123")
-            .header("X-User-Id", "user2")
+            .uri("/rate-limit-test/ping")
+            .header("X-User-Id", userId)
             .exchange()
             .expectStatus().isOk();
     }
 
-    /**
-     * Test that rate limiting resets after time window.
-     * Requirements: 10.5
-     */
-    @Test
-    void testRateLimitingResetsAfterTimeWindow() {
-        // Make 100 requests (within rate limit)
-        for (int i = 0; i < 100; i++) {
-            webTestClient.get()
-                .uri("/orders/123")
-                .exchange()
-                .expectStatus().isOk();
-        }
-
-        // Wait for rate limiter to process
-        try {
-            Thread.sleep(100);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-
-        // Next request should be rate limited
+    private void expectLimited(String userId) {
         webTestClient.get()
-            .uri("/orders/123")
+            .uri("/rate-limit-test/ping")
+            .header("X-User-Id", userId)
             .exchange()
             .expectStatus().isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
-
-        // Wait for rate limit window to reset (1 minute)
-        try {
-            Thread.sleep(60000);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-
-        // Request should succeed after window reset
-        webTestClient.get()
-            .uri("/orders/123")
-            .exchange()
-            .expectStatus().isOk();
-    }
-
-    /**
-     * Test that rate limiting applies to all routes.
-     * Requirements: 10.5
-     */
-    @Test
-    void testRateLimitingAppliesToAllRoutes() {
-        // Configure WireMock for consumer service
-        WireMockServer consumerWireMock = new WireMockServer(8082);
-        consumerWireMock.start();
-        WireMock.configureFor("localhost", 8082);
-        stubFor(get(urlPathMatching("/consumers/.*"))
-            .willReturn(aResponse()
-                .withStatus(200)
-                .withHeader("Content-Type", "application/json")
-                .withBody("{\"consumerId\": \"456\", \"name\": \"John Doe\"}")));
-
-        // Make 50 requests to order service
-        for (int i = 0; i < 50; i++) {
-            webTestClient.get()
-                .uri("/orders/123")
-                .exchange()
-                .expectStatus().isOk();
-        }
-
-        // Make 50 requests to consumer service
-        for (int i = 0; i < 50; i++) {
-            webTestClient.get()
-                .uri("/consumers/456")
-                .exchange()
-                .expectStatus().isOk();
-        }
-
-        // Wait for rate limiter to process
-        try {
-            Thread.sleep(100);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-
-        // Next request to either service should be rate limited (total 100 requests)
-        webTestClient.get()
-            .uri("/orders/123")
-            .exchange()
-            .expectStatus().isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
-
-        consumerWireMock.stop();
-    }
-
-    /**
-     * Test burst capacity allows temporary spike above rate limit.
-     * Requirements: 10.5
-     */
-    @Test
-    void testBurstCapacityAllowsTemporarySpike() {
-        // Make 150 requests rapidly (burst capacity is 200)
-        for (int i = 0; i < 150; i++) {
-            webTestClient.get()
-                .uri("/orders/123")
-                .exchange()
-                .expectStatus().isOk();
-        }
-
-        // Burst capacity should allow these requests
-        // But sustained rate should still be limited to 100 per minute
     }
 }

@@ -18,6 +18,11 @@ spring:
               args:
                 name: orderServiceCircuitBreaker
                 fallbackUri: forward:/fallback/orders
+                statusCodes:
+                  - 500
+                  - 502
+                  - 503
+                  - 504
             - name: RequestRateLimiter
               args:
                 redis-rate-limiter.replenishRate: 100
@@ -45,6 +50,11 @@ spring:
               args:
                 name: consumerServiceCircuitBreaker
                 fallbackUri: forward:/fallback/consumers
+                statusCodes:
+                  - 500
+                  - 502
+                  - 503
+                  - 504
             - name: RequestRateLimiter
               args:
                 redis-rate-limiter.replenishRate: 100
@@ -72,6 +82,11 @@ spring:
               args:
                 name: restaurantServiceCircuitBreaker
                 fallbackUri: forward:/fallback/restaurants
+                statusCodes:
+                  - 500
+                  - 502
+                  - 503
+                  - 504
             - name: RequestRateLimiter
               args:
                 redis-rate-limiter.replenishRate: 100
@@ -99,6 +114,11 @@ spring:
               args:
                 name: kitchenServiceCircuitBreaker
                 fallbackUri: forward:/fallback/tickets
+                statusCodes:
+                  - 500
+                  - 502
+                  - 503
+                  - 504
             - name: RequestRateLimiter
               args:
                 redis-rate-limiter.replenishRate: 100
@@ -126,6 +146,11 @@ spring:
               args:
                 name: accountingServiceCircuitBreaker
                 fallbackUri: forward:/fallback/accounts
+                statusCodes:
+                  - 500
+                  - 502
+                  - 503
+                  - 504
             - name: RequestRateLimiter
               args:
                 redis-rate-limiter.replenishRate: 50
@@ -153,6 +178,11 @@ spring:
               args:
                 name: deliveryServiceCircuitBreaker
                 fallbackUri: forward:/fallback/deliveries
+                statusCodes:
+                  - 500
+                  - 502
+                  - 503
+                  - 504
             - name: RequestRateLimiter
               args:
                 redis-rate-limiter.replenishRate: 100
@@ -184,6 +214,11 @@ spring:
               args:
                 name: orderHistoryServiceCircuitBreaker
                 fallbackUri: forward:/fallback/order-history
+                statusCodes:
+                  - 500
+                  - 502
+                  - 503
+                  - 504
             - name: RequestRateLimiter
               args:
                 redis-rate-limiter.replenishRate: 100
