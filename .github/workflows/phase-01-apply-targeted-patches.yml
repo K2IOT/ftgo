@@ -1,0 +1,61 @@
+name: Phase 01 Apply Targeted Patches
+
+on:
+  push:
+    branches:
+      - agent/ftgo-phase-01-runtime-foundation
+    paths:
+      - '.github/workflows/phase-01-apply-targeted-patches.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: agent/ftgo-phase-01-runtime-foundation
+          fetch-depth: 0
+      - name: Apply verified minimal patches
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          gateway_tests = [
+              Path('api-gateway/src/test/java/net/ftgo/gateway/resilience/CircuitBreakerIntegrationTest.java'),
+              Path('api-gateway/src/test/java/net/ftgo/gateway/resilience/RateLimitingIntegrationTest.java'),
+          ]
+          old_route = 'registry.add("spring.cloud.gateway.routes[0].uri", () -> "http://localhost:8081");'
+          new_route = 'registry.add("services.order-service.url", () -> "http://localhost:8081");'
+          for path in gateway_tests:
+              text = path.read_text(encoding='utf-8')
+              if text.count(old_route) != 1:
+                  raise SystemExit(f'Expected exactly one route override in {path}')
+              path.write_text(text.replace(old_route, new_route), encoding='utf-8')
+
+          history_test = Path('order-history-service/src/test/java/net/ftgo/orderhistory/OrderHistoryServiceIntegrationTest.java')
+          text = history_test.read_text(encoding='utf-8')
+          old_container = '''static CassandraContainer<?> cassandra = new CassandraContainer<>("cassandra:4.1")
+              .withExposedPorts(9042);'''
+          new_container = '''static CassandraContainer<?> cassandra = new CassandraContainer<>("cassandra:4.1")
+              .withExposedPorts(9042)
+              .withInitScript("order-history-test-keyspace.cql");'''
+          if text.count(old_container) != 1:
+              raise SystemExit('Expected exactly one Cassandra container declaration')
+          history_test.write_text(text.replace(old_container, new_container), encoding='utf-8')
+          PY
+      - name: Commit patches and remove one-shot workflow
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/phase-01-apply-targeted-patches.yml
+          git add api-gateway/src/test/java/net/ftgo/gateway/resilience/CircuitBreakerIntegrationTest.java
+          git add api-gateway/src/test/java/net/ftgo/gateway/resilience/RateLimitingIntegrationTest.java
+          git add order-history-service/src/test/java/net/ftgo/orderhistory/OrderHistoryServiceIntegrationTest.java
+          git commit -m 'test: stabilize gateway routes and Cassandra bootstrap'
+          git push origin HEAD:agent/ftgo-phase-01-runtime-foundation
