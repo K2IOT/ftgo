@@ -52,7 +52,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          gradle :${{ matrix.module }}:test --tests '*${{ matrix.test }}' --stacktrace --info 2>&1 | tee gradle-output.log
+          timeout 10m gradle :${{ matrix.module }}:test --tests '*${{ matrix.test }}' --stacktrace --info 2>&1 | tee gradle-output.log
           status=${PIPESTATUS[0]}
           echo "status=${status}" >> "$GITHUB_OUTPUT"
           exit 0
@@ -73,10 +73,10 @@ jobs:
         shell: bash
         run: exit '${{ steps.gradle.outputs.status }}'
 
-  order-saga-production-schema:
-    name: order-saga-production-schema
+  order-production-schema-context:
+    name: order-production-schema-context
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
@@ -92,21 +92,21 @@ jobs:
         with:
           gradle-version: '8.5'
 
-      - name: Run CreateOrderSaga integration test
+      - name: Run production schema context test
         id: gradle
         shell: bash
         run: |
           set +e
-          gradle :order-service:test --tests 'net.ftgo.order.saga.CreateOrderSagaIntegrationTest' --stacktrace --info 2>&1 | tee gradle-output.log
+          timeout 10m gradle :order-service:test --tests 'net.ftgo.order.config.OrderProductionSchemaContextTest' --stacktrace --info 2>&1 | tee gradle-output.log
           status=${PIPESTATUS[0]}
           echo "status=${status}" >> "$GITHUB_OUTPUT"
           exit 0
 
-      - name: Upload saga diagnostics
+      - name: Upload context diagnostics
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: order-saga-production-schema-diagnostics-attempt-${{ github.run_attempt }}
+          name: order-production-schema-context-diagnostics-attempt-${{ github.run_attempt }}
           if-no-files-found: warn
           path: |
             gradle-output.log
