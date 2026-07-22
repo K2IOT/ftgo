@@ -8,6 +8,8 @@
     "database.user": "ftgo_user",
     "database.password": "ftgo_password",
     "database.server.id": "105",
+    "database.allowPublicKeyRetrieval": "true",
+    "database.ssl.mode": "disabled",
     "topic.prefix": "ftgo-accounting",
     "database.include.list": "ftgo_accounting",
     "table.include.list": "ftgo_accounting.outbox",
