@@ -1,6 +1,8 @@
 spring:
   application:
     name: consumer-service
+  autoconfigure:
+    exclude: org.springframework.boot.autoconfigure.kafka.KafkaAutoConfiguration
   datasource:
     url: jdbc:mysql://localhost:3307/ftgo_consumer?createDatabaseIfNotExist=true
     username: ftgo_user
@@ -25,11 +27,15 @@ spring:
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
 
+eventuate:
+  database:
+    schema: none
+
 # Eventuate Tram configuration
 eventuatelocal:
   kafka:
     bootstrap:
-      servers: localhost:9092
+      servers: ${spring.kafka.bootstrap-servers}
   cdc:
     reader:
       name: MySqlReader
