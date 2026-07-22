@@ -58,7 +58,7 @@ class RateLimitingIntegrationTest {
 
     @DynamicPropertySource
     static void configureProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.cloud.gateway.routes[0].uri", () -> "http://localhost:8081");
+        registry.add("services.order-service.url", () -> "http://localhost:8081");
         registry.add("spring.redis.host", redis::getHost);
         registry.add("spring.redis.port", redis::getFirstMappedPort);
     }
