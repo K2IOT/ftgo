@@ -4,6 +4,7 @@ set -euo pipefail
 CONNECT_URL="${DEBEZIUM_CONNECT_URL:-http://localhost:8083}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONNECTOR_DIR="${SCRIPT_DIR}/debezium/connectors"
+CONNECTOR_GLOB="${DEBEZIUM_CONNECTOR_GLOB:-*-outbox.json}"
 MAX_CONNECT_ATTEMPTS="${DEBEZIUM_CONNECT_ATTEMPTS:-60}"
 MAX_STATUS_ATTEMPTS="${DEBEZIUM_STATUS_ATTEMPTS:-30}"
 
@@ -102,10 +103,10 @@ main() {
   while IFS= read -r -d '' connector_file; do
     register_connector "${connector_file}"
     connector_count=$((connector_count + 1))
-  done < <(find "${CONNECTOR_DIR}" -maxdepth 1 -type f -name '*-outbox.json' -print0 | sort -z)
+  done < <(find "${CONNECTOR_DIR}" -maxdepth 1 -type f -name "${CONNECTOR_GLOB}" -print0 | sort -z)
 
   if [[ "${connector_count}" == "0" ]]; then
-    echo "No connector files found in ${CONNECTOR_DIR}" >&2
+    echo "No connector files matching ${CONNECTOR_GLOB} found in ${CONNECTOR_DIR}" >&2
     exit 1
   fi
 
