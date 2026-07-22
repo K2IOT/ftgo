@@ -1,0 +1,47 @@
+name: Phase 01 Runtime Export
+
+on:
+  pull_request:
+    branches:
+      - dev
+    paths:
+      - '.github/workflows/phase-01-runtime-export.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - name: Set up Java 21
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install Gradle 8.5
+        uses: gradle/actions/setup-gradle@017a9effdb900e5b5b2fddfb590a105619dca3c3 # v4.4.2
+        with:
+          gradle-version: '8.5'
+      - name: Generate official Gradle wrapper
+        run: gradle wrapper --gradle-version 8.5 --distribution-type all
+      - name: Upload runtime sources and wrapper
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: phase-01-runtime-export
+          path: |
+            gradlew
+            gradle/wrapper/gradle-wrapper.jar
+            gradle/wrapper/gradle-wrapper.properties
+            build.gradle
+            settings.gradle
+            */build.gradle
+            api-gateway/src/main/resources/application.yml
+            *-service/src/main/resources/application.yml
+            deployment/docker-compose.infra.yml
+            deployment/tests/**
+            deployment/configure-debezium.sh
+            deployment/debezium/connectors/**
