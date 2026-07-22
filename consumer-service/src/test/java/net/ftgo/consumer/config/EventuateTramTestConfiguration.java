@@ -2,6 +2,7 @@ package net.ftgo.consumer.config;
 
 import io.eventuate.tram.commands.producer.CommandProducer;
 import io.eventuate.tram.events.publisher.DomainEventPublisher;
+import io.eventuate.tram.messaging.consumer.MessageConsumer;
 import io.eventuate.tram.messaging.producer.MessageProducer;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
@@ -15,19 +16,25 @@ import static org.mockito.Mockito.mock;
  */
 @TestConfiguration
 public class EventuateTramTestConfiguration {
-    
+
     @Bean
     @Primary
     public MessageProducer messageProducer() {
         return mock(MessageProducer.class);
     }
-    
+
+    @Bean
+    @Primary
+    public MessageConsumer messageConsumer() {
+        return mock(MessageConsumer.class);
+    }
+
     @Bean
     @Primary
     public DomainEventPublisher domainEventPublisher() {
         return mock(DomainEventPublisher.class);
     }
-    
+
     @Bean
     @Primary
     public CommandProducer commandProducer() {
