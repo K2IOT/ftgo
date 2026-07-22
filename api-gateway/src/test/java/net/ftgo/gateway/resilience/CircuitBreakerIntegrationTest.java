@@ -46,7 +46,7 @@ class CircuitBreakerIntegrationTest {
 
     @DynamicPropertySource
     static void configureProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.cloud.gateway.routes[0].uri", () -> "http://localhost:8081");
+        registry.add("services.order-service.url", () -> "http://localhost:8081");
         registry.add("spring.redis.host", () -> "localhost");
         registry.add("spring.redis.port", () -> "6379");
     }
