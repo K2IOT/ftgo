@@ -18,6 +18,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
+import static org.springframework.security.test.web.reactive.server.SecurityMockServerConfigurers.mockUser;
 
 /**
  * Integration tests for the Redis token-bucket rate limiter used by API Gateway.
@@ -100,9 +101,8 @@ class RateLimitingIntegrationTest {
 
     @Test
     void responseIncludesRateLimitHeaders() {
-        webTestClient.get()
+        webTestClient.mutateWith(mockUser("headers-user")).get()
             .uri("/rate-limit-test/ping")
-            .header("X-User-Id", "headers-user")
             .exchange()
             .expectStatus().isOk()
             .expectHeader().exists("X-RateLimit-Remaining")
@@ -119,17 +119,15 @@ class RateLimitingIntegrationTest {
     }
 
     private void expectAllowed(String userId) {
-        webTestClient.get()
+        webTestClient.mutateWith(mockUser(userId)).get()
             .uri("/rate-limit-test/ping")
-            .header("X-User-Id", userId)
             .exchange()
             .expectStatus().isOk();
     }
 
     private void expectLimited(String userId) {
-        webTestClient.get()
+        webTestClient.mutateWith(mockUser(userId)).get()
             .uri("/rate-limit-test/ping")
-            .header("X-User-Id", userId)
             .exchange()
             .expectStatus().isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
     }

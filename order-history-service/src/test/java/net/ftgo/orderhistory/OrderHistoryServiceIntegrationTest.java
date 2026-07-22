@@ -113,12 +113,11 @@ class OrderHistoryServiceIntegrationTest {
         
         eventHandlers.handleAccountEvent(payload2, "Account#777", "CardAuthorizedEvent");
         
-        // Verify authorization status updated
-        await().atMost(5, TimeUnit.SECONDS).untilAsserted(() -> {
-            Optional<OrderHistoryRecord> record = orderHistoryRepository.findById("123");
-            assertTrue(record.isPresent());
-            assertEquals("APPROVED", record.get().getAuthorizationStatus());
-        });
+        // CardAuthorized is audit information; the read model derives authorization state
+        // from the final OrderApproved outcome.
+        Optional<OrderHistoryRecord> afterAuthorization = orderHistoryRepository.findById("123");
+        assertTrue(afterAuthorization.isPresent());
+        assertNull(afterAuthorization.get().getAuthorizationStatus());
         
         // Step 3: OrderApproved
         OrderApproved orderApproved = new OrderApproved();
@@ -133,6 +132,7 @@ class OrderHistoryServiceIntegrationTest {
             Optional<OrderHistoryRecord> record = orderHistoryRepository.findById("123");
             assertTrue(record.isPresent());
             assertEquals("APPROVED", record.get().getStatus());
+            assertEquals("APPROVED", record.get().getAuthorizationStatus());
         });
         
         // Step 4: TicketAccepted

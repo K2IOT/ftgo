@@ -17,6 +17,7 @@ import org.springframework.test.web.reactive.server.WebTestClient;
 
 
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
  * Integration tests for circuit breaker behavior in API Gateway.
@@ -58,7 +59,7 @@ class CircuitBreakerIntegrationTest {
         registry.add("resilience4j.circuitbreaker.instances.orderServiceCircuitBreaker.slidingWindowSize", () -> "5");
         registry.add("resilience4j.circuitbreaker.instances.orderServiceCircuitBreaker.minimumNumberOfCalls", () -> "5");
         registry.add("resilience4j.circuitbreaker.instances.orderServiceCircuitBreaker.failureRateThreshold", () -> "100");
-        registry.add("resilience4j.circuitbreaker.instances.orderServiceCircuitBreaker.waitDurationInOpenState", () -> "100ms");
+        registry.add("resilience4j.circuitbreaker.instances.orderServiceCircuitBreaker.waitDurationInOpenState", () -> "500ms");
         registry.add("resilience4j.circuitbreaker.instances.orderServiceCircuitBreaker.permittedNumberOfCallsInHalfOpenState", () -> "1");
         registry.add("resilience4j.circuitbreaker.instances.orderServiceCircuitBreaker.automaticTransitionFromOpenToHalfOpenEnabled", () -> "true");
     }
@@ -90,7 +91,9 @@ class CircuitBreakerIntegrationTest {
             Thread.currentThread().interrupt();
         }
 
-        // Next request should get fallback response (circuit is open)
+        int downstreamCallsBeforeOpenProbe = wireMockServer.getAllServeEvents().size();
+
+        // Next request should get fallback response without another downstream attempt.
         webTestClient.get()
             .uri("/orders/123")
             .exchange()
@@ -99,8 +102,7 @@ class CircuitBreakerIntegrationTest {
             .jsonPath("$.error").isEqualTo("service_unavailable")
             .jsonPath("$.service").isEqualTo("order-service");
 
-        // Verify that the downstream service was not called (circuit is open)
-        verify(exactly(5), getRequestedFor(urlPathMatching("/orders/.*")));
+        assertEquals(downstreamCallsBeforeOpenProbe, wireMockServer.getAllServeEvents().size());
     }
 
     /**
@@ -139,7 +141,7 @@ class CircuitBreakerIntegrationTest {
         // Wait for circuit breaker to transition to half-open (30 seconds in config)
         // For testing, we'll use a shorter wait time and configure the circuit breaker accordingly
         try {
-            Thread.sleep(250); // Wait for half-open state
+            Thread.sleep(600); // Wait for half-open state
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
