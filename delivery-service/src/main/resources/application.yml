@@ -20,6 +20,11 @@ spring:
     consumer:
       group-id: delivery-service
 
+services:
+  restaurant-service:
+    url: ${RESTAURANT_SERVICE_URL:http://restaurant-service:8083}
+    max-retries: ${RESTAURANT_SERVICE_MAX_RETRIES:2}
+
 server:
   port: 8086
 
