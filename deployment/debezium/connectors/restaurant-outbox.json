@@ -8,6 +8,8 @@
     "database.user": "ftgo_user",
     "database.password": "ftgo_password",
     "database.server.id": "103",
+    "database.allowPublicKeyRetrieval": "true",
+    "database.ssl.mode": "disabled",
     "topic.prefix": "ftgo-restaurant",
     "database.include.list": "ftgo_restaurant",
     "table.include.list": "ftgo_restaurant.outbox",
