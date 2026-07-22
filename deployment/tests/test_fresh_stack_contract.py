@@ -5,8 +5,9 @@ import unittest
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 COMPOSE = ROOT / "deployment/tests/docker-compose.fresh-stack.yml"
 SMOKE = ROOT / "scripts/smoke/fresh-stack.sh"
-BOOTSTRAP = ROOT / "scripts/ci/bootstrap-gradle-wrapper.sh"
+BOOTSTRAP = ROOT / "scripts/ci/bootstrap-gradle.sh"
 VERIFY = ROOT / "scripts/ci/verify-gradle-wrapper.sh"
+GRADLEW = ROOT / "gradlew"
 
 
 class FreshStackContractTest(unittest.TestCase):
@@ -38,14 +39,17 @@ class FreshStackContractTest(unittest.TestCase):
         self.assertIn('FRESH_STACK_RUNS:-2', content)
         self.assertIn('assert-order-event.sh', content)
 
-    def test_wrapper_bootstrap_is_checksum_pinned(self):
-        self.assertTrue(BOOTSTRAP.is_file())
-        self.assertTrue(VERIFY.is_file())
+    def test_gradle_bootstrap_is_distribution_checksum_pinned(self):
+        self.assertFalse((ROOT / "gradle/wrapper/gradle-wrapper.jar").exists())
+        for path in (BOOTSTRAP, VERIFY, GRADLEW):
+            self.assertTrue(path.is_file())
         bootstrap = BOOTSTRAP.read_text()
         self.assertIn('GRADLE_VERSION="8.5"', bootstrap)
+        self.assertIn('gradle-${GRADLE_VERSION}-bin.zip', bootstrap)
         self.assertIn("https://services.gradle.org/distributions/", bootstrap)
-        self.assertIn("wrapper.jar", bootstrap)
-        self.assertIn("d3b261c2820e9e3d8d639ed084900f11f4a86050a8f83342ade7b6bc9b0d2bdd", bootstrap)
+        self.assertIn("9d926787066a081739e8200858338b4a69e837c3a821a33aca9db09dd4a41026", bootstrap)
+        self.assertIn("bootstrap-gradle.sh", GRADLEW.read_text())
+
 
 
 if __name__ == "__main__":

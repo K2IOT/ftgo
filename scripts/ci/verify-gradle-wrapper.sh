@@ -1,21 +1,31 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-EXPECTED_SHA256="d3b261c2820e9e3d8d639ed084900f11f4a86050a8f83342ade7b6bc9b0d2bdd"
-DIAGNOSTIC_PATH="build/wrapper-verification.txt"
+EXPECTED_SHA256="9d926787066a081739e8200858338b4a69e837c3a821a33aca9db09dd4a41026"
+DIAGNOSTIC_PATH="build/gradle-bootstrap-verification.txt"
 mkdir -p "$(dirname "${DIAGNOSTIC_PATH}")"
 
-wrapper_path="$(bash scripts/ci/bootstrap-gradle-wrapper.sh)"
-actual_sha256="$(sha256sum "${wrapper_path}" | awk '{print $1}')"
+gradle_bin="$(bash scripts/ci/bootstrap-gradle.sh)"
+gradle_home="$(cd "$(dirname "${gradle_bin}")/.." && pwd)"
+archive="${GRADLE_USER_HOME:-${HOME}/.gradle}/wrapper/verified-distributions/gradle-8.5-bin.zip"
+actual_sha256="$(sha256sum "${archive}" | awk '{print $1}')"
+version_output="$(${gradle_bin} --version)"
 
 {
-  echo "wrapper_path=${wrapper_path}"
+  echo "distribution=gradle-8.5-bin.zip"
+  echo "gradle_bin=${gradle_bin}"
+  echo "gradle_home=${gradle_home}"
   echo "expected_sha256=${EXPECTED_SHA256}"
   echo "actual_sha256=${actual_sha256}"
-  echo "size_bytes=$(stat -c %s "${wrapper_path}")"
-  [[ "${actual_sha256}" == "${EXPECTED_SHA256}" ]] || {
+  echo "size_bytes=$(stat -c %s "${archive}")"
+  if [[ "${actual_sha256}" != "${EXPECTED_SHA256}" ]]; then
     echo "status=checksum_mismatch"
     exit 1
-  }
+  fi
+  if ! grep -q '^Gradle 8\.5$' <<<"${version_output}"; then
+    echo "status=version_mismatch"
+    printf '%s\n' "${version_output}"
+    exit 1
+  fi
   echo "status=verified"
 } | tee "${DIAGNOSTIC_PATH}"
