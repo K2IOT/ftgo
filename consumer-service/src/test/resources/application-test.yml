@@ -3,7 +3,7 @@ spring:
     url: jdbc:h2:mem:testdb;MODE=MySQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
     driver-class-name: org.h2.Driver
     username: sa
-    password: 
+    password:
   jpa:
     hibernate:
       ddl-auto: create-drop
@@ -14,14 +14,6 @@ spring:
     enabled: false
   main:
     allow-bean-definition-overriding: true
-  autoconfigure:
-    exclude:
-      - io.eventuate.tram.spring.messaging.common.TramMessagingCommonAutoConfiguration
-      - io.eventuate.tram.spring.events.publisher.TramEventsPublisherConfiguration
-      - io.eventuate.tram.spring.commands.producer.TramCommandProducerConfiguration
-      - io.eventuate.tram.spring.commands.consumer.TramCommandConsumerConfiguration
-      - io.eventuate.tram.sagas.spring.orchestration.SagaOrchestratorConfiguration
-      - io.eventuate.tram.sagas.spring.participant.SagaParticipantConfiguration
 
 logging:
   level:
