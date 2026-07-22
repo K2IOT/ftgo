@@ -5,7 +5,8 @@ import unittest
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 COMPOSE = ROOT / "deployment/tests/docker-compose.fresh-stack.yml"
 SMOKE = ROOT / "scripts/smoke/fresh-stack.sh"
-WRAPPER = ROOT / "gradle/wrapper/gradle-wrapper.jar"
+BOOTSTRAP = ROOT / "scripts/ci/bootstrap-gradle-wrapper.sh"
+VERIFY = ROOT / "scripts/ci/verify-gradle-wrapper.sh"
 
 
 class FreshStackContractTest(unittest.TestCase):
@@ -37,9 +38,14 @@ class FreshStackContractTest(unittest.TestCase):
         self.assertIn('FRESH_STACK_RUNS:-2', content)
         self.assertIn('assert-order-event.sh', content)
 
-    def test_checked_in_wrapper_is_present(self):
-        self.assertTrue(WRAPPER.is_file())
-        self.assertGreater(WRAPPER.stat().st_size, 10_000)
+    def test_wrapper_bootstrap_is_checksum_pinned(self):
+        self.assertTrue(BOOTSTRAP.is_file())
+        self.assertTrue(VERIFY.is_file())
+        bootstrap = BOOTSTRAP.read_text()
+        self.assertIn('GRADLE_VERSION="8.5"', bootstrap)
+        self.assertIn("https://services.gradle.org/distributions/", bootstrap)
+        self.assertIn("wrapper.jar", bootstrap)
+        self.assertIn("d3b261c2820e9e3d8d639ed084900f11f4a86050a8f83342ade7b6bc9b0d2bdd", bootstrap)
 
 
 if __name__ == "__main__":

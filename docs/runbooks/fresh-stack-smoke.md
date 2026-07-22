@@ -8,7 +8,7 @@ The Phase 01 smoke test proves that a clean dependency stack can boot every FTGO
 - Java 21
 - `curl` and `jq`
 
-The repository must contain the checked-in Gradle wrapper JAR.
+The repository contains a checksum-pinned wrapper bootstrap. On first use, `gradlew` downloads the official Gradle 8.5 wrapper JAR into the user Gradle cache and verifies its published SHA-256 before execution.
 
 ## Run
 
