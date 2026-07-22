@@ -14,8 +14,17 @@ permissions:
 
 jobs:
   migration-red-green:
+    name: migration-${{ matrix.module }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - module: order-service
+            test: OrderMigrationTest
+          - module: kitchen-service
+            test: KitchenMigrationTest
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -32,9 +41,15 @@ jobs:
       - name: Make Gradle wrapper executable
         run: chmod +x gradlew
 
-      - name: Run Phase 01 migration tests
-        run: >-
-          ./gradlew
-          :order-service:test --tests '*OrderMigrationTest'
-          :kitchen-service:test --tests '*KitchenMigrationTest'
-          --stacktrace
+      - name: Run migration test
+        run: ./gradlew :${{ matrix.module }}:test --tests '*${{ matrix.test }}' --stacktrace --info
+
+      - name: Upload test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: migration-${{ matrix.module }}-diagnostics
+          if-no-files-found: ignore
+          path: |
+            ${{ matrix.module }}/build/reports/tests/**
+            ${{ matrix.module }}/build/test-results/**
