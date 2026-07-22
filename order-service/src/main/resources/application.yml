@@ -31,7 +31,10 @@ spring:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.apache.kafka.common.serialization.StringSerializer
 
-# Eventuate Tram configuration for saga orchestration
+eventuate:
+  database:
+    schema: none
+
 eventuatelocal:
   kafka:
     bootstrap:
