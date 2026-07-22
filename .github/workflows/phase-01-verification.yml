@@ -101,7 +101,10 @@ jobs:
         shell: bash
         run: |
           set +e
-          timeout 10m gradle :order-service:test --tests 'net.ftgo.order.config.*Test' --stacktrace --info 2>&1 | tee gradle-output.log
+          timeout 10m gradle :order-service:test \
+            --tests 'net.ftgo.order.config.OrderProductionSchemaContextTest' \
+            --tests 'net.ftgo.order.config.SagaBeanUniquenessTest' \
+            --stacktrace --info 2>&1 | tee gradle-output.log
           status=${PIPESTATUS[0]}
           echo "status=${status}" >> "$GITHUB_OUTPUT"
           exit 0
