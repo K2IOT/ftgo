@@ -26,9 +26,11 @@
 
 ```text
 Phase 01 Runtime Foundation
+  -> Phase 01A Delivery Pickup Resolver
         |
         v
 Phase 02 Business Correctness
+  -> Phase 02A Pickup Address Snapshot
         |
         v
 Phase 03 Distributed Consistency
@@ -46,11 +48,13 @@ Phase 06 Release Validation
 ## Plan Index
 
 1. [`2026-07-22-phase-01-runtime-foundation.md`](./2026-07-22-phase-01-runtime-foundation.md)
-2. [`2026-07-22-phase-02-business-correctness.md`](./2026-07-22-phase-02-business-correctness.md)
-3. [`2026-07-22-phase-03-distributed-consistency.md`](./2026-07-22-phase-03-distributed-consistency.md)
-4. [`2026-07-22-phase-04-security-api.md`](./2026-07-22-phase-04-security-api.md)
-5. [`2026-07-22-phase-05-platform-observability.md`](./2026-07-22-phase-05-platform-observability.md)
-6. [`2026-07-22-phase-06-release-validation.md`](./2026-07-22-phase-06-release-validation.md)
+2. [`2026-07-22-phase-01a-delivery-pickup-resolver.md`](./2026-07-22-phase-01a-delivery-pickup-resolver.md) — **thay thế Task 5 của Phase 01**.
+3. [`2026-07-22-phase-02-business-correctness.md`](./2026-07-22-phase-02-business-correctness.md)
+4. [`2026-07-22-phase-02a-pickup-address-snapshot.md`](./2026-07-22-phase-02a-pickup-address-snapshot.md) — chạy sau menu snapshot và trước E2E gate Phase 02.
+5. [`2026-07-22-phase-03-distributed-consistency.md`](./2026-07-22-phase-03-distributed-consistency.md)
+6. [`2026-07-22-phase-04-security-api.md`](./2026-07-22-phase-04-security-api.md)
+7. [`2026-07-22-phase-05-platform-observability.md`](./2026-07-22-phase-05-platform-observability.md)
+8. [`2026-07-22-phase-06-release-validation.md`](./2026-07-22-phase-06-release-validation.md)
 
 ## Phase 01 Acceptance Gate
 
@@ -59,14 +63,16 @@ Phase 06 Release Validation
 - [ ] Eventuate schema production khớp dependency version và không dùng test-only schema.
 - [ ] Kitchen entity schema validate thành công.
 - [ ] Không còn duplicate saga local-step beans.
-- [ ] Delivery Service có pickup-address source hợp lệ.
+- [ ] Phase 01A cung cấp đúng một HTTP `RestaurantPickupAddressResolver` bean với timeout/retry bounded.
 - [ ] Debezium connector route domain event đúng topic, key, event ID và event type.
 - [ ] Smoke E2E chứng minh `OrderCreated` đi từ transaction tới Kafka consumer.
 
 ## Phase 02 Acceptance Gate
 
 - [ ] Client không thể gửi name/price authoritative.
-- [ ] Create/Revise lấy menu snapshot từ Restaurant Service.
+- [ ] Create/Revise lấy menu và pickup-address snapshot từ Restaurant Service.
+- [ ] Order lưu immutable pickup-address snapshot.
+- [ ] `OrderApproved` mang pickup/delivery address; Delivery không còn synchronous Restaurant dependency.
 - [ ] Consumer credit được reserve/release idempotently.
 - [ ] Accounting có provider abstraction và sandbox provider deterministic.
 - [ ] Raw payment token không còn được persist hoặc log.
@@ -122,6 +128,8 @@ Phase 06 Release Validation
 - [ ] Contract thay đổi phải version hoặc duy trì backward compatibility trong ít nhất một release.
 - [ ] Schema migration chỉ forward; rollback bằng application compatibility hoặc compensating migration, không sửa migration đã phát hành.
 - [ ] Mọi PR body phải nêu failure mode được sửa, tests đã chạy và operational impact.
+- [ ] Không thực thi Task 5 trong Phase 01; thực thi toàn bộ Phase 01A thay cho task đó.
+- [ ] Phase 02A phải hoàn tất trước Task 8 Full Business Flow Verification của Phase 02.
 
 ## Recommended Execution Mode
 
