@@ -12,7 +12,7 @@ class OrderMigrationTest {
     void freshSchemaContainsEventuateMessagingAndSagaTables() {
         MySqlMigrationVerifier.migrateAndValidate(
                 "order-service",
-                "classpath:db/migration",
+                "filesystem:src/main/resources/db/migration",
                 jdbc -> {
                     assertThat(tableExists(jdbc, "eventuate", "message")).isTrue();
                     assertThat(tableExists(jdbc, "eventuate", "received_messages")).isTrue();
