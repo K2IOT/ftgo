@@ -291,6 +291,7 @@ resilience4j:
         automaticTransitionFromOpenToHalfOpenEnabled: true
         # B7 FIX: Use WebFlux exceptions, not Spring MVC exceptions
         recordExceptions:
+          - org.springframework.cloud.gateway.filter.factory.SpringCloudCircuitBreakerFilterFactory$CircuitBreakerStatusCodeException
           - org.springframework.web.reactive.function.client.WebClientResponseException
           - java.util.concurrent.TimeoutException
           - java.io.IOException
