@@ -8,6 +8,8 @@
     "database.user": "ftgo_user",
     "database.password": "ftgo_password",
     "database.server.id": "104",
+    "database.allowPublicKeyRetrieval": "true",
+    "database.ssl.mode": "disabled",
     "topic.prefix": "ftgo-kitchen",
     "database.include.list": "ftgo_kitchen",
     "table.include.list": "ftgo_kitchen.outbox",
