@@ -12,7 +12,7 @@ class KitchenMigrationTest {
     void freshSchemaContainsPendingRevisionState() {
         MySqlMigrationVerifier.migrateAndValidate(
                 "kitchen-service",
-                "classpath:db/migration",
+                "filesystem:src/main/resources/db/migration",
                 jdbc -> {
                     assertThat(columnExistsInCurrentDatabase(
                             jdbc,
@@ -20,7 +20,7 @@ class KitchenMigrationTest {
                             "previous_state")).isTrue();
                     assertThat(tableExistsInCurrentDatabase(
                             jdbc,
-                            "pending_ticket_line_items")).isTrue();
+                            "ticket_pending_line_items")).isTrue();
                 });
     }
 
