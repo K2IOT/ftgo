@@ -24,6 +24,18 @@ class KitchenMigrationTest {
                 });
     }
 
+    @Test
+    void freshSchemaContainsEventuateMessagingTables() {
+        MySqlMigrationVerifier.migrateAndValidate(
+                "kitchen-service",
+                "filesystem:src/main/resources/db/migration",
+                jdbc -> {
+                    assertThat(tableExistsInCurrentDatabase(jdbc, "message")).isTrue();
+                    assertThat(tableExistsInCurrentDatabase(jdbc, "received_messages")).isTrue();
+                    assertThat(tableExistsInCurrentDatabase(jdbc, "offset_store")).isTrue();
+                });
+    }
+
     private static boolean tableExistsInCurrentDatabase(JdbcTemplate jdbc, String table) {
         Integer count = jdbc.queryForObject(
                 "select count(*) from information_schema.tables " +
