@@ -1,6 +1,8 @@
 spring:
   application:
     name: accounting-service
+  autoconfigure:
+    exclude: org.springframework.boot.autoconfigure.kafka.KafkaAutoConfiguration
   datasource:
     url: jdbc:mysql://localhost:3310/ftgo_accounting?createDatabaseIfNotExist=true
     username: ftgo_user
@@ -19,6 +21,18 @@ spring:
     bootstrap-servers: localhost:9092
     consumer:
       group-id: accounting-service
+
+eventuate:
+  database:
+    schema: none
+
+eventuatelocal:
+  kafka:
+    bootstrap:
+      servers: ${spring.kafka.bootstrap-servers}
+  cdc:
+    reader:
+      name: MySqlReader
 
 server:
   port: 8085
