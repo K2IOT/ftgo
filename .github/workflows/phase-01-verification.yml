@@ -27,10 +27,10 @@ jobs:
             test: KitchenMigrationTest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
       - name: Set up Java 21
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
         with:
           distribution: temurin
           java-version: '21'
@@ -53,7 +53,7 @@ jobs:
 
       - name: Upload test diagnostics
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: migration-${{ matrix.module }}-diagnostics
           if-no-files-found: warn
