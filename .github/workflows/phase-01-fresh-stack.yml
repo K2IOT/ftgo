@@ -11,6 +11,7 @@ on:
       - 'build.gradle'
       - 'settings.gradle'
       - 'scripts/smoke/**'
+      - 'scripts/ci/**'
       - 'deployment/tests/**'
       - 'deployment/debezium/connectors/**'
       - 'deployment/configure-debezium.sh'
@@ -26,6 +27,7 @@ on:
       - 'build.gradle'
       - 'settings.gradle'
       - 'scripts/smoke/**'
+      - 'scripts/ci/**'
       - 'deployment/tests/**'
       - 'deployment/debezium/connectors/**'
       - 'deployment/configure-debezium.sh'
@@ -52,8 +54,8 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
-      - name: Validate Gradle wrapper
-        uses: gradle/actions/wrapper-validation@017a9effdb900e5b5b2fddfb590a105619dca3c3 # v4.4.2
+      - name: Verify Gradle 8.5 wrapper checksum
+        run: ./scripts/ci/verify-gradle-wrapper.sh
       - name: Verify fresh-stack contracts
         run: python3 -m unittest deployment/tests/test_fresh_stack_contract.py
       - name: Run two clean-volume smoke cycles

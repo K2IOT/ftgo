@@ -6,6 +6,9 @@ on:
       - agent/ftgo-phase-01-runtime-foundation
     paths:
       - '.github/workflows/phase-01-module-diagnostics.yml'
+      - 'gradle/wrapper/**'
+      - 'gradlew'
+      - 'scripts/ci/**'
       - 'build.gradle'
       - 'settings.gradle'
       - 'common/**'
@@ -22,6 +25,9 @@ on:
       - dev
     paths:
       - '.github/workflows/phase-01-module-diagnostics.yml'
+      - 'gradle/wrapper/**'
+      - 'gradlew'
+      - 'scripts/ci/**'
       - 'build.gradle'
       - 'settings.gradle'
       - 'common/**'
@@ -68,10 +74,14 @@ jobs:
           distribution: temurin
           java-version: '21'
 
+      - name: Verify Gradle 8.5 wrapper checksum
+        run: ./scripts/ci/verify-gradle-wrapper.sh
+
       - name: Install Gradle 8.5
         uses: gradle/actions/setup-gradle@017a9effdb900e5b5b2fddfb590a105619dca3c3 # v4.4.2
         with:
           gradle-version: '8.5'
+          validate-wrappers: false
 
       - name: Run module tests with detailed output
         id: gradle

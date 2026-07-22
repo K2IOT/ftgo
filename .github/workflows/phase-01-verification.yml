@@ -61,10 +61,13 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
+      - name: Verify Gradle 8.5 wrapper checksum
+        run: ./scripts/ci/verify-gradle-wrapper.sh
       - name: Install Gradle 8.5
         uses: gradle/actions/setup-gradle@017a9effdb900e5b5b2fddfb590a105619dca3c3 # v4.4.2
         with:
           gradle-version: '8.5'
+          validate-wrappers: false
       - name: Run migration test and capture output
         id: gradle
         shell: bash
@@ -101,10 +104,13 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
+      - name: Verify Gradle 8.5 wrapper checksum
+        run: ./scripts/ci/verify-gradle-wrapper.sh
       - name: Install Gradle 8.5
         uses: gradle/actions/setup-gradle@017a9effdb900e5b5b2fddfb590a105619dca3c3 # v4.4.2
         with:
           gradle-version: '8.5'
+          validate-wrappers: false
       - name: Run order context tests
         id: gradle
         shell: bash
@@ -152,10 +158,13 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
+      - name: Verify Gradle 8.5 wrapper checksum
+        run: ./scripts/ci/verify-gradle-wrapper.sh
       - name: Install Gradle 8.5
         uses: gradle/actions/setup-gradle@017a9effdb900e5b5b2fddfb590a105619dca3c3 # v4.4.2
         with:
           gradle-version: '8.5'
+          validate-wrappers: false
       - name: Run pickup address contract test
         id: gradle
         shell: bash
