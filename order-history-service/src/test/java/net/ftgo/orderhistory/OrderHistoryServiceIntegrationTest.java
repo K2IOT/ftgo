@@ -37,7 +37,8 @@ class OrderHistoryServiceIntegrationTest {
     
     @Container
     static CassandraContainer<?> cassandra = new CassandraContainer<>("cassandra:4.1")
-        .withExposedPorts(9042);
+        .withExposedPorts(9042)
+        .withInitScript("order-history-test-keyspace.cql");
     
     @DynamicPropertySource
     static void cassandraProperties(DynamicPropertyRegistry registry) {
