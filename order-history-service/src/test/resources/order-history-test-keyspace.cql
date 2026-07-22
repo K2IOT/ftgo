@@ -5,30 +5,30 @@ WITH replication = {
 };
 
 CREATE TYPE IF NOT EXISTS ftgo_order_history_test.line_item (
-  menu_item_id bigint,
+  menuitemid bigint,
   name text,
   price decimal,
   quantity int
 );
 
 CREATE TABLE IF NOT EXISTS ftgo_order_history_test.order_history (
-  order_id text PRIMARY KEY,
-  consumer_id bigint,
-  restaurant_id bigint,
+  orderid text PRIMARY KEY,
+  consumerid bigint,
+  restaurantid bigint,
   status text,
-  order_total decimal,
-  line_items list<frozen<line_item>>,
-  delivery_address text,
-  delivery_time timestamp,
-  delivery_status text,
-  ticket_status text,
-  authorization_status text,
-  creation_date timestamp,
-  updated_at timestamp,
+  ordertotal decimal,
+  lineitems list<frozen<line_item>>,
+  deliveryaddress text,
+  deliverytime timestamp,
+  deliverystatus text,
+  ticketstatus text,
+  authorizationstatus text,
+  creationdate timestamp,
+  updatedat timestamp,
   keywords set<text>
 );
 
 CREATE TABLE IF NOT EXISTS ftgo_order_history_test.processed_messages (
-  message_id text PRIMARY KEY,
-  consumed_at timestamp
+  messageid text PRIMARY KEY,
+  consumedat timestamp
 );
