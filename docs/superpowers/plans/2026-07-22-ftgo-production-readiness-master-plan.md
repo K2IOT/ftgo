@@ -4,7 +4,7 @@
 
 **Goal:** Đưa toàn bộ backend FTGO từ proof-of-concept sang production baseline có business correctness, distributed consistency, security, operability và release governance được kiểm chứng.
 
-**Architecture:** Giữ nguyên service boundaries; dùng Eventuate Tram cho saga command/reply và custom transactional outbox + Debezium cho domain events. Triển khai theo sáu phase tuyến tính, mỗi phase có acceptance gate độc lập và chỉ được bắt đầu khi phase trước đã đạt.
+**Architecture:** Giữ nguyên service boundaries; dùng Eventuate Tram cho saga command/reply và custom transactional outbox + Debezium cho domain events. Triển khai theo acceptance gate tuyến tính; các subplan được đặt đúng dependency thay vì chỉ dựa vào số phase.
 
 **Tech Stack:** Java 21, Spring Boot, Spring Cloud Gateway, Eventuate Tram Sagas, Kafka, Debezium, MySQL, Redis, ScyllaDB, Flyway, Testcontainers, Gradle, Kubernetes, Istio, OpenTelemetry, Micrometer, GitHub Actions.
 
@@ -18,9 +18,14 @@
 - Mọi external mutation phải hỗ trợ `Idempotency-Key`.
 - Mọi API error dùng `application/problem+json` và có `correlationId`.
 - Mọi task kết thúc bằng test command có expected result và một commit nhỏ.
-- Không merge phase nếu acceptance gate chưa đạt.
+- Không merge gate nếu acceptance checklist chưa đạt.
 
 ---
+
+## Design Documents
+
+1. [`../specs/2026-07-22-ftgo-production-readiness-design.md`](../specs/2026-07-22-ftgo-production-readiness-design.md)
+2. [`../specs/2026-07-22-ftgo-payment-settlement-design-addendum.md`](../specs/2026-07-22-ftgo-payment-settlement-design-addendum.md)
 
 ## Program Dependency Graph
 
@@ -29,11 +34,14 @@ Phase 01 Runtime Foundation
   -> Phase 01A Delivery Pickup Resolver
         |
         v
-Phase 02 Business Correctness
+Phase 02 Business Correctness Core
   -> Phase 02A Pickup Address Snapshot
         |
         v
 Phase 03 Distributed Consistency
+        |
+        v
+Phase 02B Payment Settlement
         |
         v
 Phase 04 Security and API
@@ -45,16 +53,19 @@ Phase 05 Platform and Observability
 Phase 06 Release Validation
 ```
 
+Phase 03 chạy trước Phase 02B để Payment Capture/Refund sử dụng shared processed-command result cache và không tạo migration version out-of-order.
+
 ## Plan Index
 
 1. [`2026-07-22-phase-01-runtime-foundation.md`](./2026-07-22-phase-01-runtime-foundation.md)
 2. [`2026-07-22-phase-01a-delivery-pickup-resolver.md`](./2026-07-22-phase-01a-delivery-pickup-resolver.md) — **thay thế Task 5 của Phase 01**.
 3. [`2026-07-22-phase-02-business-correctness.md`](./2026-07-22-phase-02-business-correctness.md)
-4. [`2026-07-22-phase-02a-pickup-address-snapshot.md`](./2026-07-22-phase-02a-pickup-address-snapshot.md) — chạy sau menu snapshot và trước E2E gate Phase 02.
+4. [`2026-07-22-phase-02a-pickup-address-snapshot.md`](./2026-07-22-phase-02a-pickup-address-snapshot.md) — chạy sau menu snapshot.
 5. [`2026-07-22-phase-03-distributed-consistency.md`](./2026-07-22-phase-03-distributed-consistency.md)
-6. [`2026-07-22-phase-04-security-api.md`](./2026-07-22-phase-04-security-api.md)
-7. [`2026-07-22-phase-05-platform-observability.md`](./2026-07-22-phase-05-platform-observability.md)
-8. [`2026-07-22-phase-06-release-validation.md`](./2026-07-22-phase-06-release-validation.md)
+6. [`2026-07-22-phase-02b-payment-settlement.md`](./2026-07-22-phase-02b-payment-settlement.md) — chạy sau Phase 03 Task 2.
+7. [`2026-07-22-phase-04-security-api.md`](./2026-07-22-phase-04-security-api.md)
+8. [`2026-07-22-phase-05-platform-observability.md`](./2026-07-22-phase-05-platform-observability.md)
+9. [`2026-07-22-phase-06-release-validation.md`](./2026-07-22-phase-06-release-validation.md)
 
 ## Phase 01 Acceptance Gate
 
@@ -67,7 +78,7 @@ Phase 06 Release Validation
 - [ ] Debezium connector route domain event đúng topic, key, event ID và event type.
 - [ ] Smoke E2E chứng minh `OrderCreated` đi từ transaction tới Kafka consumer.
 
-## Phase 02 Acceptance Gate
+## Phase 02 Core Acceptance Gate
 
 - [ ] Client không thể gửi name/price authoritative.
 - [ ] Create/Revise lấy menu và pickup-address snapshot từ Restaurant Service.
@@ -89,6 +100,16 @@ Phase 06 Release Validation
 - [ ] Order History phục hồi được out-of-order event.
 - [ ] Scylla paging token và filtering đúng theo access pattern.
 - [ ] Stuck saga/outbox backlog có metric và reconciliation command.
+
+## Phase 02B Payment Acceptance Gate
+
+- [ ] Ticket không thể chuyển `PREPARING` trước khi payment capture thành công.
+- [ ] Capture Payment Saga xử lý success, decline, transient error và lost reply với tối đa một capture.
+- [ ] Cancel Order voids authorization hoặc refunds captured payment đúng durable state.
+- [ ] Provider webhook được verify signature, replay-safe và idempotent.
+- [ ] Reconciliation sửa được monotonic pending state và tạo manual-review case cho ambiguity.
+- [ ] Tổng refund không vượt captured amount.
+- [ ] Payment settlement E2E suite chạy pass hai lần liên tiếp.
 
 ## Phase 04 Acceptance Gate
 
@@ -129,7 +150,9 @@ Phase 06 Release Validation
 - [ ] Schema migration chỉ forward; rollback bằng application compatibility hoặc compensating migration, không sửa migration đã phát hành.
 - [ ] Mọi PR body phải nêu failure mode được sửa, tests đã chạy và operational impact.
 - [ ] Không thực thi Task 5 trong Phase 01; thực thi toàn bộ Phase 01A thay cho task đó.
-- [ ] Phase 02A phải hoàn tất trước Task 8 Full Business Flow Verification của Phase 02.
+- [ ] Phase 02A phải hoàn tất sau Phase 02 Task 2 và trước mọi E2E business-flow gate.
+- [ ] Phase 02 Task 8 Full Business Flow Verification được hoãn đến sau Phase 02B để bao gồm capture/refund lifecycle.
+- [ ] Phase 02B bắt đầu sau Phase 03 Task 2; dùng shared `IdempotentCommandExecutor`, không tạo một cơ chế processed-command thứ hai.
 
 ## Recommended Execution Mode
 
@@ -138,4 +161,4 @@ Dùng `superpowers:subagent-driven-development` cho từng task trong phase. M�
 1. Spec/plan compliance review.
 2. Code quality, tests và operational safety review.
 
-Sau mỗi phase, chạy full verification suite và cập nhật acceptance checklist trước khi bắt đầu phase tiếp theo.
+Sau mỗi gate, chạy full verification suite và cập nhật acceptance checklist trước khi bắt đầu gate tiếp theo.
