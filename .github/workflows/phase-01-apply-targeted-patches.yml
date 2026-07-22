@@ -48,12 +48,11 @@ jobs:
               raise SystemExit('Expected exactly one Cassandra container declaration')
           history_test.write_text(text.replace(old_container, new_container), encoding='utf-8')
           PY
-      - name: Commit patches and remove one-shot workflow
+      - name: Commit targeted patches
         shell: bash
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git rm .github/workflows/phase-01-apply-targeted-patches.yml
           git add api-gateway/src/test/java/net/ftgo/gateway/resilience/CircuitBreakerIntegrationTest.java
           git add api-gateway/src/test/java/net/ftgo/gateway/resilience/RateLimitingIntegrationTest.java
           git add order-history-service/src/test/java/net/ftgo/orderhistory/OrderHistoryServiceIntegrationTest.java
