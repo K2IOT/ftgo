@@ -41,15 +41,28 @@ jobs:
       - name: Make Gradle wrapper executable
         run: chmod +x gradlew
 
-      - name: Run migration test
-        run: ./gradlew :${{ matrix.module }}:test --tests '*${{ matrix.test }}' --stacktrace --info
+      - name: Run migration test and capture output
+        id: gradle
+        shell: bash
+        run: |
+          set +e
+          ./gradlew :${{ matrix.module }}:test --tests '*${{ matrix.test }}' --stacktrace --info 2>&1 | tee gradle-output.log
+          status=${PIPESTATUS[0]}
+          echo "status=${status}" >> "$GITHUB_OUTPUT"
+          exit 0
 
       - name: Upload test diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: migration-${{ matrix.module }}-diagnostics
-          if-no-files-found: ignore
+          if-no-files-found: warn
           path: |
+            gradle-output.log
             ${{ matrix.module }}/build/reports/tests/**
             ${{ matrix.module }}/build/test-results/**
+
+      - name: Preserve Gradle result
+        if: always()
+        shell: bash
+        run: exit '${{ steps.gradle.outputs.status }}'
