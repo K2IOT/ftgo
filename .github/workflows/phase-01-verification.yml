@@ -13,6 +13,13 @@ permissions:
   contents: read
 
 jobs:
+  runner-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify runner executes shell steps
+        run: echo runner-ready
+
   migration-red-green:
     name: migration-${{ matrix.module }}
     runs-on: ubuntu-latest
