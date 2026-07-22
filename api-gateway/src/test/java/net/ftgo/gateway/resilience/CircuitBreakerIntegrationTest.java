@@ -66,9 +66,9 @@ class CircuitBreakerIntegrationTest {
         registry.add("resilience4j.circuitbreaker.instances." + ORDER_BREAKER + ".slidingWindowSize", () -> "5");
         registry.add("resilience4j.circuitbreaker.instances." + ORDER_BREAKER + ".minimumNumberOfCalls", () -> "5");
         registry.add("resilience4j.circuitbreaker.instances." + ORDER_BREAKER + ".failureRateThreshold", () -> "100");
-        registry.add("resilience4j.circuitbreaker.instances." + ORDER_BREAKER + ".waitDurationInOpenState", () -> "500ms");
+        registry.add("resilience4j.circuitbreaker.instances." + ORDER_BREAKER + ".waitDurationInOpenState", () -> "30s");
         registry.add("resilience4j.circuitbreaker.instances." + ORDER_BREAKER + ".permittedNumberOfCallsInHalfOpenState", () -> "1");
-        registry.add("resilience4j.circuitbreaker.instances." + ORDER_BREAKER + ".automaticTransitionFromOpenToHalfOpenEnabled", () -> "true");
+        registry.add("resilience4j.circuitbreaker.instances." + ORDER_BREAKER + ".automaticTransitionFromOpenToHalfOpenEnabled", () -> "false");
     }
 
     private static void addCircuitRoute(
@@ -111,6 +111,7 @@ class CircuitBreakerIntegrationTest {
 
         orderService.resetAll();
         stubOrderSuccess();
+        orderBreaker().transitionToHalfOpenState();
         awaitOrderState(CircuitBreaker.State.HALF_OPEN);
 
         expectOrderSuccess();

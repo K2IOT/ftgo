@@ -31,7 +31,7 @@ concurrency:
 jobs:
   cdc-smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
@@ -45,5 +45,6 @@ jobs:
           name: debezium-cdc-smoke-diagnostics
           if-no-files-found: warn
           path: |
+            deployment/tests/debezium-smoke.log
             deployment/tests/debezium-smoke-record.txt
             deployment/tests/debezium-smoke-containers.log

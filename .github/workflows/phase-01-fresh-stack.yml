@@ -76,8 +76,9 @@ jobs:
           if-no-files-found: warn
           path: |
             fresh-stack.log
-            build/wrapper-verification.txt
+            build/gradle-bootstrap-verification.txt
             build/fresh-stack-smoke/**
+            deployment/tests/debezium-smoke.log
             deployment/tests/debezium-smoke-record.txt
             deployment/tests/debezium-smoke-containers.log
       - name: Preserve smoke result

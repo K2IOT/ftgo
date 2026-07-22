@@ -70,10 +70,10 @@ services:
     container_name: ftgo-phase01-scylla
     ports:
       - "9042:9042"
-    command: ["--smp", "1", "--memory", "750M", "--overprovisioned", "1", "--developer-mode", "1"]
+    command: ["--smp", "1", "--memory", "1G", "--overprovisioned", "1", "--developer-mode", "1"]
     healthcheck:
-      test: ["CMD-SHELL", "cqlsh 127.0.0.1 9042 -e 'DESCRIBE CLUSTER' >/dev/null 2>&1"]
+      test: ["CMD-SHELL", "nodetool statusbinary 2>/dev/null | grep -q running"]
       interval: 10s
       timeout: 10s
       retries: 60
-      start_period: 40s
+      start_period: 90s

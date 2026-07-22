@@ -41,6 +41,7 @@ cleanup_process() {
 
 cleanup_stack() {
   cleanup_process
+  mkdir -p "${LOG_ROOT}"
   "${COMPOSE[@]}" logs --no-color >"${LOG_ROOT}/compose-last.log" 2>&1 || true
   "${COMPOSE[@]}" down --volumes --remove-orphans >/dev/null 2>&1 || true
 }
@@ -108,7 +109,7 @@ boot_and_assert() {
 prepare_dependencies() {
   "${COMPOSE[@]}" down --volumes --remove-orphans >/dev/null 2>&1 || true
   "${COMPOSE[@]}" config --quiet
-  "${COMPOSE[@]}" up --detach --wait --wait-timeout 300
+  "${COMPOSE[@]}" up --detach --wait --wait-timeout 600
   "${COMPOSE[@]}" exec -T scylla cqlsh 127.0.0.1 9042 \
     <"${ROOT_DIR}/deployment/tests/fresh-stack/order-history-schema.cql"
 }
@@ -155,9 +156,9 @@ main() {
   require_command docker
   require_command jq
 
+  build_services
   rm -rf "${LOG_ROOT}"
   mkdir -p "${LOG_ROOT}"
-  build_services
 
   for run_number in $(seq 1 "${RUNS}"); do
     echo "=== Fresh-stack smoke run ${run_number}/${RUNS} ==="
