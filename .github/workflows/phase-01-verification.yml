@@ -42,18 +42,17 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      - name: Set up Gradle
+      - name: Install Gradle 8.5
         uses: gradle/actions/setup-gradle@017a9effdb900e5b5b2fddfb590a105619dca3c3 # v4.4.2
-
-      - name: Make Gradle wrapper executable
-        run: chmod +x gradlew
+        with:
+          gradle-version: '8.5'
 
       - name: Run migration test and capture output
         id: gradle
         shell: bash
         run: |
           set +e
-          ./gradlew :${{ matrix.module }}:test --tests '*${{ matrix.test }}' --stacktrace --info 2>&1 | tee gradle-output.log
+          gradle :${{ matrix.module }}:test --tests '*${{ matrix.test }}' --stacktrace --info 2>&1 | tee gradle-output.log
           status=${PIPESTATUS[0]}
           echo "status=${status}" >> "$GITHUB_OUTPUT"
           exit 0
@@ -62,7 +61,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: migration-${{ matrix.module }}-diagnostics
+          name: migration-${{ matrix.module }}-diagnostics-attempt-${{ github.run_attempt }}
           if-no-files-found: warn
           path: |
             gradle-output.log
