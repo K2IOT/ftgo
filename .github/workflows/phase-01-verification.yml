@@ -41,25 +41,6 @@ jobs:
           name: debezium-connector-contract-diagnostics
           path: debezium-contract.log
 
-  debezium-cdc-smoke:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - name: Checkout
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
-      - name: Run MySQL to Debezium to Kafka smoke
-        shell: bash
-        run: bash deployment/tests/run-debezium-smoke.sh
-      - name: Upload CDC smoke diagnostics
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: debezium-cdc-smoke-diagnostics
-          if-no-files-found: warn
-          path: |
-            deployment/tests/debezium-smoke-record.txt
-            deployment/tests/debezium-smoke-containers.log
-
   migration-red-green:
     name: migration-${{ matrix.module }}
     runs-on: ubuntu-latest

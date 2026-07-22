@@ -56,8 +56,8 @@ class RateLimitingIntegrationTest {
 
     @DynamicPropertySource
     static void configureProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.redis.host", redis::getHost);
-        registry.add("spring.redis.port", redis::getFirstMappedPort);
+        registry.add("spring.data.redis.host", redis::getHost);
+        registry.add("spring.data.redis.port", redis::getFirstMappedPort);
 
         // A complete test route avoids partially overriding a production route definition.
         // replenishRate=1 token/s, requestedTokens=2, burstCapacity=4 => burst of 2
