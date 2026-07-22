@@ -10,6 +10,15 @@ on:
       - 'deployment/debezium/connectors/**'
       - 'deployment/tests/docker-compose.debezium-smoke.yml'
       - 'deployment/tests/run-debezium-smoke.sh'
+  pull_request:
+    branches:
+      - dev
+    paths:
+      - '.github/workflows/phase-01-debezium-smoke.yml'
+      - 'deployment/configure-debezium.sh'
+      - 'deployment/debezium/connectors/**'
+      - 'deployment/tests/docker-compose.debezium-smoke.yml'
+      - 'deployment/tests/run-debezium-smoke.sh'
   workflow_dispatch:
 
 permissions:
