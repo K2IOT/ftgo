@@ -61,7 +61,7 @@ jobs:
           distribution: temurin
           java-version: '21'
       - name: Verify Gradle 8.5 wrapper checksum
-        run: ./scripts/ci/verify-gradle-wrapper.sh
+        run: bash scripts/ci/verify-gradle-wrapper.sh
       - name: Run full clean test suite with checked-in wrapper
         id: gradle
         shell: bash
@@ -80,6 +80,7 @@ jobs:
           if-no-files-found: warn
           path: |
             full-test.log
+            build/wrapper-verification.txt
             '**/build/reports/tests/**'
             '**/build/test-results/**'
       - name: Preserve Gradle result

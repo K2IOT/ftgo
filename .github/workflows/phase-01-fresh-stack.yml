@@ -55,7 +55,7 @@ jobs:
           distribution: temurin
           java-version: '21'
       - name: Verify Gradle 8.5 wrapper checksum
-        run: ./scripts/ci/verify-gradle-wrapper.sh
+        run: bash scripts/ci/verify-gradle-wrapper.sh
       - name: Verify fresh-stack contracts
         run: python3 -m unittest deployment/tests/test_fresh_stack_contract.py
       - name: Run two clean-volume smoke cycles
@@ -76,6 +76,7 @@ jobs:
           if-no-files-found: warn
           path: |
             fresh-stack.log
+            build/wrapper-verification.txt
             build/fresh-stack-smoke/**
             deployment/tests/debezium-smoke-record.txt
             deployment/tests/debezium-smoke-containers.log

@@ -75,20 +75,15 @@ jobs:
           java-version: '21'
 
       - name: Verify Gradle 8.5 wrapper checksum
-        run: ./scripts/ci/verify-gradle-wrapper.sh
-
-      - name: Install Gradle 8.5
-        uses: gradle/actions/setup-gradle@017a9effdb900e5b5b2fddfb590a105619dca3c3 # v4.4.2
-        with:
-          gradle-version: '8.5'
-          validate-wrappers: false
+        run: bash scripts/ci/verify-gradle-wrapper.sh
 
       - name: Run module tests with detailed output
         id: gradle
         shell: bash
         run: |
           set +e
-          timeout 20m gradle :${{ matrix.module }}:clean :${{ matrix.module }}:test \
+          chmod +x gradlew
+          timeout 20m ./gradlew --no-daemon :${{ matrix.module }}:clean :${{ matrix.module }}:test \
             --stacktrace --info 2>&1 | tee module-test.log
           status=${PIPESTATUS[0]}
           echo "status=${status}" >> "$GITHUB_OUTPUT"
