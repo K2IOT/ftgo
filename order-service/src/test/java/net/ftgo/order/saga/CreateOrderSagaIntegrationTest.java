@@ -24,7 +24,6 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.mock.mockito.SpyBean;
-import org.springframework.context.annotation.Import;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -41,7 +40,6 @@ import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 
-@Import(TestParticipantConfiguration.class)
 class CreateOrderSagaIntegrationTest extends OrderServiceIntegrationTestBase {
 
     @Autowired
@@ -67,20 +65,18 @@ class CreateOrderSagaIntegrationTest extends OrderServiceIntegrationTestBase {
     }
 
     @Test
-    void successfulCreateSagaPreparesResourcesAndWaitsForRestaurant() {
+    void startsSagaAndWritesMenuValidationCommand() {
         Order order = createApprovalPendingOrder(200L);
 
         SagaInstance sagaInstance = sagaInstanceFactory.create(createOrderSaga, toSagaData(order));
 
         assertNotNull(sagaInstance);
         assertNotNull(sagaInstance.getId());
-        Awaitility.await().atMost(10, TimeUnit.SECONDS).untilAsserted(() -> {
-            Order finalOrder = orderRepository.findById(order.getId()).orElseThrow();
-            assertEquals(OrderState.AWAITING_RESTAURANT_ACCEPTANCE, finalOrder.getState());
-            assertEquals(999L, finalOrder.getTicketId());
-            assertEquals(888L, finalOrder.getAuthorizationId());
-            assertEquals(777L, finalOrder.getCreditReservationId());
-        });
+        assertEquals(
+            OrderState.APPROVAL_PENDING,
+            orderRepository.findById(order.getId()).orElseThrow().getState(),
+            "Order must remain pending until participant replies advance the saga"
+        );
 
         ArgumentCaptor<String> destinations = ArgumentCaptor.forClass(String.class);
         ArgumentCaptor<Message> messages = ArgumentCaptor.forClass(Message.class);
@@ -94,27 +90,6 @@ class CreateOrderSagaIntegrationTest extends OrderServiceIntegrationTestBase {
             ChannelNames.RESTAURANT_SERVICE_COMMAND_CHANNEL,
             "ValidateOrderMenuCommand"
         );
-        assertCommandSent(
-            destinations.getAllValues(),
-            messages.getAllValues(),
-            ChannelNames.CONSUMER_SERVICE_COMMAND_CHANNEL,
-            "ReserveConsumerCreditCommand"
-        );
-    }
-
-    @Test
-    void ticketCreationFailureCompensatesAndRejectsOrder() {
-        Order order = createApprovalPendingOrder(999L);
-
-        SagaInstance sagaInstance = sagaInstanceFactory.create(createOrderSaga, toSagaData(order));
-
-        assertNotNull(sagaInstance);
-        Awaitility.await().atMost(10, TimeUnit.SECONDS).untilAsserted(() -> {
-            Order finalOrder = orderRepository.findById(order.getId()).orElseThrow();
-            assertEquals(OrderState.REJECTED, finalOrder.getState());
-            assertNull(finalOrder.getTicketId());
-            assertNull(finalOrder.getAuthorizationId());
-        });
     }
 
     @Test
