@@ -1,60 +1,33 @@
 package net.ftgo.order.domain;
 
 /**
- * Enum representing the state of an Order in its lifecycle.
- * 
- * The state machine enforces valid transitions and implements semantic locking
- * via pending states to prevent concurrent modifications during saga execution.
- * 
- * State Transitions:
- * - APPROVAL_PENDING → APPROVED (via approve())
- * - APPROVAL_PENDING → REJECTED (via reject())
- * - APPROVED → CANCEL_PENDING (via beginCancel())
- * - CANCEL_PENDING → CANCELLED (via confirmCancel())
- * - CANCEL_PENDING → APPROVED (via compensation - undoCancel())
- * - APPROVED → REVISION_PENDING (via beginRevise())
- * - REVISION_PENDING → APPROVED (via confirmRevise())
- * - REVISION_PENDING → APPROVED (via compensation - undoRevise())
- * 
- * Semantic Lock:
- * - APPROVAL_PENDING: Prevents cancel/revise during CreateOrderSaga
- * - CANCEL_PENDING: Prevents revise during CancelOrderSaga
- * - REVISION_PENDING: Prevents cancel/additional revise during ReviseOrderSaga
+ * Order lifecycle with semantic-lock states for each saga boundary.
  */
 public enum OrderState {
-    /**
-     * Order is pending approval during CreateOrderSaga execution.
-     * Semantic lock: prevents concurrent cancel/revise operations.
-     */
+    /** Initial CreateOrderSaga is validating and reserving resources. */
     APPROVAL_PENDING,
-    
-    /**
-     * Order has been approved and is ready for fulfillment.
-     * Can transition to CANCEL_PENDING or REVISION_PENDING.
-     */
+
+    /** CreateOrderSaga completed and is waiting for a kitchen decision. */
+    AWAITING_RESTAURANT_ACCEPTANCE,
+
+    /** The acceptance event won the order-level decision race. */
+    CONFIRMATION_PENDING,
+
+    /** The rejection or timeout event won the order-level decision race. */
+    REJECTION_PENDING,
+
+    /** Payment is captured, credit is committed, and fulfillment may proceed. */
     APPROVED,
-    
-    /**
-     * Order was rejected during CreateOrderSaga (e.g., payment authorization failed).
-     * Terminal state.
-     */
+
+    /** Order creation or restaurant decision ended in rejection. */
     REJECTED,
-    
-    /**
-     * Order is pending cancellation during CancelOrderSaga execution.
-     * Semantic lock: prevents concurrent revise operations.
-     */
+
+    /** Existing cancellation workflow semantic lock. */
     CANCEL_PENDING,
-    
-    /**
-     * Order has been cancelled.
-     * Terminal state.
-     */
+
+    /** Terminal cancelled state. */
     CANCELLED,
-    
-    /**
-     * Order is pending revision during ReviseOrderSaga execution.
-     * Semantic lock: prevents concurrent cancel/revise operations.
-     */
+
+    /** Existing revision workflow semantic lock. */
     REVISION_PENDING
 }
