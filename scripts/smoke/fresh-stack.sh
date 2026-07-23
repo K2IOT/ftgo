@@ -7,6 +7,7 @@ COMPOSE=(docker compose --project-name ftgo-phase01-smoke -f "${COMPOSE_FILE}")
 LOG_ROOT="${ROOT_DIR}/build/fresh-stack-smoke"
 RUNS="${FRESH_STACK_RUNS:-2}"
 CURRENT_PID=""
+BRIDGE_PIDS=()
 
 usage() {
   echo "Usage: $0 [--runs <count>]" >&2
@@ -39,8 +40,20 @@ cleanup_process() {
   CURRENT_PID=""
 }
 
+cleanup_bridge_processes() {
+  local pid
+  for pid in "${BRIDGE_PIDS[@]:-}"; do
+    if [[ -n "${pid}" ]] && kill -0 "${pid}" >/dev/null 2>&1; then
+      kill "${pid}" >/dev/null 2>&1 || true
+      wait "${pid}" >/dev/null 2>&1 || true
+    fi
+  done
+  BRIDGE_PIDS=()
+}
+
 cleanup_stack() {
   cleanup_process
+  cleanup_bridge_processes
   mkdir -p "${LOG_ROOT}"
   "${COMPOSE[@]}" logs --no-color >"${LOG_ROOT}/compose-last.log" 2>&1 || true
   "${COMPOSE[@]}" down --volumes --remove-orphans >/dev/null 2>&1 || true
@@ -106,6 +119,59 @@ boot_and_assert() {
   cleanup_process
 }
 
+run_delivery_pickup_bridge_smoke() {
+  local run_number="$1"
+  local log_dir="${LOG_ROOT}/run-${run_number}"
+  local restaurant_log="${log_dir}/restaurant-service.log"
+  local delivery_log="${log_dir}/delivery-service.log"
+  local restaurant_jar
+  local delivery_jar
+  local restaurant_pid
+  local delivery_pid
+
+  restaurant_jar="$(service_jar restaurant-service)"
+  delivery_jar="$(service_jar delivery-service)"
+  mkdir -p "${log_dir}"
+
+  echo "Starting restaurant-service for Delivery pickup bridge"
+  env \
+    JAVA_TOOL_OPTIONS="-Xms64m -Xmx384m" \
+    SPRING_KAFKA_BOOTSTRAP_SERVERS="localhost:19092" \
+    EVENTUATELOCAL_KAFKA_BOOTSTRAP_SERVERS="localhost:19092" \
+    SPRING_DATASOURCE_URL="jdbc:mysql://localhost:3306/ftgo_restaurant?createDatabaseIfNotExist=true" \
+    SPRING_DATASOURCE_USERNAME=ftgo_user \
+    SPRING_DATASOURCE_PASSWORD=ftgo_password \
+    java -jar "${restaurant_jar}" >"${restaurant_log}" 2>&1 &
+  restaurant_pid=$!
+  BRIDGE_PIDS+=("${restaurant_pid}")
+
+  "${ROOT_DIR}/scripts/smoke/assert-service-health.sh" \
+    restaurant-service "http://localhost:8083/actuator/health" \
+    "${restaurant_pid}" "${restaurant_log}"
+
+  echo "Starting delivery-service against live restaurant-service"
+  env \
+    JAVA_TOOL_OPTIONS="-Xms64m -Xmx384m" \
+    SPRING_KAFKA_BOOTSTRAP_SERVERS="localhost:19092" \
+    EVENTUATELOCAL_KAFKA_BOOTSTRAP_SERVERS="localhost:19092" \
+    SPRING_DATASOURCE_URL="jdbc:mysql://localhost:3306/ftgo_delivery?createDatabaseIfNotExist=true" \
+    SPRING_DATASOURCE_USERNAME=ftgo_user \
+    SPRING_DATASOURCE_PASSWORD=ftgo_password \
+    RESTAURANT_SERVICE_URL="http://localhost:8083" \
+    java -jar "${delivery_jar}" >"${delivery_log}" 2>&1 &
+  delivery_pid=$!
+  BRIDGE_PIDS+=("${delivery_pid}")
+
+  "${ROOT_DIR}/scripts/smoke/assert-service-health.sh" \
+    delivery-service "http://localhost:8086/actuator/health" \
+    "${delivery_pid}" "${delivery_log}"
+
+  chmod +x "${ROOT_DIR}/scripts/smoke/assert-delivery-pickup-bridge.sh"
+  "${ROOT_DIR}/scripts/smoke/assert-delivery-pickup-bridge.sh"
+
+  cleanup_bridge_processes
+}
+
 wait_for_scylla_cql() {
   local attempt
   for attempt in $(seq 1 90); do
@@ -143,19 +209,13 @@ run_service_startup_smoke() {
   boot_and_assert "${run_number}" consumer-service 8082 \
     SPRING_DATASOURCE_URL="jdbc:mysql://localhost:3306/ftgo_consumer?createDatabaseIfNotExist=true" \
     SPRING_DATASOURCE_USERNAME=ftgo_user SPRING_DATASOURCE_PASSWORD=ftgo_password
-  boot_and_assert "${run_number}" restaurant-service 8083 \
-    SPRING_DATASOURCE_URL="jdbc:mysql://localhost:3306/ftgo_restaurant?createDatabaseIfNotExist=true" \
-    SPRING_DATASOURCE_USERNAME=ftgo_user SPRING_DATASOURCE_PASSWORD=ftgo_password
+  run_delivery_pickup_bridge_smoke "${run_number}"
   boot_and_assert "${run_number}" kitchen-service 8084 \
     SPRING_DATASOURCE_URL="jdbc:mysql://localhost:3306/ftgo_kitchen?createDatabaseIfNotExist=true" \
     SPRING_DATASOURCE_USERNAME=ftgo_user SPRING_DATASOURCE_PASSWORD=ftgo_password
   boot_and_assert "${run_number}" accounting-service 8085 \
     SPRING_DATASOURCE_URL="jdbc:mysql://localhost:3306/ftgo_accounting?createDatabaseIfNotExist=true" \
     SPRING_DATASOURCE_USERNAME=ftgo_user SPRING_DATASOURCE_PASSWORD=ftgo_password
-  boot_and_assert "${run_number}" delivery-service 8086 \
-    SPRING_DATASOURCE_URL="jdbc:mysql://localhost:3306/ftgo_delivery?createDatabaseIfNotExist=true" \
-    SPRING_DATASOURCE_USERNAME=ftgo_user SPRING_DATASOURCE_PASSWORD=ftgo_password \
-    RESTAURANT_SERVICE_URL="http://localhost:8083"
   boot_and_assert "${run_number}" order-history-service 8087 \
     SPRING_CASSANDRA_CONTACT_POINTS=localhost \
     SPRING_CASSANDRA_PORT=9042 \
