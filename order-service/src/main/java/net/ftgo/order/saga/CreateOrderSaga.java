@@ -42,9 +42,10 @@ public class CreateOrderSaga implements SimpleSaga<CreateOrderSagaData> {
     public CreateOrderSaga(CreateOrderSagaLocalSteps localSteps) {
         this.localSteps = localSteps;
         this.sagaDefinition = step()
+            .withCompensation(this::rejectOrder)
+        .step()
             .invokeParticipant(this::validateMenu)
             .onReply(OrderMenuValidated.class, this::handleMenuValidated)
-            .withCompensation(this::rejectOrder)
         .step()
             .invokeParticipant(this::reserveCredit)
             .onReply(ConsumerCreditReserved.class, this::handleCreditReserved)
