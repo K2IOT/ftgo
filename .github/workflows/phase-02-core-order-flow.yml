@@ -11,6 +11,8 @@ on:
       - 'build.gradle'
       - 'settings.gradle'
       - 'scripts/ci/**'
+      - 'scripts/smoke/**'
+      - 'deployment/tests/**'
       - 'common/**'
       - 'restaurant-service/**'
       - 'consumer-service/**'
@@ -28,6 +30,8 @@ on:
       - 'build.gradle'
       - 'settings.gradle'
       - 'scripts/ci/**'
+      - 'scripts/smoke/**'
+      - 'deployment/tests/**'
       - 'common/**'
       - 'restaurant-service/**'
       - 'consumer-service/**'
@@ -45,7 +49,31 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  phase02-contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - name: Set up Java 21
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Verify Gradle wrapper
+        run: bash scripts/ci/verify-gradle-wrapper.sh
+
+      - name: Run Phase 02 contract guardrails
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon :common:test \
+            --tests 'net.ftgo.common.orderflow.*' \
+            --stacktrace
+
   clean-test:
+    needs: phase02-contracts
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -88,5 +116,3 @@ jobs:
         if: always()
         shell: bash
         run: exit '${{ steps.gradle.outputs.status }}'
-
-# Verification trigger: order-flow fixes round 2
