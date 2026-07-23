@@ -1,6 +1,5 @@
 package net.ftgo.order.saga;
 
-import io.eventuate.tram.commands.consumer.CommandWithDestination;
 import io.eventuate.tram.sagas.orchestration.SagaActions;
 import net.ftgo.common.Money;
 import net.ftgo.common.channels.ChannelNames;
@@ -29,7 +28,7 @@ class CreateOrderSagaDefinitionTest {
             new CreateOrderSaga().getSagaDefinition().start(data);
 
         assertThat(actions.getCommands()).hasSize(1);
-        CommandWithDestination command = actions.getCommands().get(0);
+        var command = actions.getCommands().get(0);
         assertThat(command.getDestinationChannel())
             .isEqualTo(ChannelNames.RESTAURANT_SERVICE_COMMAND_CHANNEL);
         assertThat(command.getCommand()).isInstanceOf(ValidateOrderMenuCommand.class);
