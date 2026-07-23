@@ -76,6 +76,6 @@ jobs:
           name: phase-02-core-order-flow-e2e-diagnostics
           if-no-files-found: warn
           path: |
-            build/core-order-flow-e2e/**
+            core-order-flow-e2e-logs/**
             e2e-tests/build/reports/tests/**
             e2e-tests/build/test-results/**
