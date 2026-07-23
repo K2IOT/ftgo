@@ -1,5 +1,9 @@
 import json
+import os
 import pathlib
+import subprocess
+import tempfile
+import textwrap
 import unittest
 
 
@@ -91,6 +95,82 @@ class DebeziumConnectorContractTest(unittest.TestCase):
         self.assertIn("/connectors/${connector_name}/status", script)
         self.assertIn('"RUNNING"', script)
         self.assertNotIn("curl -X POST http://localhost:8083/connectors", script)
+
+    def test_status_poll_retries_transient_not_found_after_registration(self):
+        with tempfile.TemporaryDirectory() as directory:
+            temporary = pathlib.Path(directory)
+            fake_bin = temporary / "bin"
+            fake_bin.mkdir()
+            state_file = temporary / "status-attempts"
+            fake_curl = fake_bin / "curl"
+            fake_curl.write_text(
+                textwrap.dedent(
+                    """\
+                    #!/usr/bin/env bash
+                    set -euo pipefail
+                    url="${!#}"
+
+                    if [[ "${url}" == "${DEBEZIUM_CONNECT_URL}/connectors" ]]; then
+                      printf '%s\n' '[]'
+                      exit 0
+                    fi
+
+                    if [[ "${url}" == */config ]]; then
+                      cat >/dev/null
+                      printf '%s\n' '{"name":"order-outbox-connector","config":{}}'
+                      exit 0
+                    fi
+
+                    if [[ "${url}" == */status ]]; then
+                      attempt=0
+                      if [[ -f "${FAKE_CURL_STATE}" ]]; then
+                        attempt="$(cat "${FAKE_CURL_STATE}")"
+                      fi
+                      attempt=$((attempt + 1))
+                      printf '%s' "${attempt}" >"${FAKE_CURL_STATE}"
+
+                      if [[ "${attempt}" -eq 1 ]]; then
+                        printf '%s\n' '{"error_code":404,"message":"connector not visible yet"}' >&2
+                        exit 22
+                      fi
+
+                      printf '%s\n' '{"connector":{"state":"RUNNING"},"tasks":[{"state":"RUNNING"}]}'
+                      exit 0
+                    fi
+
+                    printf 'Unexpected curl URL: %s\n' "${url}" >&2
+                    exit 2
+                    """
+                ),
+                encoding="utf-8",
+            )
+            fake_curl.chmod(0o755)
+
+            environment = os.environ.copy()
+            environment.update(
+                {
+                    "PATH": f"{fake_bin}{os.pathsep}{environment['PATH']}",
+                    "FAKE_CURL_STATE": str(state_file),
+                    "DEBEZIUM_CONNECT_URL": "http://fake-connect",
+                    "DEBEZIUM_CONNECTOR_GLOB": "order-outbox.json",
+                    "DEBEZIUM_CONNECT_ATTEMPTS": "1",
+                    "DEBEZIUM_STATUS_ATTEMPTS": "3",
+                }
+            )
+
+            result = subprocess.run(
+                ["bash", str(REGISTER_SCRIPT)],
+                cwd=ROOT.parent,
+                env=environment,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                check=False,
+            )
+
+            self.assertEqual(0, result.returncode, result.stdout)
+            self.assertEqual("2", state_file.read_text(encoding="utf-8"))
+            self.assertIn("Connector order-outbox-connector is RUNNING", result.stdout)
 
 
 if __name__ == "__main__":
