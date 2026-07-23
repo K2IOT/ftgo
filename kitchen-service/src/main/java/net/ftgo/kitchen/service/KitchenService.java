@@ -1,24 +1,20 @@
 package net.ftgo.kitchen.service;
 
+import net.ftgo.common.orderflow.events.TicketAcceptedEvent;
+import net.ftgo.common.orderflow.events.TicketRejectedEvent;
 import net.ftgo.kitchen.domain.Ticket;
 import net.ftgo.kitchen.messaging.DomainEventPublisher;
-import net.ftgo.kitchen.messaging.TicketAcceptedEvent;
 import net.ftgo.kitchen.messaging.TicketPreparingEvent;
 import net.ftgo.kitchen.messaging.TicketReadyEvent;
 import net.ftgo.kitchen.repository.TicketRepository;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Application Service for managing kitchen tickets.
- * Encapsulates the business transactions for ticket state transitions.
+ * Transaction boundary for kitchen ticket operations.
  */
 @Service
 public class KitchenService {
-
-    private static final Logger logger = LoggerFactory.getLogger(KitchenService.class);
 
     private final TicketRepository ticketRepository;
     private final DomainEventPublisher eventPublisher;
@@ -29,92 +25,75 @@ public class KitchenService {
     }
 
     /**
-     * Accepts a ticket.
-     * Transitions ticket from AWAITING_ACCEPTANCE to ACCEPTED.
-     *
-     * @param ticketId the ticket ID
-     * @return the updated ticket
-     * @throws IllegalArgumentException if the ticket is not found
-     * @throws IllegalStateException if the ticket is not in AWAITING_ACCEPTANCE state
+     * Locks the ticket row so accept, reject, and timeout decisions serialize.
+     * A duplicate accepted decision returns the current aggregate without
+     * emitting another outbox event.
      */
     @Transactional
     public Ticket acceptTicket(Long ticketId) {
-        logger.info("Accepting ticket {}", ticketId);
-
-        Ticket ticket = ticketRepository.findById(ticketId)
-            .orElseThrow(() -> new IllegalArgumentException(
-                String.format("Ticket %d not found", ticketId)
+        Ticket ticket = requireForUpdate(ticketId);
+        if (ticket.accept()) {
+            ticketRepository.save(ticket);
+            eventPublisher.publishTicketEvent(ticket.getId(), new TicketAcceptedEvent(
+                ticket.getDecisionEventId(),
+                ticket.getId(),
+                ticket.getOrderId(),
+                ticket.getDecisionAt()
             ));
-
-        ticket.accept();
-        ticketRepository.save(ticket);
-
-        // Publish TicketAccepted event
-        eventPublisher.publishTicketEvent(ticket.getId(),
-            new TicketAcceptedEvent(ticket.getId(), ticket.getOrderId(), ticket.getAcceptedAt()));
-
-        logger.info("Ticket {} accepted successfully", ticketId);
-        
+        }
         return ticket;
     }
 
     /**
-     * Marks a ticket as preparing.
-     * Transitions ticket from ACCEPTED to PREPARING.
-     *
-     * @param ticketId the ticket ID
-     * @return the updated ticket
-     * @throws IllegalArgumentException if the ticket is not found
-     * @throws IllegalStateException if the ticket is not in ACCEPTED state
+     * Rejects a waiting ticket and emits exactly one typed decision event.
      */
+    @Transactional
+    public Ticket rejectTicket(Long ticketId, String reason) {
+        Ticket ticket = requireForUpdate(ticketId);
+        if (ticket.reject(reason)) {
+            ticketRepository.save(ticket);
+            eventPublisher.publishTicketEvent(ticket.getId(), new TicketRejectedEvent(
+                ticket.getDecisionEventId(),
+                ticket.getId(),
+                ticket.getOrderId(),
+                ticket.getDecisionReason(),
+                ticket.getDecisionAt()
+            ));
+        }
+        return ticket;
+    }
+
     @Transactional
     public Ticket markPreparing(Long ticketId) {
-        logger.info("Marking ticket {} as preparing", ticketId);
-
-        Ticket ticket = ticketRepository.findById(ticketId)
-            .orElseThrow(() -> new IllegalArgumentException(
-                String.format("Ticket %d not found", ticketId)
-            ));
-
+        Ticket ticket = require(ticketId);
         ticket.preparing();
         ticketRepository.save(ticket);
-
-        // Publish TicketPreparing event
-        eventPublisher.publishTicketEvent(ticket.getId(),
-            new TicketPreparingEvent(ticket.getId(), ticket.getOrderId()));
-
-        logger.info("Ticket {} marked as preparing", ticketId);
-        
+        eventPublisher.publishTicketEvent(
+            ticket.getId(),
+            new TicketPreparingEvent(ticket.getId(), ticket.getOrderId())
+        );
         return ticket;
     }
 
-    /**
-     * Marks a ticket as ready for pickup.
-     * Transitions ticket from PREPARING to READY_FOR_PICKUP.
-     *
-     * @param ticketId the ticket ID
-     * @return the updated ticket
-     * @throws IllegalArgumentException if the ticket is not found
-     * @throws IllegalStateException if the ticket is not in PREPARING state
-     */
     @Transactional
     public Ticket markReady(Long ticketId) {
-        logger.info("Marking ticket {} as ready", ticketId);
-
-        Ticket ticket = ticketRepository.findById(ticketId)
-            .orElseThrow(() -> new IllegalArgumentException(
-                String.format("Ticket %d not found", ticketId)
-            ));
-
+        Ticket ticket = require(ticketId);
         ticket.readyForPickup();
         ticketRepository.save(ticket);
-
-        // Publish TicketReady event
-        eventPublisher.publishTicketEvent(ticket.getId(),
-            new TicketReadyEvent(ticket.getId(), ticket.getOrderId(), ticket.getReadyBy()));
-
-        logger.info("Ticket {} marked as ready", ticketId);
-        
+        eventPublisher.publishTicketEvent(
+            ticket.getId(),
+            new TicketReadyEvent(ticket.getId(), ticket.getOrderId(), ticket.getReadyBy())
+        );
         return ticket;
+    }
+
+    private Ticket requireForUpdate(Long ticketId) {
+        return ticketRepository.findByIdForUpdate(ticketId)
+            .orElseThrow(() -> new IllegalArgumentException("Ticket " + ticketId + " not found"));
+    }
+
+    private Ticket require(Long ticketId) {
+        return ticketRepository.findById(ticketId)
+            .orElseThrow(() -> new IllegalArgumentException("Ticket " + ticketId + " not found"));
     }
 }
