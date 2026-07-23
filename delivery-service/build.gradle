@@ -1,3 +1,4 @@
 dependencies {
     testImplementation testFixtures(project(':common'))
+    testImplementation 'org.wiremock:wiremock-standalone:3.3.1'
 }
