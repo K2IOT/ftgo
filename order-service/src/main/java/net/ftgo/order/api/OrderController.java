@@ -9,6 +9,7 @@ import net.ftgo.order.service.OrderNotFoundException;
 import net.ftgo.order.service.OrderService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -40,6 +41,9 @@ public class OrderController {
 
     private final OrderService orderService;
 
+    @Value("${ftgo.order.phase2-enabled:true}")
+    private boolean phase2Enabled = true;
+
     public OrderController(OrderService orderService) {
         this.orderService = orderService;
     }
@@ -48,6 +52,12 @@ public class OrderController {
     public ResponseEntity<CreateOrderResponse> createOrder(
         @Valid @RequestBody CreateOrderRequest request
     ) {
+        if (!phase2Enabled) {
+            throw new OrderFlowDisabledException(
+                "New Phase 02 order intake is temporarily disabled"
+            );
+        }
+
         logger.info(
             "POST /orders - Creating order: consumerId={}, restaurantId={}, expectedMenuVersion={}",
             request.getConsumerId(),
@@ -155,6 +165,14 @@ public class OrderController {
         return ResponseEntity
             .status(HttpStatus.NOT_FOUND)
             .body(new ErrorResponse("ORDER_NOT_FOUND", e.getMessage()));
+    }
+
+    @ExceptionHandler(OrderFlowDisabledException.class)
+    public ResponseEntity<ErrorResponse> handleOrderFlowDisabled(OrderFlowDisabledException e) {
+        logger.warn("Order flow disabled: {}", e.getMessage());
+        return ResponseEntity
+            .status(HttpStatus.SERVICE_UNAVAILABLE)
+            .body(new ErrorResponse("ORDER_FLOW_DISABLED", e.getMessage()));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
