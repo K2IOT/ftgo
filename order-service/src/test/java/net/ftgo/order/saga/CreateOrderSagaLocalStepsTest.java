@@ -65,7 +65,7 @@ class CreateOrderSagaLocalStepsTest {
         var command = new CreateOrderSagaLocalSteps.ApproveOrderCommand(101L, 404L, 505L);
 
         when(approveOrderCommandMessage.getCommand()).thenReturn(command);
-        when(orderRepository.findById(101L)).thenReturn(Optional.of(order));
+        when(orderRepository.findByIdWithLock(101L)).thenReturn(Optional.of(order));
 
         localSteps.approveOrder(approveOrderCommandMessage);
 
