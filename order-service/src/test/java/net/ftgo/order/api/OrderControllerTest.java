@@ -132,7 +132,7 @@ class OrderControllerTest {
 
         mockMvc.perform(get("/orders/{orderId}", 1L))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.orderId").value(1L))
+            .andExpect(jsonPath("$.id").value(1L))
             .andExpect(jsonPath("$.state").value("APPROVAL_PENDING"));
     }
 
