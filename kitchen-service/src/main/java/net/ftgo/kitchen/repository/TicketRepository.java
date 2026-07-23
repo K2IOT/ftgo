@@ -1,41 +1,38 @@
 package net.ftgo.kitchen.repository;
 
+import jakarta.persistence.LockModeType;
 import net.ftgo.kitchen.domain.Ticket;
 import net.ftgo.kitchen.domain.TicketState;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
-/**
- * Repository for Ticket aggregate.
- */
 @Repository
 public interface TicketRepository extends JpaRepository<Ticket, Long> {
-    
-    /**
-     * Finds a ticket by order ID.
-     * 
-     * @param orderId the order ID
-     * @return the ticket if found
-     */
+
     Optional<Ticket> findByOrderId(Long orderId);
-    
-    /**
-     * Finds all tickets for a restaurant with a specific state.
-     * 
-     * @param restaurantId the restaurant ID
-     * @param state the ticket state
-     * @return list of tickets
-     */
+
     List<Ticket> findByRestaurantIdAndState(Long restaurantId, TicketState state);
-    
-    /**
-     * Finds all tickets for a restaurant.
-     * 
-     * @param restaurantId the restaurant ID
-     * @return list of tickets
-     */
+
     List<Ticket> findByRestaurantId(Long restaurantId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select t from Ticket t where t.id = :ticketId")
+    Optional<Ticket> findByIdForUpdate(@Param("ticketId") Long ticketId);
+
+    @Query("select t.id from Ticket t "
+        + "where t.state = net.ftgo.kitchen.domain.TicketState.AWAITING_ACCEPTANCE "
+        + "and t.acceptanceDeadline <= :now "
+        + "order by t.acceptanceDeadline, t.id")
+    List<Long> findDueAcceptanceTimeoutIds(
+        @Param("now") LocalDateTime now,
+        Pageable pageable
+    );
 }
