@@ -1,113 +1,126 @@
 package net.ftgo.order.domain;
 
-import jakarta.persistence.*;
+import jakarta.persistence.AttributeOverride;
+import jakarta.persistence.AttributeOverrides;
+import jakarta.persistence.CascadeType;
+import jakarta.persistence.Column;
+import jakarta.persistence.Embedded;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.OneToMany;
+import jakarta.persistence.PrePersist;
+import jakarta.persistence.PreUpdate;
+import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import jakarta.validation.constraints.NotNull;
 import net.ftgo.common.Money;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 /**
- * Order aggregate representing a food order in the FTGO system.
- * 
- * The Order aggregate is the root of the order bounded context and manages the complete
- * order lifecycle through a state machine. It implements semantic locking via pending states
- * to prevent concurrent modifications during saga execution.
- * 
- * Optimistic Locking:
- * - Uses version field for optimistic locking to detect concurrent updates
- * - JPA will throw OptimisticLockException if version mismatch occurs
- * 
- * State Machine:
- * - APPROVAL_PENDING → APPROVED/REJECTED (CreateOrderSaga)
- * - APPROVED → CANCEL_PENDING → CANCELLED (CancelOrderSaga)
- * - APPROVED → REVISION_PENDING → APPROVED (ReviseOrderSaga)
- * 
- * Semantic Lock:
- * - Pending states prevent concurrent modifications during saga execution
- * - Operations on pending orders return 409 Conflict error
+ * Aggregate root for the Order bounded context.
+ *
+ * <p>Phase 02 separates resource preparation from the restaurant decision.
+ * CreateOrderSaga finishes in {@link OrderState#AWAITING_RESTAURANT_ACCEPTANCE};
+ * an acceptance, rejection, or timeout event must then atomically claim the
+ * order before a confirmation or rejection saga can start.</p>
  */
 @Entity
 @Table(name = "orders")
 public class Order {
-    
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-    
+
     @Version
     @Column(nullable = false)
     private Integer version;
-    
+
     @NotNull(message = "Order state is required")
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 50)
     private OrderState state;
-    
+
     @NotNull(message = "Consumer ID is required")
     @Column(name = "consumer_id", nullable = false)
     private Long consumerId;
-    
+
     @NotNull(message = "Restaurant ID is required")
     @Column(name = "restaurant_id", nullable = false)
     private Long restaurantId;
-    
+
     @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
     @JoinColumn(name = "order_id", nullable = false)
     private List<OrderLineItem> lineItems = new ArrayList<>();
-    
+
     @NotNull(message = "Delivery info is required")
     @Embedded
     private DeliveryInfo deliveryInfo;
-    
+
     @NotNull(message = "Payment info is required")
     @Embedded
     private PaymentInfo paymentInfo;
-    
+
     @NotNull(message = "Order total is required")
     @Embedded
     @AttributeOverrides({
-        @AttributeOverride(name = "amount", column = @Column(name = "order_total", nullable = false, precision = 10, scale = 2))
+        @AttributeOverride(
+            name = "amount",
+            column = @Column(name = "order_total", nullable = false, precision = 10, scale = 2)
+        )
     })
     private Money orderTotal;
-    
+
     @Column(name = "ticket_id")
     private Long ticketId;
-    
+
     @Column(name = "authorization_id")
     private Long authorizationId;
-    
+
+    @Column(name = "credit_reservation_id")
+    private Long creditReservationId;
+
+    @Column(name = "acceptance_deadline")
+    private LocalDateTime acceptanceDeadline;
+
+    @Column(name = "rejection_code", length = 100)
+    private String rejectionCode;
+
+    @Column(name = "rejection_message", length = 500)
+    private String rejectionMessage;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
-    
+
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
-    
-    /**
-     * Default constructor for JPA.
-     */
+
     protected Order() {
     }
-    
-    /**
-     * Creates a new Order in APPROVAL_PENDING state.
-     * 
-     * @param consumerId the consumer placing the order
-     * @param restaurantId the restaurant fulfilling the order
-     * @param lineItems the order line items
-     * @param deliveryInfo the delivery information
-     * @param paymentInfo the payment information
-     * @throws IllegalArgumentException if any parameter is invalid
-     */
-    public Order(Long consumerId, Long restaurantId, List<OrderLineItem> lineItems,
-                 DeliveryInfo deliveryInfo, PaymentInfo paymentInfo) {
+
+    public Order(
+        Long consumerId,
+        Long restaurantId,
+        List<OrderLineItem> lineItems,
+        DeliveryInfo deliveryInfo,
+        PaymentInfo paymentInfo
+    ) {
         validateConsumerId(consumerId);
         validateRestaurantId(restaurantId);
         validateLineItems(lineItems);
         validateDeliveryInfo(deliveryInfo);
         validatePaymentInfo(paymentInfo);
-        
+
         this.consumerId = consumerId;
         this.restaurantId = restaurantId;
         this.deliveryInfo = deliveryInfo;
@@ -115,344 +128,341 @@ public class Order {
         this.state = OrderState.APPROVAL_PENDING;
         this.createdAt = LocalDateTime.now();
         this.updatedAt = LocalDateTime.now();
-        
-        // Add line items and calculate total
-        for (OrderLineItem item : lineItems) {
-            addLineItem(item);
-        }
-        
+
+        lineItems.forEach(this::addLineItem);
         this.orderTotal = calculateTotal();
     }
-    
-    /**
-     * Validates that the consumer ID is not null.
-     * 
-     * @param consumerId the consumer ID to validate
-     * @throws IllegalArgumentException if consumer ID is null
-     */
-    private void validateConsumerId(Long consumerId) {
-        if (consumerId == null) {
+
+    private void validateConsumerId(Long value) {
+        if (value == null) {
             throw new IllegalArgumentException("Consumer ID cannot be null");
         }
     }
-    
-    /**
-     * Validates that the restaurant ID is not null.
-     * 
-     * @param restaurantId the restaurant ID to validate
-     * @throws IllegalArgumentException if restaurant ID is null
-     */
-    private void validateRestaurantId(Long restaurantId) {
-        if (restaurantId == null) {
+
+    private void validateRestaurantId(Long value) {
+        if (value == null) {
             throw new IllegalArgumentException("Restaurant ID cannot be null");
         }
     }
-    
-    /**
-     * Validates that the line items list is not null or empty.
-     * 
-     * @param lineItems the line items to validate
-     * @throws IllegalArgumentException if line items is null or empty
-     */
-    private void validateLineItems(List<OrderLineItem> lineItems) {
-        if (lineItems == null || lineItems.isEmpty()) {
+
+    private void validateLineItems(List<OrderLineItem> items) {
+        if (items == null || items.isEmpty()) {
             throw new IllegalArgumentException("Order must have at least one line item");
         }
     }
-    
-    /**
-     * Validates that the delivery info is not null.
-     * 
-     * @param deliveryInfo the delivery info to validate
-     * @throws IllegalArgumentException if delivery info is null
-     */
-    private void validateDeliveryInfo(DeliveryInfo deliveryInfo) {
-        if (deliveryInfo == null) {
+
+    private void validateDeliveryInfo(DeliveryInfo value) {
+        if (value == null) {
             throw new IllegalArgumentException("Delivery info cannot be null");
         }
     }
-    
-    /**
-     * Validates that the payment info is not null.
-     * 
-     * @param paymentInfo the payment info to validate
-     * @throws IllegalArgumentException if payment info is null
-     */
-    private void validatePaymentInfo(PaymentInfo paymentInfo) {
-        if (paymentInfo == null) {
+
+    private void validatePaymentInfo(PaymentInfo value) {
+        if (value == null) {
             throw new IllegalArgumentException("Payment info cannot be null");
         }
     }
-    
-    /**
-     * Adds a line item to the order.
-     * 
-     * @param item the line item to add
-     */
+
     private void addLineItem(OrderLineItem item) {
-        item.setOrderId(this.id);
-        this.lineItems.add(item);
+        item.setOrderId(id);
+        lineItems.add(item);
     }
-    
-    /**
-     * Calculates the total price of all line items.
-     * 
-     * @return the order total
-     */
+
     private Money calculateTotal() {
-        Money total = Money.ZERO;
-        for (OrderLineItem item : lineItems) {
-            total = total.add(item.getTotal());
-        }
-        return total;
+        return lineItems.stream()
+            .map(OrderLineItem::getTotal)
+            .reduce(Money.ZERO, Money::add);
     }
-    
-    // State machine transitions
-    
+
     /**
-     * Approves the order (APPROVAL_PENDING → APPROVED).
-     * Called by CreateOrderSaga when all saga steps succeed.
-     * 
-     * @throws IllegalStateException if order is not in APPROVAL_PENDING state
+     * Legacy Phase 01 approval transition retained for existing unit tests and
+     * rolling deployment compatibility. Phase 02 CreateOrderSaga does not call
+     * this method.
      */
     public void approve() {
-        if (state != OrderState.APPROVAL_PENDING) {
-            throw new IllegalStateException(
-                String.format("Cannot approve order in state %s. Expected APPROVAL_PENDING.", state)
-            );
-        }
-        this.state = OrderState.APPROVED;
-        this.updatedAt = LocalDateTime.now();
+        requireState(OrderState.APPROVAL_PENDING, "approve");
+        state = OrderState.APPROVED;
+        touch();
     }
-    
+
     /**
-     * Rejects the order (APPROVAL_PENDING → REJECTED).
-     * Called by CreateOrderSaga when saga fails before pivot point.
-     * 
-     * @throws IllegalStateException if order is not in APPROVAL_PENDING state
+     * Legacy create-saga failure transition.
      */
     public void reject() {
-        if (state != OrderState.APPROVAL_PENDING) {
-            throw new IllegalStateException(
-                String.format("Cannot reject order in state %s. Expected APPROVAL_PENDING.", state)
+        requireState(OrderState.APPROVAL_PENDING, "reject");
+        state = OrderState.REJECTED;
+        touch();
+    }
+
+    /**
+     * Completes the compensatable create saga and persists all remote resource
+     * identifiers required by subsequent decision sagas.
+     *
+     * @return true when this invocation performed the transition, false for an
+     * idempotent duplicate carrying the same established resource identifiers.
+     */
+    public boolean awaitRestaurantAcceptance(
+        Long ticketId,
+        Long authorizationId,
+        Long creditReservationId,
+        LocalDateTime acceptanceDeadline
+    ) {
+        requireRemoteResources(ticketId, authorizationId, creditReservationId, acceptanceDeadline);
+
+        if (state == OrderState.AWAITING_RESTAURANT_ACCEPTANCE) {
+            if (Objects.equals(this.ticketId, ticketId)
+                && Objects.equals(this.authorizationId, authorizationId)
+                && Objects.equals(this.creditReservationId, creditReservationId)
+                && Objects.equals(this.acceptanceDeadline, acceptanceDeadline)) {
+                return false;
+            }
+            throw new IllegalStateException("Order is already awaiting a different resource set");
+        }
+
+        requireState(OrderState.APPROVAL_PENDING, "await restaurant acceptance");
+        this.ticketId = ticketId;
+        this.authorizationId = authorizationId;
+        this.creditReservationId = creditReservationId;
+        this.acceptanceDeadline = acceptanceDeadline;
+        this.state = OrderState.AWAITING_RESTAURANT_ACCEPTANCE;
+        touch();
+        return true;
+    }
+
+    private void requireRemoteResources(
+        Long ticketId,
+        Long authorizationId,
+        Long creditReservationId,
+        LocalDateTime deadline
+    ) {
+        if (ticketId == null || authorizationId == null || creditReservationId == null || deadline == null) {
+            throw new IllegalArgumentException(
+                "Ticket, authorization, credit reservation, and acceptance deadline are required"
             );
         }
-        this.state = OrderState.REJECTED;
-        this.updatedAt = LocalDateTime.now();
     }
-    
+
     /**
-     * Begins order cancellation (APPROVED → CANCEL_PENDING).
-     * Called by CancelOrderSaga at the start of cancellation process.
-     * Implements semantic lock to prevent concurrent modifications.
-     * 
-     * @throws IllegalStateException if order is not in APPROVED state
+     * Claims the accept/timeout race for the confirmation path.
      */
+    public boolean claimRestaurantAcceptance() {
+        if (state == OrderState.CONFIRMATION_PENDING || state == OrderState.APPROVED) {
+            return false;
+        }
+        if (state != OrderState.AWAITING_RESTAURANT_ACCEPTANCE) {
+            return false;
+        }
+        state = OrderState.CONFIRMATION_PENDING;
+        touch();
+        return true;
+    }
+
+    /**
+     * Claims explicit rejection or timeout. Stale/out-of-order decisions are
+     * acknowledged as a no-op so they do not create poison-message retries.
+     */
+    public boolean claimRestaurantRejection(String code, String message) {
+        String safeCode = code == null || code.isBlank() ? "RESTAURANT_REJECTED" : code;
+        String safeMessage = message == null || message.isBlank()
+            ? "The restaurant could not accept this order"
+            : message;
+
+        if (state == OrderState.REJECTION_PENDING || state == OrderState.REJECTED) {
+            return false;
+        }
+        if (state != OrderState.AWAITING_RESTAURANT_ACCEPTANCE) {
+            return false;
+        }
+
+        rejectionCode = safeCode;
+        rejectionMessage = safeMessage;
+        state = OrderState.REJECTION_PENDING;
+        touch();
+        return true;
+    }
+
+    public boolean confirmRestaurantAcceptance() {
+        if (state == OrderState.APPROVED) {
+            return false;
+        }
+        requireState(OrderState.CONFIRMATION_PENDING, "confirm restaurant acceptance");
+        state = OrderState.APPROVED;
+        touch();
+        return true;
+    }
+
+    public boolean completeRestaurantRejection() {
+        if (state == OrderState.REJECTED) {
+            return false;
+        }
+        requireState(OrderState.REJECTION_PENDING, "complete restaurant rejection");
+        state = OrderState.REJECTED;
+        touch();
+        return true;
+    }
+
     public void beginCancel() {
-        if (state != OrderState.APPROVED) {
-            throw new IllegalStateException(
-                String.format("Cannot cancel order in state %s. Expected APPROVED.", state)
-            );
-        }
-        this.state = OrderState.CANCEL_PENDING;
-        this.updatedAt = LocalDateTime.now();
+        requireState(OrderState.APPROVED, "cancel");
+        state = OrderState.CANCEL_PENDING;
+        touch();
     }
-    
-    /**
-     * Confirms order cancellation (CANCEL_PENDING → CANCELLED).
-     * Called by CancelOrderSaga when cancellation succeeds.
-     * 
-     * @throws IllegalStateException if order is not in CANCEL_PENDING state
-     */
+
     public void confirmCancel() {
-        if (state != OrderState.CANCEL_PENDING) {
-            throw new IllegalStateException(
-                String.format("Cannot confirm cancel in state %s. Expected CANCEL_PENDING.", state)
-            );
-        }
-        this.state = OrderState.CANCELLED;
-        this.updatedAt = LocalDateTime.now();
+        requireState(OrderState.CANCEL_PENDING, "confirm cancel");
+        state = OrderState.CANCELLED;
+        touch();
     }
-    
-    /**
-     * Undoes order cancellation (CANCEL_PENDING → APPROVED).
-     * Called by CancelOrderSaga compensation when cancellation fails.
-     * 
-     * @throws IllegalStateException if order is not in CANCEL_PENDING state
-     */
+
     public void undoCancel() {
-        if (state != OrderState.CANCEL_PENDING) {
-            throw new IllegalStateException(
-                String.format("Cannot undo cancel in state %s. Expected CANCEL_PENDING.", state)
-            );
-        }
-        this.state = OrderState.APPROVED;
-        this.updatedAt = LocalDateTime.now();
+        requireState(OrderState.CANCEL_PENDING, "undo cancel");
+        state = OrderState.APPROVED;
+        touch();
     }
-    
-    /**
-     * Begins order revision (APPROVED → REVISION_PENDING).
-     * Called by ReviseOrderSaga at the start of revision process.
-     * Implements semantic lock to prevent concurrent modifications.
-     * 
-     * @throws IllegalStateException if order is not in APPROVED state
-     */
+
     public void beginRevise() {
-        if (state != OrderState.APPROVED) {
-            throw new IllegalStateException(
-                String.format("Cannot revise order in state %s. Expected APPROVED.", state)
-            );
-        }
-        this.state = OrderState.REVISION_PENDING;
-        this.updatedAt = LocalDateTime.now();
+        requireState(OrderState.APPROVED, "revise");
+        state = OrderState.REVISION_PENDING;
+        touch();
     }
-    
-    /**
-     * Confirms order revision (REVISION_PENDING → APPROVED).
-     * Called by ReviseOrderSaga when revision succeeds.
-     * Updates line items and recalculates order total.
-     * 
-     * @param revisedLineItems the new line items
-     * @throws IllegalStateException if order is not in REVISION_PENDING state
-     * @throws IllegalArgumentException if revised line items are invalid
-     */
+
     public void confirmRevise(List<OrderLineItem> revisedLineItems) {
-        if (state != OrderState.REVISION_PENDING) {
-            throw new IllegalStateException(
-                String.format("Cannot confirm revise in state %s. Expected REVISION_PENDING.", state)
-            );
-        }
+        requireState(OrderState.REVISION_PENDING, "confirm revise");
         validateLineItems(revisedLineItems);
-        
-        // Replace line items
-        this.lineItems.clear();
-        for (OrderLineItem item : revisedLineItems) {
-            addLineItem(item);
-        }
-        
-        // Recalculate total
-        this.orderTotal = calculateTotal();
-        this.state = OrderState.APPROVED;
-        this.updatedAt = LocalDateTime.now();
+        lineItems.clear();
+        revisedLineItems.forEach(this::addLineItem);
+        orderTotal = calculateTotal();
+        state = OrderState.APPROVED;
+        touch();
     }
-    
-    /**
-     * Undoes order revision (REVISION_PENDING → APPROVED).
-     * Called by ReviseOrderSaga compensation when revision fails.
-     * 
-     * @throws IllegalStateException if order is not in REVISION_PENDING state
-     */
+
     public void undoRevise() {
-        if (state != OrderState.REVISION_PENDING) {
+        requireState(OrderState.REVISION_PENDING, "undo revise");
+        state = OrderState.APPROVED;
+        touch();
+    }
+
+    private void requireState(OrderState expected, String operation) {
+        if (state != expected) {
             throw new IllegalStateException(
-                String.format("Cannot undo revise in state %s. Expected REVISION_PENDING.", state)
+                "Cannot " + operation + " order in state " + state + ". Expected " + expected + "."
             );
         }
-        this.state = OrderState.APPROVED;
-        this.updatedAt = LocalDateTime.now();
     }
-    
-    /**
-     * Checks if the order is in a pending state (semantic lock active).
-     * 
-     * @return true if order is in a pending state, false otherwise
-     */
+
     public boolean isPending() {
-        return state == OrderState.APPROVAL_PENDING ||
-               state == OrderState.CANCEL_PENDING ||
-               state == OrderState.REVISION_PENDING;
+        return state == OrderState.APPROVAL_PENDING
+            || state == OrderState.AWAITING_RESTAURANT_ACCEPTANCE
+            || state == OrderState.CONFIRMATION_PENDING
+            || state == OrderState.REJECTION_PENDING
+            || state == OrderState.CANCEL_PENDING
+            || state == OrderState.REVISION_PENDING;
     }
-    
-    /**
-     * Validates that the order is not in a pending state.
-     * Used to enforce semantic lock and prevent concurrent modifications.
-     * 
-     * @throws IllegalStateException if order is in a pending state
-     */
+
     public void validateNotPending() {
         if (isPending()) {
             throw new IllegalStateException(
-                String.format("Cannot modify order in state %s. Operation in progress.", state)
+                "Cannot modify order in state " + state + ". Operation in progress."
             );
         }
     }
-    
-    // Getters
-    
+
+    private void touch() {
+        updatedAt = LocalDateTime.now();
+    }
+
     public Long getId() {
         return id;
     }
-    
+
     public Integer getVersion() {
         return version;
     }
-    
+
     public OrderState getState() {
         return state;
     }
-    
+
     public Long getConsumerId() {
         return consumerId;
     }
-    
+
     public Long getRestaurantId() {
         return restaurantId;
     }
-    
+
     public List<OrderLineItem> getLineItems() {
         return List.copyOf(lineItems);
     }
-    
+
     public DeliveryInfo getDeliveryInfo() {
         return deliveryInfo;
     }
-    
+
     public PaymentInfo getPaymentInfo() {
         return paymentInfo;
     }
-    
+
     public Money getOrderTotal() {
         return orderTotal;
     }
-    
+
     public Long getTicketId() {
         return ticketId;
     }
-    
+
     public void setTicketId(Long ticketId) {
         this.ticketId = ticketId;
     }
-    
+
     public Long getAuthorizationId() {
         return authorizationId;
     }
-    
+
     public void setAuthorizationId(Long authorizationId) {
         this.authorizationId = authorizationId;
     }
-    
+
+    public Long getCreditReservationId() {
+        return creditReservationId;
+    }
+
+    public LocalDateTime getAcceptanceDeadline() {
+        return acceptanceDeadline;
+    }
+
+    public String getRejectionCode() {
+        return rejectionCode;
+    }
+
+    public String getRejectionMessage() {
+        return rejectionMessage;
+    }
+
     public LocalDateTime getCreatedAt() {
         return createdAt;
     }
-    
+
     public LocalDateTime getUpdatedAt() {
         return updatedAt;
     }
-    
+
     @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();
         updatedAt = LocalDateTime.now();
     }
-    
+
     @PreUpdate
     protected void onUpdate() {
         updatedAt = LocalDateTime.now();
     }
-    
+
     @Override
     public String toString() {
-        return String.format("Order{id=%d, state=%s, consumerId=%d, restaurantId=%d, total=%s}", 
-            id, state, consumerId, restaurantId, orderTotal);
+        return "Order{id=" + id
+            + ", state=" + state
+            + ", consumerId=" + consumerId
+            + ", restaurantId=" + restaurantId
+            + ", total=" + orderTotal + "}";
     }
 }
