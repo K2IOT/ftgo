@@ -17,6 +17,7 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -42,7 +43,7 @@ class CreditReservationServiceTest {
         Consumer consumer = consumer(301L, "100.00");
         when(reservationRepository.findByOrderId(101L)).thenReturn(Optional.empty());
         when(consumerRepository.findByIdForUpdate(301L)).thenReturn(Optional.of(consumer));
-        when(reservationRepository.save(org.mockito.ArgumentMatchers.any(CreditReservation.class)))
+        when(reservationRepository.save(any(CreditReservation.class)))
             .thenAnswer(invocation -> {
                 CreditReservation reservation = invocation.getArgument(0);
                 ReflectionTestUtils.setField(reservation, "id", 401L);
@@ -66,7 +67,7 @@ class CreditReservationServiceTest {
 
         assertThat(result).isSameAs(existing);
         verify(consumerRepository, never()).findByIdForUpdate(301L);
-        verify(consumerRepository, never()).save(org.mockito.ArgumentMatchers.any());
+        verify(consumerRepository, never()).save(any());
     }
 
     @Test
@@ -87,6 +88,9 @@ class CreditReservationServiceTest {
         CreditReservation reservation = reservation(401L, 301L, 101L, "25.00");
 
         when(reservationRepository.findByOrderIdForUpdate(101L)).thenReturn(Optional.of(reservation));
+        when(reservationRepository.save(any(CreditReservation.class)))
+            .thenAnswer(invocation -> invocation.getArgument(0));
+
         CreditReservation committed = service.commit(301L, 101L);
         assertThat(committed.getStatus()).isEqualTo(CreditReservationStatus.COMMITTED);
         assertThat(service.commit(301L, 101L)).isSameAs(reservation);
