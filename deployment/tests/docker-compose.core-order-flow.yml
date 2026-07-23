@@ -12,7 +12,7 @@ services:
       - --binlog-format=ROW
       - --binlog-row-image=FULL
     volumes:
-      - ./fresh-stack/mysql-init.sql:/docker-entrypoint-initdb.d/001-init.sql:ro
+      - ./core-order-flow/mysql-init.sql:/docker-entrypoint-initdb.d/001-init.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -prootpassword --silent"]
       interval: 5s
@@ -102,7 +102,7 @@ services:
       EVENTUATE_CDC_PIPELINE_ORDER_TYPE: eventuate-tram
       EVENTUATE_CDC_PIPELINE_ORDER_READER: order
       EVENTUATE_CDC_READER_ORDER_TYPE: polling
-      EVENTUATE_CDC_READER_ORDER_DATASOURCEURL: jdbc:mysql://mysql:3306/ftgo_order
+      EVENTUATE_CDC_READER_ORDER_DATASOURCEURL: jdbc:mysql://mysql:3306/ftgo_order?useSSL=false
       EVENTUATE_CDC_READER_ORDER_DATASOURCEUSERNAME: ftgo_user
       EVENTUATE_CDC_READER_ORDER_DATASOURCEPASSWORD: ftgo_password
       EVENTUATE_CDC_READER_ORDER_DATASOURCEDRIVERCLASSNAME: com.mysql.jdbc.Driver
@@ -111,7 +111,7 @@ services:
       EVENTUATE_CDC_PIPELINE_CONSUMER_TYPE: eventuate-tram
       EVENTUATE_CDC_PIPELINE_CONSUMER_READER: consumer
       EVENTUATE_CDC_READER_CONSUMER_TYPE: polling
-      EVENTUATE_CDC_READER_CONSUMER_DATASOURCEURL: jdbc:mysql://mysql:3306/ftgo_consumer
+      EVENTUATE_CDC_READER_CONSUMER_DATASOURCEURL: jdbc:mysql://mysql:3306/ftgo_consumer?useSSL=false
       EVENTUATE_CDC_READER_CONSUMER_DATASOURCEUSERNAME: ftgo_user
       EVENTUATE_CDC_READER_CONSUMER_DATASOURCEPASSWORD: ftgo_password
       EVENTUATE_CDC_READER_CONSUMER_DATASOURCEDRIVERCLASSNAME: com.mysql.jdbc.Driver
@@ -120,7 +120,7 @@ services:
       EVENTUATE_CDC_PIPELINE_RESTAURANT_TYPE: eventuate-tram
       EVENTUATE_CDC_PIPELINE_RESTAURANT_READER: restaurant
       EVENTUATE_CDC_READER_RESTAURANT_TYPE: polling
-      EVENTUATE_CDC_READER_RESTAURANT_DATASOURCEURL: jdbc:mysql://mysql:3306/ftgo_restaurant
+      EVENTUATE_CDC_READER_RESTAURANT_DATASOURCEURL: jdbc:mysql://mysql:3306/ftgo_restaurant?useSSL=false
       EVENTUATE_CDC_READER_RESTAURANT_DATASOURCEUSERNAME: ftgo_user
       EVENTUATE_CDC_READER_RESTAURANT_DATASOURCEPASSWORD: ftgo_password
       EVENTUATE_CDC_READER_RESTAURANT_DATASOURCEDRIVERCLASSNAME: com.mysql.jdbc.Driver
@@ -129,7 +129,7 @@ services:
       EVENTUATE_CDC_PIPELINE_KITCHEN_TYPE: eventuate-tram
       EVENTUATE_CDC_PIPELINE_KITCHEN_READER: kitchen
       EVENTUATE_CDC_READER_KITCHEN_TYPE: polling
-      EVENTUATE_CDC_READER_KITCHEN_DATASOURCEURL: jdbc:mysql://mysql:3306/ftgo_kitchen
+      EVENTUATE_CDC_READER_KITCHEN_DATASOURCEURL: jdbc:mysql://mysql:3306/ftgo_kitchen?useSSL=false
       EVENTUATE_CDC_READER_KITCHEN_DATASOURCEUSERNAME: ftgo_user
       EVENTUATE_CDC_READER_KITCHEN_DATASOURCEPASSWORD: ftgo_password
       EVENTUATE_CDC_READER_KITCHEN_DATASOURCEDRIVERCLASSNAME: com.mysql.jdbc.Driver
@@ -138,7 +138,7 @@ services:
       EVENTUATE_CDC_PIPELINE_ACCOUNTING_TYPE: eventuate-tram
       EVENTUATE_CDC_PIPELINE_ACCOUNTING_READER: accounting
       EVENTUATE_CDC_READER_ACCOUNTING_TYPE: polling
-      EVENTUATE_CDC_READER_ACCOUNTING_DATASOURCEURL: jdbc:mysql://mysql:3306/ftgo_accounting
+      EVENTUATE_CDC_READER_ACCOUNTING_DATASOURCEURL: jdbc:mysql://mysql:3306/ftgo_accounting?useSSL=false
       EVENTUATE_CDC_READER_ACCOUNTING_DATASOURCEUSERNAME: ftgo_user
       EVENTUATE_CDC_READER_ACCOUNTING_DATASOURCEPASSWORD: ftgo_password
       EVENTUATE_CDC_READER_ACCOUNTING_DATASOURCEDRIVERCLASSNAME: com.mysql.jdbc.Driver
