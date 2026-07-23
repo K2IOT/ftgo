@@ -21,6 +21,7 @@ import org.springframework.test.context.DynamicPropertySource;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
@@ -81,7 +82,9 @@ class DeliveryPickupAddressIntegrationTest {
                 new Address("10 Kitchen Road", "Bangkok", "Bangkok", "10110");
         Address deliveryAddress =
                 new Address("99 Consumer Avenue", "Bangkok", "Bangkok", "10260");
-        LocalDateTime deliveryTime = LocalDateTime.now().plusHours(1);
+        LocalDateTime deliveryTime = LocalDateTime.now()
+                .plusHours(1)
+                .truncatedTo(ChronoUnit.MICROS);
 
         RESTAURANT_SERVICE.stubFor(get(urlEqualTo(
                         "/internal/restaurants/42/pickup-address"))
