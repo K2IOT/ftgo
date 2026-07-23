@@ -15,8 +15,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
-import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.test.web.servlet.MockMvc;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -28,6 +28,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -43,6 +44,9 @@ class OrderControllerTest {
     @Autowired
     private ObjectMapper objectMapper;
 
+    @Autowired
+    private OrderController orderController;
+
     @MockBean
     private OrderService orderService;
 
@@ -52,6 +56,7 @@ class OrderControllerTest {
     void setUp() {
         sampleOrder = createSampleOrder();
         ReflectionTestUtils.setField(sampleOrder, "id", 1L);
+        ReflectionTestUtils.setField(orderController, "phase2Enabled", true);
     }
 
     @Test
@@ -80,6 +85,19 @@ class OrderControllerTest {
             any(DeliveryInfo.class),
             any(PaymentInfo.class)
         );
+    }
+
+    @Test
+    void disabledPhase02OrderIntakeReturnsServiceUnavailable() throws Exception {
+        ReflectionTestUtils.setField(orderController, "phase2Enabled", false);
+
+        mockMvc.perform(post("/orders")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(createValidOrderRequest(7L))))
+            .andExpect(status().isServiceUnavailable())
+            .andExpect(jsonPath("$.errorCode").value("ORDER_FLOW_DISABLED"));
+
+        verifyNoInteractions(orderService);
     }
 
     @Test
