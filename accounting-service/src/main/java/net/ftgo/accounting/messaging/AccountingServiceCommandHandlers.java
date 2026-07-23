@@ -35,8 +35,10 @@ public class AccountingServiceCommandHandlers {
     private final AccountRepository accountRepository;
     private final DomainEventPublisher eventPublisher;
 
-    public AccountingServiceCommandHandlers(AccountRepository accountRepository,
-                                            DomainEventPublisher eventPublisher) {
+    public AccountingServiceCommandHandlers(
+        AccountRepository accountRepository,
+        DomainEventPublisher eventPublisher
+    ) {
         this.accountRepository = accountRepository;
         this.eventPublisher = eventPublisher;
     }
@@ -62,25 +64,45 @@ public class AccountingServiceCommandHandlers {
 
             Authorization existing = account.findAuthorizationByRequestId(command.getRequestId());
             if (existing != null) {
-                if (command.getOrderId() != null && !existing.matches(command.getOrderId(), command.getAmount())) {
-                    return withSuccess(new CardAuthorizationDenied(
-                        command.getOrderId(), "Request ID conflict"));
+                if (command.getOrderId() != null
+                    && !existing.matches(command.getOrderId(), command.getAmount())) {
+                    return withFailure(new CardAuthorizationDenied(
+                        command.getOrderId(),
+                        "Request ID conflict"
+                    ));
                 }
-                return withSuccess(new CardAuthorized(existing.getId(), command.getOrderId()));
+                return withSuccess(new CardAuthorized(
+                    existing.getId(),
+                    command.getOrderId()
+                ));
             }
 
             Authorization authorization = command.getOrderId() == null
                 ? account.authorize(command.getRequestId(), command.getAmount())
-                : account.authorize(command.getOrderId(), command.getRequestId(), command.getAmount());
+                : account.authorize(
+                    command.getOrderId(),
+                    command.getRequestId(),
+                    command.getAmount()
+                );
             accountRepository.save(account);
 
             eventPublisher.publishAccountEvent(account.getId(), new CardAuthorizedEvent(
-                account.getId(), authorization.getId(), authorization.getRequestId(),
-                authorization.getAmount().getAmount(), authorization.getCreatedAt()));
-            return withSuccess(new CardAuthorized(authorization.getId(), command.getOrderId()));
+                account.getId(),
+                authorization.getId(),
+                authorization.getRequestId(),
+                authorization.getAmount().getAmount(),
+                authorization.getCreatedAt()
+            ));
+            return withSuccess(new CardAuthorized(
+                authorization.getId(),
+                command.getOrderId()
+            ));
         } catch (IllegalArgumentException e) {
             if (command.getOrderId() != null) {
-                return withSuccess(new CardAuthorizationDenied(command.getOrderId(), e.getMessage()));
+                return withFailure(new CardAuthorizationDenied(
+                    command.getOrderId(),
+                    e.getMessage()
+                ));
             }
             return withFailure(e.getMessage());
         } catch (Exception e) {
@@ -94,15 +116,25 @@ public class AccountingServiceCommandHandlers {
         try {
             Account account = requireAccount(command.getAuthorizationId());
             boolean changed = account.captureAuthorization(
-                command.getOrderId(), command.getAuthorizationId(), command.getRequestId());
+                command.getOrderId(),
+                command.getAuthorizationId(),
+                command.getRequestId()
+            );
             accountRepository.save(account);
             if (changed) {
                 eventPublisher.publishAccountEvent(account.getId(), new PaymentCapturedEvent(
-                    account.getId(), command.getOrderId(), command.getAuthorizationId(),
-                    command.getRequestId(), LocalDateTime.now()));
+                    account.getId(),
+                    command.getOrderId(),
+                    command.getAuthorizationId(),
+                    command.getRequestId(),
+                    LocalDateTime.now()
+                ));
             }
             return withSuccess(new PaymentCaptured(
-                command.getAuthorizationId(), command.getAuthorizationId(), command.getOrderId()));
+                command.getAuthorizationId(),
+                command.getAuthorizationId(),
+                command.getOrderId()
+            ));
         } catch (IllegalArgumentException | IllegalStateException e) {
             return withFailure(e.getMessage());
         }
@@ -114,14 +146,26 @@ public class AccountingServiceCommandHandlers {
         try {
             Account account = requireAccount(command.getAuthorizationId());
             boolean changed = account.voidAuthorization(
-                command.getOrderId(), command.getAuthorizationId(), command.getReason(), command.getRequestId());
+                command.getOrderId(),
+                command.getAuthorizationId(),
+                command.getReason(),
+                command.getRequestId()
+            );
             accountRepository.save(account);
             if (changed) {
                 eventPublisher.publishAccountEvent(account.getId(), new AuthorizationVoidedEvent(
-                    account.getId(), command.getOrderId(), command.getAuthorizationId(),
-                    command.getReason(), command.getRequestId(), LocalDateTime.now()));
+                    account.getId(),
+                    command.getOrderId(),
+                    command.getAuthorizationId(),
+                    command.getReason(),
+                    command.getRequestId(),
+                    LocalDateTime.now()
+                ));
             }
-            return withSuccess(new AuthorizationVoided(command.getAuthorizationId(), command.getOrderId()));
+            return withSuccess(new AuthorizationVoided(
+                command.getAuthorizationId(),
+                command.getOrderId()
+            ));
         } catch (IllegalArgumentException | IllegalStateException e) {
             return withFailure(e.getMessage());
         }
@@ -133,16 +177,28 @@ public class AccountingServiceCommandHandlers {
         try {
             Account account = requireAccount(command.getCaptureId());
             boolean changed = account.refundPayment(
-                command.getOrderId(), command.getCaptureId(), command.getAmount(),
-                command.getReason(), command.getRequestId());
+                command.getOrderId(),
+                command.getCaptureId(),
+                command.getAmount(),
+                command.getReason(),
+                command.getRequestId()
+            );
             accountRepository.save(account);
             if (changed) {
                 eventPublisher.publishAccountEvent(account.getId(), new PaymentRefundedEvent(
-                    account.getId(), command.getOrderId(), command.getCaptureId(),
-                    command.getReason(), command.getRequestId(), LocalDateTime.now()));
+                    account.getId(),
+                    command.getOrderId(),
+                    command.getCaptureId(),
+                    command.getReason(),
+                    command.getRequestId(),
+                    LocalDateTime.now()
+                ));
             }
             return withSuccess(new PaymentRefunded(
-                command.getCaptureId(), command.getCaptureId(), command.getOrderId()));
+                command.getCaptureId(),
+                command.getCaptureId(),
+                command.getOrderId()
+            ));
         } catch (IllegalArgumentException | IllegalStateException e) {
             return withFailure(e.getMessage());
         }
@@ -154,11 +210,15 @@ public class AccountingServiceCommandHandlers {
         try {
             Account account = accountRepository.findByConsumerId(command.getConsumerId())
                 .orElseThrow(() -> new IllegalArgumentException(
-                    "Account not found for consumer " + command.getConsumerId()));
+                    "Account not found for consumer " + command.getConsumerId()
+                ));
             account.reverseAuthorization(command.getAuthorizationId());
             accountRepository.save(account);
             eventPublisher.publishAccountEvent(account.getId(), new CardReversed(
-                account.getId(), command.getAuthorizationId(), LocalDateTime.now()));
+                account.getId(),
+                command.getAuthorizationId(),
+                LocalDateTime.now()
+            ));
             return withSuccess(new AuthorizationReversed(command.getAuthorizationId()));
         } catch (IllegalArgumentException | IllegalStateException e) {
             return withFailure(e.getMessage());
@@ -171,9 +231,13 @@ public class AccountingServiceCommandHandlers {
         try {
             Account account = accountRepository.findByConsumerId(command.getConsumerId())
                 .orElseThrow(() -> new IllegalArgumentException(
-                    "Account not found for consumer " + command.getConsumerId()));
+                    "Account not found for consumer " + command.getConsumerId()
+                ));
             Authorization revised = account.reviseAuthorization(
-                command.getAuthorizationId(), new Money(command.getNewAmount()), command.getRequestId());
+                command.getAuthorizationId(),
+                new Money(command.getNewAmount()),
+                command.getRequestId()
+            );
             accountRepository.save(account);
             return withSuccess(new AuthorizationRevised(revised.getId()));
         } catch (IllegalArgumentException | IllegalStateException e) {
@@ -184,6 +248,7 @@ public class AccountingServiceCommandHandlers {
     private Account requireAccount(Long authorizationId) {
         return accountRepository.findByAuthorizationId(authorizationId)
             .orElseThrow(() -> new IllegalArgumentException(
-                "Account not found for authorization " + authorizationId));
+                "Account not found for authorization " + authorizationId
+            ));
     }
 }
