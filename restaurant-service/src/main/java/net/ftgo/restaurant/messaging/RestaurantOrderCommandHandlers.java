@@ -6,11 +6,11 @@ import io.eventuate.tram.messaging.common.Message;
 import io.eventuate.tram.sagas.participant.SagaCommandHandlersBuilder;
 import net.ftgo.common.channels.ChannelNames;
 import net.ftgo.common.orderflow.commands.ValidateOrderMenuCommand;
-import net.ftgo.common.orderflow.replies.OrderMenuValidationRejected;
 import net.ftgo.restaurant.service.OrderMenuValidationException;
 import net.ftgo.restaurant.service.OrderMenuValidationService;
 import org.springframework.stereotype.Component;
 
+import static io.eventuate.tram.commands.consumer.CommandHandlerReplyBuilder.withFailure;
 import static io.eventuate.tram.commands.consumer.CommandHandlerReplyBuilder.withSuccess;
 
 @Component
@@ -30,12 +30,10 @@ public class RestaurantOrderCommandHandlers {
     }
 
     Message validateOrderMenu(CommandMessage<ValidateOrderMenuCommand> message) {
-        ValidateOrderMenuCommand command = message.getCommand();
         try {
-            return withSuccess(validationService.validate(command));
+            return withSuccess(validationService.validate(message.getCommand()));
         } catch (OrderMenuValidationException e) {
-            return withSuccess(new OrderMenuValidationRejected(
-                command.getOrderId(), e.getReasonCode(), e.getMessage()));
+            return withFailure(e.getReasonCode() + ":" + e.getMessage());
         }
     }
 }
