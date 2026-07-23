@@ -15,7 +15,12 @@ import net.ftgo.order.messaging.DomainEventPublisher;
 import net.ftgo.order.repository.OrderRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
+
+import java.util.Objects;
+import java.util.function.Supplier;
 
 import static io.eventuate.tram.commands.consumer.CommandHandlerReplyBuilder.withSuccess;
 
@@ -34,11 +39,24 @@ public class CreateOrderSagaLocalSteps {
     private final Counter ordersApprovedCounter;
     private final Counter ordersRejectedCounter;
     private final Counter sagaFailuresCounter;
+    private final TransactionTemplate transactionTemplate;
 
+    /**
+     * Constructor retained for focused unit tests that use mocked repositories.
+     */
     public CreateOrderSagaLocalSteps(
         OrderRepository orderRepository,
         DomainEventPublisher eventPublisher,
         MeterRegistry meterRegistry
+    ) {
+        this(orderRepository, eventPublisher, meterRegistry, null);
+    }
+
+    public CreateOrderSagaLocalSteps(
+        OrderRepository orderRepository,
+        DomainEventPublisher eventPublisher,
+        MeterRegistry meterRegistry,
+        PlatformTransactionManager transactionManager
     ) {
         this.orderRepository = orderRepository;
         this.eventPublisher = eventPublisher;
@@ -52,14 +70,35 @@ public class CreateOrderSagaLocalSteps {
             .description("Total number of saga failures")
             .tag("saga", "CreateOrderSaga")
             .register(meterRegistry);
+        this.transactionTemplate = transactionManager == null
+            ? null
+            : new TransactionTemplate(transactionManager);
     }
 
     public CommandHandlers commandHandlers() {
         return SagaCommandHandlersBuilder
             .fromChannel("orderService")
-            .onMessage(RejectOrderCommand.class, this::rejectOrder)
-            .onMessage(ApproveOrderCommand.class, this::approveOrder)
+            .onMessage(RejectOrderCommand.class, this::rejectOrderTransactionally)
+            .onMessage(ApproveOrderCommand.class, this::approveOrderTransactionally)
             .build();
+    }
+
+    private Message rejectOrderTransactionally(CommandMessage<RejectOrderCommand> message) {
+        return executeInTransaction(() -> rejectOrder(message));
+    }
+
+    private Message approveOrderTransactionally(CommandMessage<ApproveOrderCommand> message) {
+        return executeInTransaction(() -> approveOrder(message));
+    }
+
+    private Message executeInTransaction(Supplier<Message> operation) {
+        if (transactionTemplate == null) {
+            return operation.get();
+        }
+        return Objects.requireNonNull(
+            transactionTemplate.execute(status -> operation.get()),
+            "Create saga local command handler returned no reply"
+        );
     }
 
     /**
