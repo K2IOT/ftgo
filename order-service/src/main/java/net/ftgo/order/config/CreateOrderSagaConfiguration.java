@@ -12,6 +12,7 @@ import net.ftgo.order.saga.CreateOrderSagaLocalSteps;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
+import org.springframework.transaction.PlatformTransactionManager;
 
 /**
  * CreateOrderSaga definition and its local compensation participant.
@@ -24,12 +25,14 @@ public class CreateOrderSagaConfiguration {
     public CreateOrderSagaLocalSteps createOrderSagaLocalSteps(
         OrderRepository orderRepository,
         DomainEventPublisher eventPublisher,
-        MeterRegistry meterRegistry
+        MeterRegistry meterRegistry,
+        PlatformTransactionManager transactionManager
     ) {
         return new CreateOrderSagaLocalSteps(
             orderRepository,
             eventPublisher,
-            meterRegistry
+            meterRegistry,
+            transactionManager
         );
     }
 
