@@ -5,7 +5,7 @@ package net.ftgo.accounting.payment;
  */
 public record PaymentAuthorizationDecision(boolean approved, String reason) {
 
-    public static PaymentAuthorizationDecision approved() {
+    public static PaymentAuthorizationDecision allow() {
         return new PaymentAuthorizationDecision(true, null);
     }
 
