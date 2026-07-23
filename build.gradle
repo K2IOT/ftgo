@@ -31,16 +31,13 @@ subprojects {
     }
     
     dependencies {
-        // Spring Boot Starters
         implementation 'org.springframework.boot:spring-boot-starter'
         implementation 'org.springframework.boot:spring-boot-starter-actuator'
         implementation 'org.springframework.boot:spring-boot-starter-validation'
         
-        // Lombok
         compileOnly 'org.projectlombok:lombok'
         annotationProcessor 'org.projectlombok:lombok'
         
-        // Testing
         testImplementation 'org.springframework.boot:spring-boot-starter-test'
         testImplementation 'org.testcontainers:testcontainers:1.19.3'
         testImplementation 'org.testcontainers:junit-jupiter:1.19.3'
@@ -62,8 +59,6 @@ subprojects {
     
     tasks.named('test') {
         useJUnitPlatform()
-        
-        // Configure jqwik for property-based testing
         systemProperty 'jqwik.tries.default', '100'
         systemProperty 'jqwik.reporting.usejunitplatform', 'true'
     }
@@ -74,42 +69,28 @@ subprojects {
     }
 }
 
-// Common module configuration
 project(':common') {
-    bootJar {
-        enabled = false
-    }
-    jar {
-        enabled = true
-    }
+    bootJar { enabled = false }
+    jar { enabled = true }
 }
 
-// Service-specific configurations
-configure(subprojects.findAll { it.name != 'common' && it.name != 'api-gateway' }) {
+configure(subprojects.findAll {
+    it.name != 'common' && it.name != 'api-gateway' && it.name != 'e2e-tests'
+}) {
     dependencies {
         implementation project(':common')
-        
-        // Web
         implementation 'org.springframework.boot:spring-boot-starter-web'
-        
-        // Kafka & Eventuate Tram
         implementation 'org.springframework.kafka:spring-kafka'
         implementation 'io.eventuate.tram.core:eventuate-tram-spring-messaging'
         implementation 'io.eventuate.tram.core:eventuate-tram-spring-events'
         implementation 'io.eventuate.tram.core:eventuate-tram-spring-commands'
-        
-        // Observability
         implementation 'io.micrometer:micrometer-registry-prometheus'
         implementation 'io.opentelemetry.instrumentation:opentelemetry-instrumentation-annotations:2.0.0'
-        
-        // JSON Logging
         implementation 'net.logstash.logback:logstash-logback-encoder:7.4'
-        
         testImplementation 'org.springframework.kafka:spring-kafka-test'
     }
 }
 
-// Order Service specific dependencies (saga orchestrator)
 project(':order-service') {
     dependencies {
         implementation 'io.eventuate.tram.sagas:eventuate-tram-sagas-spring-orchestration-simple-dsl'
@@ -120,8 +101,6 @@ project(':order-service') {
         implementation 'org.flywaydb:flyway-core'
         implementation 'org.flywaydb:flyway-mysql'
         implementation 'com.zaxxer:HikariCP'
-        
-        // Saga testing support
         testImplementation 'io.eventuate.tram.sagas:eventuate-tram-sagas-testing-support'
         testImplementation project(':consumer-service')
         testImplementation project(':kitchen-service')
@@ -130,7 +109,6 @@ project(':order-service') {
     }
 }
 
-// Consumer Service
 project(':consumer-service') {
     dependencies {
         implementation 'io.eventuate.tram.sagas:eventuate-tram-sagas-spring-participant'
@@ -142,7 +120,6 @@ project(':consumer-service') {
     }
 }
 
-// Restaurant Service
 project(':restaurant-service') {
     dependencies {
         implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
@@ -153,7 +130,6 @@ project(':restaurant-service') {
     }
 }
 
-// Kitchen Service
 project(':kitchen-service') {
     dependencies {
         implementation 'io.eventuate.tram.sagas:eventuate-tram-sagas-spring-participant'
@@ -165,7 +141,6 @@ project(':kitchen-service') {
     }
 }
 
-// Accounting Service
 project(':accounting-service') {
     dependencies {
         implementation 'io.eventuate.tram.sagas:eventuate-tram-sagas-spring-participant'
@@ -177,7 +152,6 @@ project(':accounting-service') {
     }
 }
 
-// Delivery Service
 project(':delivery-service') {
     dependencies {
         implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
@@ -188,7 +162,6 @@ project(':delivery-service') {
     }
 }
 
-// Order History Service (CQRS with ScyllaDB)
 project(':order-history-service') {
     dependencies {
         implementation 'org.springframework.boot:spring-boot-starter-data-cassandra'
@@ -196,12 +169,9 @@ project(':order-history-service') {
     }
 }
 
-// API Gateway
 project(':api-gateway') {
     dependencies {
         implementation project(':common')
-        
-        // Reactive Gateway
         implementation 'org.springframework.cloud:spring-cloud-starter-gateway'
         implementation 'org.springframework.boot:spring-boot-starter-data-redis-reactive'
         implementation 'org.springframework.boot:spring-boot-starter-security'
@@ -210,22 +180,29 @@ project(':api-gateway') {
         implementation 'io.github.resilience4j:resilience4j-spring-boot3:2.1.0'
         implementation 'io.github.resilience4j:resilience4j-reactor:2.1.0'
         implementation 'io.github.resilience4j:resilience4j-circuitbreaker:2.1.0'
-        
-        // Observability
         implementation 'io.micrometer:micrometer-registry-prometheus'
-        
-        // JWT testing support
         testImplementation 'com.nimbusds:nimbus-jose-jwt:9.37.3'
-        
-        // WireMock for integration testing
         testImplementation 'org.wiremock:wiremock-standalone:3.3.1'
-        
-        // Redis Testcontainer
         testImplementation 'org.testcontainers:testcontainers:1.19.3'
         testImplementation 'org.testcontainers:junit-jupiter:1.19.3'
-        
-        // Reactor test support
         testImplementation 'io.projectreactor:reactor-test'
+    }
+}
+
+project(':e2e-tests') {
+    bootJar { enabled = false }
+    jar { enabled = true }
+    dependencies {
+        testImplementation project(':common')
+        testImplementation 'com.mysql:mysql-connector-j'
+    }
+    tasks.named('test') {
+        onlyIf { System.getenv('FTGO_E2E_ENABLED') == 'true' }
+        systemProperty 'ftgo.e2e.order-url', System.getenv('FTGO_E2E_ORDER_URL') ?: 'http://localhost:8081'
+        systemProperty 'ftgo.e2e.consumer-url', System.getenv('FTGO_E2E_CONSUMER_URL') ?: 'http://localhost:8082'
+        systemProperty 'ftgo.e2e.restaurant-url', System.getenv('FTGO_E2E_RESTAURANT_URL') ?: 'http://localhost:8083'
+        systemProperty 'ftgo.e2e.kitchen-url', System.getenv('FTGO_E2E_KITCHEN_URL') ?: 'http://localhost:8084'
+        systemProperty 'ftgo.e2e.jdbc-url', System.getenv('FTGO_E2E_JDBC_URL') ?: 'jdbc:mysql://localhost:33306'
     }
 }
 
