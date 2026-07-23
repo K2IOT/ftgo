@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 COMPOSE_FILE="${ROOT_DIR}/deployment/tests/docker-compose.core-order-flow.yml"
 COMPOSE=(docker compose --project-name ftgo-phase02-e2e -f "${COMPOSE_FILE}")
-LOG_ROOT="${ROOT_DIR}/build/core-order-flow-e2e"
+LOG_ROOT="${ROOT_DIR}/core-order-flow-e2e-logs"
 RUNS=2
 SERVICE_PIDS=()
 
