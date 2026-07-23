@@ -148,6 +148,7 @@ public class CreateOrderSaga implements SimpleSaga<CreateOrderSagaData> {
             data.getConsumerId(),
             data.getOrderId(),
             data.getOrderTotal(),
+            data.getPaymentToken(),
             requestId(data, "authorize")
         ))
             .to(ChannelNames.ACCOUNTING_SERVICE_COMMAND_CHANNEL)
