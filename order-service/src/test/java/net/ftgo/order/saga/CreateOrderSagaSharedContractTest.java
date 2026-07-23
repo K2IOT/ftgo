@@ -4,6 +4,7 @@ import io.eventuate.tram.commands.common.Command;
 import io.eventuate.tram.commands.consumer.CommandHandlers;
 import io.eventuate.tram.commands.consumer.CommandWithDestination;
 import net.ftgo.accounting.messaging.AccountingServiceCommandHandlers;
+import net.ftgo.accounting.payment.PaymentAuthorizationGateway;
 import net.ftgo.accounting.repository.AccountRepository;
 import net.ftgo.common.Money;
 import net.ftgo.common.channels.ChannelNames;
@@ -57,7 +58,8 @@ class CreateOrderSagaSharedContractTest {
         ).commandHandlers();
         CommandHandlers accountingHandlers = new AccountingServiceCommandHandlers(
             mock(AccountRepository.class),
-            mock(net.ftgo.accounting.messaging.DomainEventPublisher.class)
+            mock(net.ftgo.accounting.messaging.DomainEventPublisher.class),
+            mock(PaymentAuthorizationGateway.class)
         ).commandHandlers();
 
         assertParticipantAccepts(
