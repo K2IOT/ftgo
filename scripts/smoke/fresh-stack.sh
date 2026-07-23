@@ -110,7 +110,7 @@ wait_for_scylla_cql() {
   local attempt
   for attempt in $(seq 1 90); do
     if "${COMPOSE[@]}" exec -T scylla \
-      cqlsh 127.0.0.1 9042 -e 'SELECT release_version FROM system.local;' \
+      cqlsh scylla 9042 -e 'SELECT release_version FROM system.local;' \
       >/dev/null 2>&1; then
       echo "Scylla CQL listener is ready"
       return 0
@@ -129,7 +129,7 @@ prepare_dependencies() {
   "${COMPOSE[@]}" config --quiet
   "${COMPOSE[@]}" up --detach --wait --wait-timeout 600
   wait_for_scylla_cql
-  "${COMPOSE[@]}" exec -T scylla cqlsh 127.0.0.1 9042 \
+  "${COMPOSE[@]}" exec -T scylla cqlsh scylla 9042 \
     <"${ROOT_DIR}/deployment/tests/fresh-stack/order-history-schema.cql"
 }
 
