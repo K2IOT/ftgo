@@ -34,7 +34,7 @@ public class ConfigurablePaymentAuthorizationGateway implements PaymentAuthoriza
     public PaymentAuthorizationDecision authorize(String paymentToken, Money amount) {
         // Commands produced before the rolling upgrade did not carry a token.
         if (paymentToken == null) {
-            return PaymentAuthorizationDecision.approved();
+            return PaymentAuthorizationDecision.allow();
         }
         if (paymentToken.isBlank()) {
             return PaymentAuthorizationDecision.denied(TOKEN_REQUIRED);
@@ -42,6 +42,6 @@ public class ConfigurablePaymentAuthorizationGateway implements PaymentAuthoriza
         if (declinedTokens.contains(paymentToken)) {
             return PaymentAuthorizationDecision.denied(PROVIDER_DECLINED);
         }
-        return PaymentAuthorizationDecision.approved();
+        return PaymentAuthorizationDecision.allow();
     }
 }
