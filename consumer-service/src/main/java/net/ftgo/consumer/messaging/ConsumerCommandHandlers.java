@@ -11,6 +11,7 @@ import net.ftgo.common.orderflow.commands.ReserveConsumerCreditCommand;
 import net.ftgo.common.orderflow.commands.VerifyConsumerCommand;
 import net.ftgo.common.orderflow.replies.ConsumerCreditCommitted;
 import net.ftgo.common.orderflow.replies.ConsumerCreditReleased;
+import net.ftgo.common.orderflow.replies.ConsumerCreditReservationRejected;
 import net.ftgo.common.orderflow.replies.ConsumerCreditReserved;
 import net.ftgo.common.orderflow.replies.ConsumerVerified;
 import net.ftgo.consumer.domain.CreditReservation;
@@ -72,7 +73,7 @@ public class ConsumerCommandHandlers {
                 reservation.getAmount()
             ));
         } catch (CreditReservationException e) {
-            return rejected(e);
+            return rejected(command.getOrderId(), e);
         }
     }
 
@@ -88,7 +89,7 @@ public class ConsumerCommandHandlers {
                 reservation.getOrderId()
             ));
         } catch (CreditReservationException e) {
-            return rejected(e);
+            return rejected(command.getOrderId(), e);
         }
     }
 
@@ -105,11 +106,15 @@ public class ConsumerCommandHandlers {
                 reservation.getOrderId()
             ));
         } catch (CreditReservationException e) {
-            return rejected(e);
+            return rejected(command.getOrderId(), e);
         }
     }
 
-    private Message rejected(CreditReservationException e) {
-        return withFailure(e.getReasonCode() + ":" + e.getMessage());
+    private Message rejected(Long orderId, CreditReservationException e) {
+        return withFailure(new ConsumerCreditReservationRejected(
+            orderId,
+            e.getReasonCode(),
+            e.getMessage()
+        ));
     }
 }
