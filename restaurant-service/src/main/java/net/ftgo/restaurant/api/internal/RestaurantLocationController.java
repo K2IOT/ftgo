@@ -4,6 +4,8 @@ import net.ftgo.restaurant.domain.Restaurant;
 import net.ftgo.restaurant.service.RestaurantNotFoundException;
 import net.ftgo.restaurant.service.RestaurantService;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -31,12 +33,16 @@ public class RestaurantLocationController {
     }
 
     @ExceptionHandler(RestaurantNotFoundException.class)
-    public ResponseEntity<ErrorResponse> handleRestaurantNotFound(
+    public ResponseEntity<ProblemDetail> handleRestaurantNotFound(
             RestaurantNotFoundException exception) {
-        return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                .body(new ErrorResponse("Restaurant not found", exception.getMessage()));
-    }
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.NOT_FOUND,
+                exception.getMessage());
+        problem.setTitle("Restaurant not found");
+        problem.setProperty("code", "RESTAURANT_NOT_FOUND");
 
-    public record ErrorResponse(String error, String message) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                .body(problem);
     }
 }

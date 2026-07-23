@@ -8,11 +8,13 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -44,13 +46,17 @@ class RestaurantLocationControllerTest {
     }
 
     @Test
-    void returnsNotFoundWhenRestaurantDoesNotExist() throws Exception {
+    void returnsRfc9457ProblemWhenRestaurantDoesNotExist() throws Exception {
         Long restaurantId = 999L;
         when(restaurantService.findRestaurant(restaurantId))
                 .thenThrow(new RestaurantNotFoundException(restaurantId));
 
         mockMvc.perform(get("/internal/restaurants/{restaurantId}/pickup-address", restaurantId))
                 .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.error").value("Restaurant not found"));
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.title").value("Restaurant not found"))
+                .andExpect(jsonPath("$.status").value(404))
+                .andExpect(jsonPath("$.detail").value("Restaurant not found: 999"))
+                .andExpect(jsonPath("$.code").value("RESTAURANT_NOT_FOUND"));
     }
 }
