@@ -11,7 +11,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Profile;
 
 @Configuration
-@Profile("!test")
+@Profile("!test & !testcontainers")
 @Import({SagaParticipantConfiguration.class, TramEventsPublisherConfiguration.class})
 public class RestaurantServiceConfiguration {
 
