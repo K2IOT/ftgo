@@ -37,7 +37,14 @@ verify_connector_running() {
 
   for attempt in $(seq 1 "${MAX_STATUS_ATTEMPTS}"); do
     local status_json
-    status_json="$(curl --silent --show-error --fail-with-body "${status_url}")"
+    if ! status_json="$(curl --silent --show-error --fail-with-body "${status_url}" 2>&1)"; then
+      echo "Waiting for connector ${connector_name}: status endpoint not ready (${attempt}/${MAX_STATUS_ATTEMPTS})"
+      if [[ -n "${status_json}" ]]; then
+        echo "${status_json}" >&2
+      fi
+      sleep 2
+      continue
+    fi
 
     local connector_state
     connector_state="$(jq -r '.connector.state // "UNKNOWN"' <<<"${status_json}")"
