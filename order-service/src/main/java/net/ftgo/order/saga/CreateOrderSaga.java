@@ -17,8 +17,6 @@ import net.ftgo.common.orderflow.replies.CardAuthorized;
 import net.ftgo.common.orderflow.replies.ConsumerCreditReserved;
 import net.ftgo.common.orderflow.replies.OrderMenuValidated;
 import net.ftgo.common.orderflow.replies.TicketCreated;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.List;
 
@@ -34,8 +32,6 @@ import static io.eventuate.tram.commands.consumer.CommandWithDestinationBuilder.
  */
 public class CreateOrderSaga implements SimpleSaga<CreateOrderSagaData> {
 
-    private static final Logger logger = LoggerFactory.getLogger(CreateOrderSaga.class);
-
     private final CreateOrderSagaLocalSteps localSteps;
     private final SagaDefinition<CreateOrderSagaData> sagaDefinition;
 
@@ -46,11 +42,9 @@ public class CreateOrderSaga implements SimpleSaga<CreateOrderSagaData> {
     public CreateOrderSaga(CreateOrderSagaLocalSteps localSteps) {
         this.localSteps = localSteps;
         this.sagaDefinition = step()
-            .invokeLocal(this::orderAlreadyCreated)
-            .withCompensation(this::rejectOrder)
-        .step()
             .invokeParticipant(this::validateMenu)
             .onReply(OrderMenuValidated.class, this::handleMenuValidated)
+            .withCompensation(this::rejectOrder)
         .step()
             .invokeParticipant(this::reserveCredit)
             .onReply(ConsumerCreditReserved.class, this::handleCreditReserved)
@@ -73,10 +67,6 @@ public class CreateOrderSaga implements SimpleSaga<CreateOrderSagaData> {
     @Override
     public SagaDefinition<CreateOrderSagaData> getSagaDefinition() {
         return sagaDefinition;
-    }
-
-    private void orderAlreadyCreated(CreateOrderSagaData data) {
-        logger.debug("Order {} already exists in APPROVAL_PENDING", data.getOrderId());
     }
 
     private CommandWithDestination rejectOrder(CreateOrderSagaData data) {
