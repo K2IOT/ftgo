@@ -20,6 +20,7 @@ public class CreateOrderSagaData {
     private Long restaurantId;
     private List<OrderLineItem> lineItems;
     private Money orderTotal;
+    private String paymentToken;
 
     private Long expectedMenuVersion = 0L;
     private List<OrderMenuLineItem> requestedMenuItems;
@@ -45,7 +46,7 @@ public class CreateOrderSagaData {
     }
 
     /**
-     * Backward-compatible constructor used by OrderService and existing tests.
+     * Backward-compatible constructor used by existing Java callers.
      */
     public CreateOrderSagaData(
         Long orderId,
@@ -54,7 +55,7 @@ public class CreateOrderSagaData {
         List<OrderLineItem> lineItems,
         Money orderTotal
     ) {
-        this(orderId, consumerId, restaurantId, lineItems, orderTotal, 0L);
+        this(orderId, consumerId, restaurantId, lineItems, orderTotal, 0L, null);
     }
 
     public CreateOrderSagaData(
@@ -65,12 +66,25 @@ public class CreateOrderSagaData {
         Money orderTotal,
         Long expectedMenuVersion
     ) {
+        this(orderId, consumerId, restaurantId, lineItems, orderTotal, expectedMenuVersion, null);
+    }
+
+    public CreateOrderSagaData(
+        Long orderId,
+        Long consumerId,
+        Long restaurantId,
+        List<OrderLineItem> lineItems,
+        Money orderTotal,
+        Long expectedMenuVersion,
+        String paymentToken
+    ) {
         this.orderId = orderId;
         this.consumerId = consumerId;
         this.restaurantId = restaurantId;
         this.lineItems = lineItems == null ? new ArrayList<>() : new ArrayList<>(lineItems);
         this.orderTotal = orderTotal;
         this.expectedMenuVersion = expectedMenuVersion == null ? 0L : expectedMenuVersion;
+        this.paymentToken = paymentToken;
         this.requestedMenuItems = this.lineItems.stream()
             .map(item -> new OrderMenuLineItem(
                 item.getMenuItemId(),
@@ -95,6 +109,8 @@ public class CreateOrderSagaData {
     }
     public Money getOrderTotal() { return authoritativeTotal != null ? authoritativeTotal : orderTotal; }
     public void setOrderTotal(Money orderTotal) { this.orderTotal = orderTotal; }
+    public String getPaymentToken() { return paymentToken; }
+    public void setPaymentToken(String paymentToken) { this.paymentToken = paymentToken; }
     public Long getExpectedMenuVersion() { return expectedMenuVersion; }
     public void setExpectedMenuVersion(Long expectedMenuVersion) { this.expectedMenuVersion = expectedMenuVersion; }
     public List<OrderMenuLineItem> getRequestedMenuItems() { return requestedMenuItems; }
