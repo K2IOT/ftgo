@@ -19,7 +19,6 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.time.Duration;
 import java.time.LocalDateTime;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -256,12 +255,18 @@ class CoreOrderFlowTest {
         lineItem.put("quantity", 1);
         ArrayNode lineItems = JSON.createArrayNode().add(lineItem);
 
+        ObjectNode deliveryAddress = JSON.createObjectNode();
+        deliveryAddress.put("street", "1 E2E Street");
+        deliveryAddress.put("city", "Bangkok");
+        deliveryAddress.put("state", "BK");
+        deliveryAddress.put("zipCode", "10110");
+
         ObjectNode request = JSON.createObjectNode();
         request.put("consumerId", fixture.consumerId());
         request.put("restaurantId", fixture.restaurantId());
         request.put("expectedMenuVersion", expectedMenuVersion);
         request.set("lineItems", lineItems);
-        request.put("deliveryAddress", "1 E2E Street, Bangkok, BK 10110");
+        request.set("deliveryAddress", deliveryAddress);
         request.put("deliveryTime", LocalDateTime.now().plusHours(1).toString());
         request.put("paymentToken", paymentToken);
         return post(ORDER_URL + "/orders", request).path("orderId").asLong();
