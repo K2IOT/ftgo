@@ -18,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -31,21 +32,19 @@ public class KitchenServiceTest {
     private DomainEventPublisher eventPublisher;
 
     private KitchenService kitchenService;
-
     private Ticket ticket;
 
     @BeforeEach
     public void setUp() {
         kitchenService = new KitchenService(ticketRepository, eventPublisher);
-        
         TicketLineItem lineItem = new TicketLineItem(1L, "Burger", 2);
         ticket = new Ticket(1L, 100L, Collections.singletonList(lineItem));
     }
 
     @Test
     public void testAcceptTicket() {
-        ticket.approve(); // Set state to AWAITING_ACCEPTANCE
-        when(ticketRepository.findById(1L)).thenReturn(Optional.of(ticket));
+        ticket.approve();
+        when(ticketRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(ticket));
 
         Ticket updatedTicket = kitchenService.acceptTicket(1L);
 
@@ -55,9 +54,34 @@ public class KitchenServiceTest {
     }
 
     @Test
+    void duplicateAcceptDoesNotPublishAgain() {
+        ticket.approve();
+        ticket.accept();
+        when(ticketRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(ticket));
+
+        Ticket updatedTicket = kitchenService.acceptTicket(1L);
+
+        assertEquals(TicketState.ACCEPTED, updatedTicket.getState());
+        verify(ticketRepository, never()).save(ticket);
+        verify(eventPublisher, never()).publishTicketEvent(any(), any());
+    }
+
+    @Test
+    void rejectTicketPublishesDecision() {
+        ticket.approve();
+        when(ticketRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(ticket));
+
+        Ticket updatedTicket = kitchenService.rejectTicket(1L, "CAPACITY");
+
+        assertEquals(TicketState.REJECTED_BY_RESTAURANT, updatedTicket.getState());
+        verify(ticketRepository).save(ticket);
+        verify(eventPublisher).publishTicketEvent(eq(ticket.getId()), any());
+    }
+
+    @Test
     public void testMarkPreparing() {
         ticket.approve();
-        ticket.accept(); // Set state to ACCEPTED
+        ticket.accept();
         when(ticketRepository.findById(1L)).thenReturn(Optional.of(ticket));
 
         Ticket updatedTicket = kitchenService.markPreparing(1L);
@@ -71,7 +95,7 @@ public class KitchenServiceTest {
     public void testMarkReady() {
         ticket.approve();
         ticket.accept();
-        ticket.preparing(); // Set state to PREPARING
+        ticket.preparing();
         when(ticketRepository.findById(1L)).thenReturn(Optional.of(ticket));
 
         Ticket updatedTicket = kitchenService.markReady(1L);
@@ -83,20 +107,15 @@ public class KitchenServiceTest {
 
     @Test
     public void testAcceptTicket_NotFound() {
-        when(ticketRepository.findById(1L)).thenReturn(Optional.empty());
+        when(ticketRepository.findByIdForUpdate(1L)).thenReturn(Optional.empty());
 
-        assertThrows(IllegalArgumentException.class, () -> {
-            kitchenService.acceptTicket(1L);
-        });
+        assertThrows(IllegalArgumentException.class, () -> kitchenService.acceptTicket(1L));
     }
 
     @Test
     public void testAcceptTicket_InvalidState() {
-        // Ticket is in CREATE_PENDING state initially
-        when(ticketRepository.findById(1L)).thenReturn(Optional.of(ticket));
+        when(ticketRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(ticket));
 
-        assertThrows(IllegalStateException.class, () -> {
-            kitchenService.acceptTicket(1L);
-        });
+        assertThrows(IllegalStateException.class, () -> kitchenService.acceptTicket(1L));
     }
 }
