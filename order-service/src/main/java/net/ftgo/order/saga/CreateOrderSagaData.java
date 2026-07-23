@@ -1,124 +1,210 @@
 package net.ftgo.order.saga;
 
 import net.ftgo.common.Money;
+import net.ftgo.common.orderflow.menu.OrderMenuLineItem;
 import net.ftgo.order.domain.OrderLineItem;
 
+import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Saga data for CreateOrderSaga.
- * 
- * This class holds all the state needed throughout the saga execution,
- * including data passed between saga steps and identifiers for created resources.
- * 
- * The saga data is persisted in the saga_instance table in MySQL, allowing
- * the saga to resume after service restarts or failures.
- * 
- * Saga Flow:
- * 1. createOrder (local) - creates order in APPROVAL_PENDING state
- * 2. verifyConsumer - validates consumer credit limit
- * 3. createTicket - creates kitchen ticket
- * 4. authorizeCard - authorizes payment (PIVOT POINT)
- * 5. approveTicket - approves kitchen ticket (retriable)
- * 6. approveOrder (local) - transitions order to APPROVED state (retriable)
+ * Serializable state for the compensatable order-creation phase.
  */
 public class CreateOrderSagaData {
-    
+
     private Long orderId;
     private Long consumerId;
     private Long restaurantId;
-    private List<OrderLineItem> lineItems;
+    private List<OrderLineItem> lineItems = new ArrayList<>();
     private Money orderTotal;
-    
-    // IDs of created resources (populated during saga execution)
+
+    private Long expectedMenuVersion = 0L;
+    private List<OrderMenuLineItem> requestedMenuItems = new ArrayList<>();
+    private List<OrderMenuLineItem> authoritativeMenuItems = new ArrayList<>();
+    private Money authoritativeTotal;
+
+    private Long creditReservationId;
     private Long ticketId;
     private Long authorizationId;
-    
-    /**
-     * Default constructor for serialization.
-     */
+    private LocalDateTime acceptanceDeadline;
+
+    private String failureCode;
+    private String failureMessage;
+
     public CreateOrderSagaData() {
     }
-    
+
     /**
-     * Creates saga data for a new order.
-     * 
-     * @param orderId the order ID
-     * @param consumerId the consumer ID
-     * @param restaurantId the restaurant ID
-     * @param lineItems the order line items
-     * @param orderTotal the order total amount
+     * Backward-compatible constructor used by OrderService and existing tests.
      */
-    public CreateOrderSagaData(Long orderId, Long consumerId, Long restaurantId,
-                               List<OrderLineItem> lineItems, Money orderTotal) {
+    public CreateOrderSagaData(
+        Long orderId,
+        Long consumerId,
+        Long restaurantId,
+        List<OrderLineItem> lineItems,
+        Money orderTotal
+    ) {
+        this(orderId, consumerId, restaurantId, lineItems, orderTotal, 0L);
+    }
+
+    public CreateOrderSagaData(
+        Long orderId,
+        Long consumerId,
+        Long restaurantId,
+        List<OrderLineItem> lineItems,
+        Money orderTotal,
+        Long expectedMenuVersion
+    ) {
         this.orderId = orderId;
         this.consumerId = consumerId;
         this.restaurantId = restaurantId;
-        this.lineItems = lineItems;
+        this.lineItems = lineItems == null ? new ArrayList<>() : new ArrayList<>(lineItems);
         this.orderTotal = orderTotal;
+        this.expectedMenuVersion = expectedMenuVersion == null ? 0L : expectedMenuVersion;
+        this.requestedMenuItems = this.lineItems.stream()
+            .map(item -> new OrderMenuLineItem(
+                item.getMenuItemId(),
+                item.getName(),
+                item.getPrice(),
+                item.getQuantity()
+            ))
+            .toList();
+        this.acceptanceDeadline = LocalDateTime.now().plusMinutes(5);
     }
-    
-    // Getters and setters
-    
+
     public Long getOrderId() {
         return orderId;
     }
-    
+
     public void setOrderId(Long orderId) {
         this.orderId = orderId;
     }
-    
+
     public Long getConsumerId() {
         return consumerId;
     }
-    
+
     public void setConsumerId(Long consumerId) {
         this.consumerId = consumerId;
     }
-    
+
     public Long getRestaurantId() {
         return restaurantId;
     }
-    
+
     public void setRestaurantId(Long restaurantId) {
         this.restaurantId = restaurantId;
     }
-    
+
     public List<OrderLineItem> getLineItems() {
         return lineItems;
     }
-    
+
     public void setLineItems(List<OrderLineItem> lineItems) {
-        this.lineItems = lineItems;
+        this.lineItems = lineItems == null ? new ArrayList<>() : new ArrayList<>(lineItems);
     }
-    
+
     public Money getOrderTotal() {
-        return orderTotal;
+        return authoritativeTotal != null ? authoritativeTotal : orderTotal;
     }
-    
+
     public void setOrderTotal(Money orderTotal) {
         this.orderTotal = orderTotal;
     }
-    
+
+    public Long getExpectedMenuVersion() {
+        return expectedMenuVersion;
+    }
+
+    public void setExpectedMenuVersion(Long expectedMenuVersion) {
+        this.expectedMenuVersion = expectedMenuVersion;
+    }
+
+    public List<OrderMenuLineItem> getRequestedMenuItems() {
+        return requestedMenuItems;
+    }
+
+    public void setRequestedMenuItems(List<OrderMenuLineItem> requestedMenuItems) {
+        this.requestedMenuItems = requestedMenuItems == null
+            ? new ArrayList<>()
+            : new ArrayList<>(requestedMenuItems);
+    }
+
+    public List<OrderMenuLineItem> getAuthoritativeMenuItems() {
+        return authoritativeMenuItems;
+    }
+
+    public void setAuthoritativeMenuItems(List<OrderMenuLineItem> authoritativeMenuItems) {
+        this.authoritativeMenuItems = authoritativeMenuItems == null
+            ? new ArrayList<>()
+            : new ArrayList<>(authoritativeMenuItems);
+    }
+
+    public Money getAuthoritativeTotal() {
+        return authoritativeTotal;
+    }
+
+    public void setAuthoritativeTotal(Money authoritativeTotal) {
+        this.authoritativeTotal = authoritativeTotal;
+    }
+
+    public Long getCreditReservationId() {
+        return creditReservationId;
+    }
+
+    public void setCreditReservationId(Long creditReservationId) {
+        this.creditReservationId = creditReservationId;
+    }
+
     public Long getTicketId() {
         return ticketId;
     }
-    
+
     public void setTicketId(Long ticketId) {
         this.ticketId = ticketId;
     }
-    
+
     public Long getAuthorizationId() {
         return authorizationId;
     }
-    
+
     public void setAuthorizationId(Long authorizationId) {
         this.authorizationId = authorizationId;
     }
-    
+
+    public LocalDateTime getAcceptanceDeadline() {
+        return acceptanceDeadline;
+    }
+
+    public void setAcceptanceDeadline(LocalDateTime acceptanceDeadline) {
+        this.acceptanceDeadline = acceptanceDeadline;
+    }
+
+    public String getFailureCode() {
+        return failureCode;
+    }
+
+    public void setFailureCode(String failureCode) {
+        this.failureCode = failureCode;
+    }
+
+    public String getFailureMessage() {
+        return failureMessage;
+    }
+
+    public void setFailureMessage(String failureMessage) {
+        this.failureMessage = failureMessage;
+    }
+
     @Override
     public String toString() {
-        return String.format("CreateOrderSagaData{orderId=%d, consumerId=%d, restaurantId=%d, orderTotal=%s, ticketId=%d, authorizationId=%d}",
-            orderId, consumerId, restaurantId, orderTotal, ticketId, authorizationId);
+        return "CreateOrderSagaData{orderId=" + orderId
+            + ", consumerId=" + consumerId
+            + ", restaurantId=" + restaurantId
+            + ", total=" + getOrderTotal()
+            + ", creditReservationId=" + creditReservationId
+            + ", ticketId=" + ticketId
+            + ", authorizationId=" + authorizationId + "}";
     }
 }
