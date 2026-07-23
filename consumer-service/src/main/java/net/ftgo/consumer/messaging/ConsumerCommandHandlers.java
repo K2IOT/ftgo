@@ -11,7 +11,6 @@ import net.ftgo.common.orderflow.commands.ReserveConsumerCreditCommand;
 import net.ftgo.common.orderflow.commands.VerifyConsumerCommand;
 import net.ftgo.common.orderflow.replies.ConsumerCreditCommitted;
 import net.ftgo.common.orderflow.replies.ConsumerCreditReleased;
-import net.ftgo.common.orderflow.replies.ConsumerCreditReservationRejected;
 import net.ftgo.common.orderflow.replies.ConsumerCreditReserved;
 import net.ftgo.common.orderflow.replies.ConsumerVerified;
 import net.ftgo.consumer.domain.CreditReservation;
@@ -29,8 +28,10 @@ public class ConsumerCommandHandlers {
     private final ConsumerService consumerService;
     private final CreditReservationService creditReservationService;
 
-    public ConsumerCommandHandlers(ConsumerService consumerService,
-                                   CreditReservationService creditReservationService) {
+    public ConsumerCommandHandlers(
+        ConsumerService consumerService,
+        CreditReservationService creditReservationService
+    ) {
         this.consumerService = consumerService;
         this.creditReservationService = creditReservationService;
     }
@@ -51,9 +52,9 @@ public class ConsumerCommandHandlers {
             if (consumerService.verifyConsumerCredit(command.getConsumerId(), command.getOrderTotal())) {
                 return withSuccess(new ConsumerVerified(command.getConsumerId()));
             }
-            return withFailure("Insufficient credit limit");
+            return withFailure("INSUFFICIENT_CREDIT:Insufficient credit limit");
         } catch (Exception e) {
-            return withFailure(e.getMessage());
+            return withFailure("CONSUMER_VERIFICATION_FAILED:" + e.getMessage());
         }
     }
 
@@ -61,11 +62,17 @@ public class ConsumerCommandHandlers {
         ReserveConsumerCreditCommand command = message.getCommand();
         try {
             CreditReservation reservation = creditReservationService.reserve(
-                command.getConsumerId(), command.getOrderId(), command.getAmount());
+                command.getConsumerId(),
+                command.getOrderId(),
+                command.getAmount()
+            );
             return withSuccess(new ConsumerCreditReserved(
-                reservation.getId(), reservation.getOrderId(), reservation.getAmount()));
+                reservation.getId(),
+                reservation.getOrderId(),
+                reservation.getAmount()
+            ));
         } catch (CreditReservationException e) {
-            return rejected(command.getOrderId(), e);
+            return rejected(e);
         }
     }
 
@@ -73,11 +80,15 @@ public class ConsumerCommandHandlers {
         CommitConsumerCreditCommand command = message.getCommand();
         try {
             CreditReservation reservation = creditReservationService.commit(
-                command.getConsumerId(), command.getOrderId());
+                command.getConsumerId(),
+                command.getOrderId()
+            );
             return withSuccess(new ConsumerCreditCommitted(
-                reservation.getId(), reservation.getOrderId()));
+                reservation.getId(),
+                reservation.getOrderId()
+            ));
         } catch (CreditReservationException e) {
-            return rejected(command.getOrderId(), e);
+            return rejected(e);
         }
     }
 
@@ -85,16 +96,20 @@ public class ConsumerCommandHandlers {
         ReleaseConsumerCreditCommand command = message.getCommand();
         try {
             CreditReservation reservation = creditReservationService.release(
-                command.getConsumerId(), command.getOrderId(), command.getReason());
+                command.getConsumerId(),
+                command.getOrderId(),
+                command.getReason()
+            );
             return withSuccess(new ConsumerCreditReleased(
-                reservation.getId(), reservation.getOrderId()));
+                reservation.getId(),
+                reservation.getOrderId()
+            ));
         } catch (CreditReservationException e) {
-            return rejected(command.getOrderId(), e);
+            return rejected(e);
         }
     }
 
-    private Message rejected(Long orderId, CreditReservationException e) {
-        return withSuccess(new ConsumerCreditReservationRejected(
-            orderId, e.getReasonCode(), e.getMessage()));
+    private Message rejected(CreditReservationException e) {
+        return withFailure(e.getReasonCode() + ":" + e.getMessage());
     }
 }
