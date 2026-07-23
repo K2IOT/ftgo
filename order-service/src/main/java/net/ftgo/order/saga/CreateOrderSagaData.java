@@ -1,5 +1,7 @@
 package net.ftgo.order.saga;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import net.ftgo.common.Money;
 import net.ftgo.common.orderflow.menu.OrderMenuLineItem;
 import net.ftgo.order.domain.OrderLineItem;
@@ -27,7 +29,14 @@ public class CreateOrderSagaData {
     private Long creditReservationId;
     private Long ticketId;
     private Long authorizationId;
-    private LocalDateTime acceptanceDeadline;
+
+    /**
+     * Eventuate's static JSON mapper does not register jackson-datatype-jsr310.
+     * Persist the value as ISO-8601 text while keeping a LocalDateTime API for
+     * domain code.
+     */
+    @JsonProperty("acceptanceDeadline")
+    private String acceptanceDeadlineIso;
 
     private String failureCode;
     private String failureMessage;
@@ -71,7 +80,7 @@ public class CreateOrderSagaData {
             ))
             .toList();
         this.authoritativeMenuItems = new ArrayList<>();
-        this.acceptanceDeadline = LocalDateTime.now().plusMinutes(5);
+        setAcceptanceDeadline(LocalDateTime.now().plusMinutes(5));
     }
 
     public Long getOrderId() { return orderId; }
@@ -108,8 +117,17 @@ public class CreateOrderSagaData {
     public void setTicketId(Long ticketId) { this.ticketId = ticketId; }
     public Long getAuthorizationId() { return authorizationId; }
     public void setAuthorizationId(Long authorizationId) { this.authorizationId = authorizationId; }
-    public LocalDateTime getAcceptanceDeadline() { return acceptanceDeadline; }
-    public void setAcceptanceDeadline(LocalDateTime acceptanceDeadline) { this.acceptanceDeadline = acceptanceDeadline; }
+
+    @JsonIgnore
+    public LocalDateTime getAcceptanceDeadline() {
+        return acceptanceDeadlineIso == null ? null : LocalDateTime.parse(acceptanceDeadlineIso);
+    }
+
+    @JsonIgnore
+    public void setAcceptanceDeadline(LocalDateTime acceptanceDeadline) {
+        this.acceptanceDeadlineIso = acceptanceDeadline == null ? null : acceptanceDeadline.toString();
+    }
+
     public String getFailureCode() { return failureCode; }
     public void setFailureCode(String failureCode) { this.failureCode = failureCode; }
     public String getFailureMessage() { return failureMessage; }
