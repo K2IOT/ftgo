@@ -1,0 +1,7 @@
+ftgo:
+  e2e:
+    order-url: ${FTGO_E2E_ORDER_URL:http://localhost:8081}
+    consumer-url: ${FTGO_E2E_CONSUMER_URL:http://localhost:8082}
+    restaurant-url: ${FTGO_E2E_RESTAURANT_URL:http://localhost:8083}
+    kitchen-url: ${FTGO_E2E_KITCHEN_URL:http://localhost:8084}
+    jdbc-url: ${FTGO_E2E_JDBC_URL:jdbc:mysql://localhost:33306}
