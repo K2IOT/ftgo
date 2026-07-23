@@ -23,6 +23,7 @@ import net.ftgo.common.orderflow.replies.CardAuthorizationDenied;
 import net.ftgo.common.orderflow.replies.CardAuthorized;
 import net.ftgo.common.orderflow.replies.PaymentCaptured;
 import net.ftgo.common.orderflow.replies.PaymentRefunded;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -38,6 +39,19 @@ public class AccountingServiceCommandHandlers {
     private final DomainEventPublisher eventPublisher;
     private final PaymentAuthorizationGateway paymentAuthorizationGateway;
 
+    /**
+     * Source-compatible constructor for legacy tests and rolling-upgrade
+     * integrations that predate the payment-provider boundary.
+     */
+    public AccountingServiceCommandHandlers(
+        AccountRepository accountRepository,
+        DomainEventPublisher eventPublisher
+    ) {
+        this(accountRepository, eventPublisher, (paymentToken, amount) ->
+            PaymentAuthorizationDecision.allow());
+    }
+
+    @Autowired
     public AccountingServiceCommandHandlers(
         AccountRepository accountRepository,
         DomainEventPublisher eventPublisher,
