@@ -34,6 +34,10 @@ eventuatelocal:
     reader:
       name: MySqlReader
 
+ftgo:
+  accounting:
+    declined-payment-tokens: ${FTGO_ACCOUNTING_DECLINED_PAYMENT_TOKENS:}
+
 server:
   port: 8085
 
