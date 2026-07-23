@@ -8,6 +8,10 @@ LOG_ROOT="${ROOT_DIR}/build/core-order-flow-e2e"
 RUNS=2
 SERVICE_PIDS=()
 
+rm -rf "${LOG_ROOT}"
+mkdir -p "${LOG_ROOT}"
+exec > >(tee -a "${LOG_ROOT}/runner.log") 2>&1
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --runs)
@@ -223,8 +227,6 @@ main() {
   require_command docker
   require_command jq
   build_artifacts
-  rm -rf "${LOG_ROOT}"
-  mkdir -p "${LOG_ROOT}"
 
   local run
   for run in $(seq 1 "${RUNS}"); do
