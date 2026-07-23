@@ -1,0 +1,144 @@
+services:
+  mysql:
+    image: mysql:8.0.36
+    ports:
+      - "33306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+    command:
+      - --server-id=21
+      - --log-bin=mysql-bin
+      - --binlog-format=ROW
+      - --binlog-row-image=FULL
+    volumes:
+      - ./fresh-stack/mysql-init.sql:/docker-entrypoint-initdb.d/001-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -prootpassword --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 40
+      start_period: 20s
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    healthcheck:
+      test: ["CMD-SHELL", "cub zk-ready localhost:2181 30"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    ports:
+      - "29092:29092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,EXTERNAL://0.0.0.0:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:9092 >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 5s
+      retries: 40
+      start_period: 20s
+
+  connect:
+    image: debezium/connect:2.5
+    depends_on:
+      kafka:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+    ports:
+      - "18083:8083"
+    environment:
+      BOOTSTRAP_SERVERS: kafka:9092
+      GROUP_ID: ftgo-core-order-flow-connect
+      CONFIG_STORAGE_TOPIC: ftgo-core-order-flow-connect-configs
+      OFFSET_STORAGE_TOPIC: ftgo-core-order-flow-connect-offsets
+      STATUS_STORAGE_TOPIC: ftgo-core-order-flow-connect-status
+      CONFIG_STORAGE_REPLICATION_FACTOR: 1
+      OFFSET_STORAGE_REPLICATION_FACTOR: 1
+      STATUS_STORAGE_REPLICATION_FACTOR: 1
+    healthcheck:
+      test: ["CMD-SHELL", "curl --silent --fail http://localhost:8083/connectors >/dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 40
+      start_period: 20s
+
+  eventuate-cdc:
+    image: eventuateio/eventuate-cdc-service:0.6.1.RELEASE
+    profiles: ["relays"]
+    depends_on:
+      kafka:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+      zookeeper:
+        condition: service_healthy
+    ports:
+      - "18099:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: EventuatePolling
+      EVENTUATELOCAL_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      EVENTUATELOCAL_ZOOKEEPER_CONNECTION_STRING: zookeeper:2181
+
+      EVENTUATE_CDC_PIPELINE_ORDER_TYPE: eventuate-tram
+      EVENTUATE_CDC_PIPELINE_ORDER_READER: order
+      EVENTUATE_CDC_READER_ORDER_TYPE: polling
+      EVENTUATE_CDC_READER_ORDER_DATASOURCEURL: jdbc:mysql://mysql:3306/ftgo_order
+      EVENTUATE_CDC_READER_ORDER_DATASOURCEUSERNAME: ftgo_user
+      EVENTUATE_CDC_READER_ORDER_DATASOURCEPASSWORD: ftgo_password
+      EVENTUATE_CDC_READER_ORDER_DATASOURCEDRIVERCLASSNAME: com.mysql.jdbc.Driver
+      EVENTUATE_CDC_READER_ORDER_LEADERSHIPLOCKPATH: /ftgo/e2e/cdc/order
+
+      EVENTUATE_CDC_PIPELINE_CONSUMER_TYPE: eventuate-tram
+      EVENTUATE_CDC_PIPELINE_CONSUMER_READER: consumer
+      EVENTUATE_CDC_READER_CONSUMER_TYPE: polling
+      EVENTUATE_CDC_READER_CONSUMER_DATASOURCEURL: jdbc:mysql://mysql:3306/ftgo_consumer
+      EVENTUATE_CDC_READER_CONSUMER_DATASOURCEUSERNAME: ftgo_user
+      EVENTUATE_CDC_READER_CONSUMER_DATASOURCEPASSWORD: ftgo_password
+      EVENTUATE_CDC_READER_CONSUMER_DATASOURCEDRIVERCLASSNAME: com.mysql.jdbc.Driver
+      EVENTUATE_CDC_READER_CONSUMER_LEADERSHIPLOCKPATH: /ftgo/e2e/cdc/consumer
+
+      EVENTUATE_CDC_PIPELINE_RESTAURANT_TYPE: eventuate-tram
+      EVENTUATE_CDC_PIPELINE_RESTAURANT_READER: restaurant
+      EVENTUATE_CDC_READER_RESTAURANT_TYPE: polling
+      EVENTUATE_CDC_READER_RESTAURANT_DATASOURCEURL: jdbc:mysql://mysql:3306/ftgo_restaurant
+      EVENTUATE_CDC_READER_RESTAURANT_DATASOURCEUSERNAME: ftgo_user
+      EVENTUATE_CDC_READER_RESTAURANT_DATASOURCEPASSWORD: ftgo_password
+      EVENTUATE_CDC_READER_RESTAURANT_DATASOURCEDRIVERCLASSNAME: com.mysql.jdbc.Driver
+      EVENTUATE_CDC_READER_RESTAURANT_LEADERSHIPLOCKPATH: /ftgo/e2e/cdc/restaurant
+
+      EVENTUATE_CDC_PIPELINE_KITCHEN_TYPE: eventuate-tram
+      EVENTUATE_CDC_PIPELINE_KITCHEN_READER: kitchen
+      EVENTUATE_CDC_READER_KITCHEN_TYPE: polling
+      EVENTUATE_CDC_READER_KITCHEN_DATASOURCEURL: jdbc:mysql://mysql:3306/ftgo_kitchen
+      EVENTUATE_CDC_READER_KITCHEN_DATASOURCEUSERNAME: ftgo_user
+      EVENTUATE_CDC_READER_KITCHEN_DATASOURCEPASSWORD: ftgo_password
+      EVENTUATE_CDC_READER_KITCHEN_DATASOURCEDRIVERCLASSNAME: com.mysql.jdbc.Driver
+      EVENTUATE_CDC_READER_KITCHEN_LEADERSHIPLOCKPATH: /ftgo/e2e/cdc/kitchen
+
+      EVENTUATE_CDC_PIPELINE_ACCOUNTING_TYPE: eventuate-tram
+      EVENTUATE_CDC_PIPELINE_ACCOUNTING_READER: accounting
+      EVENTUATE_CDC_READER_ACCOUNTING_TYPE: polling
+      EVENTUATE_CDC_READER_ACCOUNTING_DATASOURCEURL: jdbc:mysql://mysql:3306/ftgo_accounting
+      EVENTUATE_CDC_READER_ACCOUNTING_DATASOURCEUSERNAME: ftgo_user
+      EVENTUATE_CDC_READER_ACCOUNTING_DATASOURCEPASSWORD: ftgo_password
+      EVENTUATE_CDC_READER_ACCOUNTING_DATASOURCEDRIVERCLASSNAME: com.mysql.jdbc.Driver
+      EVENTUATE_CDC_READER_ACCOUNTING_LEADERSHIPLOCKPATH: /ftgo/e2e/cdc/accounting
