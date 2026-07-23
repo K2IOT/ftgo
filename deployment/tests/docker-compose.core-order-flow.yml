@@ -5,6 +5,7 @@ services:
       - "33306:3306"
     environment:
       MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_ROOT_HOST: "%"
     command:
       - --server-id=21
       - --log-bin=mysql-bin
