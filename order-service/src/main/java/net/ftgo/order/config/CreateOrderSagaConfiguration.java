@@ -14,39 +14,28 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 
 /**
- * Configuration for CreateOrderSaga.
- * 
- * Registers the saga definition and local saga participant as Spring beans.
- * The saga orchestrator will use these beans to execute the saga.
+ * CreateOrderSaga definition and its local compensation participant.
  */
 @Configuration
 @Import(SagaParticipantConfiguration.class)
 public class CreateOrderSagaConfiguration {
-    
-    /**
-     * Creates the CreateOrderSaga bean.
-     * 
-     * @return the CreateOrderSaga instance
-     */
-    @Bean
-    public CreateOrderSaga createOrderSaga() {
-        return new CreateOrderSaga();
-    }
-    
-    /**
-     * Creates the local saga participant for CreateOrderSaga.
-     * 
-     * @param orderRepository the order repository
-     * @param eventPublisher the domain event publisher
-     * @param meterRegistry the metrics registry
-     * @return the CreateOrderSagaLocalSteps instance
-     */
+
     @Bean
     public CreateOrderSagaLocalSteps createOrderSagaLocalSteps(
-            OrderRepository orderRepository,
-            DomainEventPublisher eventPublisher,
-            MeterRegistry meterRegistry) {
-        return new CreateOrderSagaLocalSteps(orderRepository, eventPublisher, meterRegistry);
+        OrderRepository orderRepository,
+        DomainEventPublisher eventPublisher,
+        MeterRegistry meterRegistry
+    ) {
+        return new CreateOrderSagaLocalSteps(
+            orderRepository,
+            eventPublisher,
+            meterRegistry
+        );
+    }
+
+    @Bean
+    public CreateOrderSaga createOrderSaga(CreateOrderSagaLocalSteps localSteps) {
+        return new CreateOrderSaga(localSteps);
     }
 
     @Bean
@@ -56,8 +45,9 @@ public class CreateOrderSagaConfiguration {
 
     @Bean
     public CommandDispatcher createOrderSagaCommandDispatcher(
-            SagaCommandDispatcherFactory sagaCommandDispatcherFactory,
-            CommandHandlers createOrderSagaCommandHandlers) {
+        SagaCommandDispatcherFactory sagaCommandDispatcherFactory,
+        CommandHandlers createOrderSagaCommandHandlers
+    ) {
         return sagaCommandDispatcherFactory.make(
             "createOrderSagaCommandDispatcher",
             createOrderSagaCommandHandlers
