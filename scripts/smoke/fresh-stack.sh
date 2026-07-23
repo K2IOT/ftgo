@@ -106,10 +106,29 @@ boot_and_assert() {
   cleanup_process
 }
 
+wait_for_scylla_cql() {
+  local attempt
+  for attempt in $(seq 1 90); do
+    if "${COMPOSE[@]}" exec -T scylla \
+      cqlsh 127.0.0.1 9042 -e 'SELECT release_version FROM system.local;' \
+      >/dev/null 2>&1; then
+      echo "Scylla CQL listener is ready"
+      return 0
+    fi
+    echo "Waiting for Scylla CQL listener (${attempt}/90)"
+    sleep 2
+  done
+
+  echo "Scylla CQL listener did not become ready" >&2
+  "${COMPOSE[@]}" logs --no-color scylla >&2 || true
+  return 1
+}
+
 prepare_dependencies() {
   "${COMPOSE[@]}" down --volumes --remove-orphans >/dev/null 2>&1 || true
   "${COMPOSE[@]}" config --quiet
   "${COMPOSE[@]}" up --detach --wait --wait-timeout 600
+  wait_for_scylla_cql
   "${COMPOSE[@]}" exec -T scylla cqlsh 127.0.0.1 9042 \
     <"${ROOT_DIR}/deployment/tests/fresh-stack/order-history-schema.cql"
 }
