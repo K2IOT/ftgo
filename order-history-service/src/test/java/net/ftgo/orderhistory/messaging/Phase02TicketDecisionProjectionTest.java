@@ -32,12 +32,12 @@ class Phase02TicketDecisionProjectionTest {
     private ProcessedMessageRepository processedMessageRepository;
 
     private ObjectMapper objectMapper;
-    private OrderHistoryEventHandlers handlers;
+    private Phase02TicketDecisionEventHandler handler;
 
     @BeforeEach
     void setUp() {
         objectMapper = new ObjectMapper().findAndRegisterModules();
-        handlers = new OrderHistoryEventHandlers(
+        handler = new Phase02TicketDecisionEventHandler(
             orderHistoryRepository,
             processedMessageRepository,
             objectMapper
@@ -57,7 +57,7 @@ class Phase02TicketDecisionProjectionTest {
             LocalDateTime.now()
         );
 
-        handlers.handleTicketEvent(
+        handler.handleTicketDecision(
             objectMapper.writeValueAsString(event),
             "Ticket#202",
             "TicketRejectedEvent"
@@ -83,7 +83,7 @@ class Phase02TicketDecisionProjectionTest {
             LocalDateTime.now()
         );
 
-        handlers.handleTicketEvent(
+        handler.handleTicketDecision(
             objectMapper.writeValueAsString(event),
             "Ticket#202",
             "TicketAcceptanceTimedOutEvent"
