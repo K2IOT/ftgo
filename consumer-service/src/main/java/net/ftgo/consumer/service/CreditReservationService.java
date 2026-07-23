@@ -21,7 +21,13 @@ public class CreditReservationService {
         this.reservationRepository = reservationRepository;
     }
 
-    @Transactional
+    /**
+     * Expected business denials are converted by the command handler into typed
+     * saga failure replies. They must not mark Eventuate's surrounding message
+     * transaction rollback-only, otherwise the failure reply and duplicate
+     * detection record are both lost and the consumer terminates.
+     */
+    @Transactional(noRollbackFor = CreditReservationException.class)
     public CreditReservation reserve(Long consumerId, Long orderId, Money amount) {
         CreditReservation existing = reservationRepository.findByOrderId(orderId).orElse(null);
         if (existing != null) {
@@ -47,7 +53,7 @@ public class CreditReservationService {
         return reservationRepository.save(new CreditReservation(consumerId, orderId, amount));
     }
 
-    @Transactional
+    @Transactional(noRollbackFor = CreditReservationException.class)
     public CreditReservation commit(Long consumerId, Long orderId) {
         CreditReservation reservation = findForUpdate(consumerId, orderId);
         try {
@@ -58,7 +64,7 @@ public class CreditReservationService {
         return reservationRepository.save(reservation);
     }
 
-    @Transactional
+    @Transactional(noRollbackFor = CreditReservationException.class)
     public CreditReservation release(Long consumerId, Long orderId, String reason) {
         CreditReservation reservation = findForUpdate(consumerId, orderId);
         if (reservation.getStatus() == CreditReservationStatus.RELEASED) {
