@@ -118,7 +118,8 @@ public class OrderService {
             order.getRestaurantId(),
             order.getLineItems(),
             order.getOrderTotal(),
-            expectedMenuVersion
+            expectedMenuVersion,
+            order.getPaymentInfo().getPaymentToken()
         ));
 
         ordersPlacedCounter.increment();
