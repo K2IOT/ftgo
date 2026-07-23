@@ -23,6 +23,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
+import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.okJson;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
@@ -126,10 +127,5 @@ class DeliveryOrderApprovedIntegrationTest {
                 .hasSize(1);
         RESTAURANT_SERVICE.verify(1, getRequestedFor(urlEqualTo(
                 "/internal/restaurants/42/pickup-address")));
-    }
-
-    private static com.github.tomakehurst.wiremock.client.RequestPatternBuilder getRequestedFor(
-            com.github.tomakehurst.wiremock.client.UrlPattern urlPattern) {
-        return com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor(urlPattern);
     }
 }
