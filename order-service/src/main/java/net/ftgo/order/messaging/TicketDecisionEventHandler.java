@@ -15,6 +15,7 @@ import net.ftgo.order.saga.RejectOrderSaga;
 import net.ftgo.order.saga.RejectOrderSagaData;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.annotation.Profile;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.support.KafkaHeaders;
 import org.springframework.messaging.handler.annotation.Header;
@@ -22,6 +23,7 @@ import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Objects;
 import java.util.Optional;
 
 /**
@@ -32,6 +34,7 @@ import java.util.Optional;
  * are acknowledged as no-ops.</p>
  */
 @Component
+@Profile("!test")
 public class TicketDecisionEventHandler {
 
     private static final Logger logger = LoggerFactory.getLogger(TicketDecisionEventHandler.class);
@@ -178,6 +181,15 @@ public class TicketDecisionEventHandler {
     }
 
     private Optional<Order> matchingOrder(Long orderId, Long ticketId) {
+        if (orderId == null || ticketId == null) {
+            logger.warn(
+                "Ignoring malformed ticket decision: orderId={}, ticketId={}",
+                orderId,
+                ticketId
+            );
+            return Optional.empty();
+        }
+
         Optional<Order> optionalOrder = orderRepository.findByIdWithLock(orderId);
         if (optionalOrder.isEmpty()) {
             logger.warn("Ignoring ticket decision for unknown order: orderId={}", orderId);
@@ -185,7 +197,7 @@ public class TicketDecisionEventHandler {
         }
 
         Order order = optionalOrder.get();
-        if (!ticketId.equals(order.getTicketId())) {
+        if (!Objects.equals(ticketId, order.getTicketId())) {
             logger.warn(
                 "Ignoring ticket decision with mismatched ticket: orderId={}, expected={}, actual={}",
                 orderId,
