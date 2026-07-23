@@ -3,25 +3,19 @@ package net.ftgo.common.orderflow.commands;
 import io.eventuate.tram.commands.common.Command;
 import net.ftgo.common.Money;
 
-public class AuthorizeCardCommand implements Command {
+public class ReserveConsumerCreditCommand implements Command {
 
     private Long consumerId;
     private Long orderId;
     private Money amount;
-    private String requestId;
 
-    public AuthorizeCardCommand() {
+    public ReserveConsumerCreditCommand() {
     }
 
-    public AuthorizeCardCommand(Long consumerId, Money amount, String requestId) {
-        this(consumerId, null, amount, requestId);
-    }
-
-    public AuthorizeCardCommand(Long consumerId, Long orderId, Money amount, String requestId) {
+    public ReserveConsumerCreditCommand(Long consumerId, Long orderId, Money amount) {
         this.consumerId = consumerId;
         this.orderId = orderId;
         this.amount = amount;
-        this.requestId = requestId;
     }
 
     public Long getConsumerId() { return consumerId; }
@@ -30,6 +24,4 @@ public class AuthorizeCardCommand implements Command {
     public void setOrderId(Long orderId) { this.orderId = orderId; }
     public Money getAmount() { return amount; }
     public void setAmount(Money amount) { this.amount = amount; }
-    public String getRequestId() { return requestId; }
-    public void setRequestId(String requestId) { this.requestId = requestId; }
 }

@@ -3,33 +3,33 @@ package net.ftgo.common.orderflow.commands;
 import io.eventuate.tram.commands.common.Command;
 import net.ftgo.common.Money;
 
-public class AuthorizeCardCommand implements Command {
+public class RefundPaymentCommand implements Command {
 
-    private Long consumerId;
     private Long orderId;
+    private Long captureId;
     private Money amount;
+    private String reason;
     private String requestId;
 
-    public AuthorizeCardCommand() {
+    public RefundPaymentCommand() {
     }
 
-    public AuthorizeCardCommand(Long consumerId, Money amount, String requestId) {
-        this(consumerId, null, amount, requestId);
-    }
-
-    public AuthorizeCardCommand(Long consumerId, Long orderId, Money amount, String requestId) {
-        this.consumerId = consumerId;
+    public RefundPaymentCommand(Long orderId, Long captureId, Money amount, String reason, String requestId) {
         this.orderId = orderId;
+        this.captureId = captureId;
         this.amount = amount;
+        this.reason = reason;
         this.requestId = requestId;
     }
 
-    public Long getConsumerId() { return consumerId; }
-    public void setConsumerId(Long consumerId) { this.consumerId = consumerId; }
     public Long getOrderId() { return orderId; }
     public void setOrderId(Long orderId) { this.orderId = orderId; }
+    public Long getCaptureId() { return captureId; }
+    public void setCaptureId(Long captureId) { this.captureId = captureId; }
     public Money getAmount() { return amount; }
     public void setAmount(Money amount) { this.amount = amount; }
+    public String getReason() { return reason; }
+    public void setReason(String reason) { this.reason = reason; }
     public String getRequestId() { return requestId; }
     public void setRequestId(String requestId) { this.requestId = requestId; }
 }
