@@ -86,12 +86,19 @@ public class RestaurantService {
         return menuItemRepository.findByRestaurantId(restaurantId);
     }
 
+    /**
+     * Preserves the original service API while the saga path uses
+     * {@link OrderMenuValidationService} for authoritative batch validation.
+     */
     public boolean validateMenuItems(Long restaurantId, List<Long> menuItemIds) {
-        return menuItemRepository.findByRestaurantIdAndIdIn(restaurantId, menuItemIds).stream()
-            .filter(MenuItem::isAvailable)
-            .map(MenuItem::getId)
-            .collect(java.util.stream.Collectors.toSet())
-            .containsAll(menuItemIds);
+        for (Long menuItemId : menuItemIds) {
+            MenuItem menuItem = menuItemRepository.findByRestaurantIdAndId(restaurantId, menuItemId)
+                .orElse(null);
+            if (menuItem == null || !menuItem.isAvailable()) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private void advanceMenuVersion(Restaurant restaurant) {
