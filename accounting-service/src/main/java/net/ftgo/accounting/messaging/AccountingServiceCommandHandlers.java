@@ -6,6 +6,8 @@ import io.eventuate.tram.messaging.common.Message;
 import io.eventuate.tram.sagas.participant.SagaCommandHandlersBuilder;
 import net.ftgo.accounting.domain.Account;
 import net.ftgo.accounting.domain.Authorization;
+import net.ftgo.accounting.payment.PaymentAuthorizationDecision;
+import net.ftgo.accounting.payment.PaymentAuthorizationGateway;
 import net.ftgo.accounting.repository.AccountRepository;
 import net.ftgo.common.Money;
 import net.ftgo.common.channels.ChannelNames;
@@ -34,13 +36,16 @@ public class AccountingServiceCommandHandlers {
 
     private final AccountRepository accountRepository;
     private final DomainEventPublisher eventPublisher;
+    private final PaymentAuthorizationGateway paymentAuthorizationGateway;
 
     public AccountingServiceCommandHandlers(
         AccountRepository accountRepository,
-        DomainEventPublisher eventPublisher
+        DomainEventPublisher eventPublisher,
+        PaymentAuthorizationGateway paymentAuthorizationGateway
     ) {
         this.accountRepository = accountRepository;
         this.eventPublisher = eventPublisher;
+        this.paymentAuthorizationGateway = paymentAuthorizationGateway;
     }
 
     public CommandHandlers commandHandlers() {
@@ -59,6 +64,17 @@ public class AccountingServiceCommandHandlers {
     public Message handleAuthorizeCard(CommandMessage<AuthorizeCardCommand> message) {
         AuthorizeCardCommand command = message.getCommand();
         try {
+            PaymentAuthorizationDecision decision = paymentAuthorizationGateway.authorize(
+                command.getPaymentToken(),
+                command.getAmount()
+            );
+            if (!decision.approved()) {
+                return withFailure(new CardAuthorizationDenied(
+                    command.getOrderId(),
+                    decision.reason()
+                ));
+            }
+
             Account account = accountRepository.findByConsumerId(command.getConsumerId())
                 .orElseGet(() -> accountRepository.save(new Account(command.getConsumerId())));
 
