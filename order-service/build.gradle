@@ -1,3 +1,4 @@
 dependencies {
     testImplementation testFixtures(project(':common'))
+    testImplementation project(':restaurant-service')
 }
