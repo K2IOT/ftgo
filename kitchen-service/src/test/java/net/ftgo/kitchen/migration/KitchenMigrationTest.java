@@ -18,6 +18,10 @@ class KitchenMigrationTest {
                             jdbc,
                             "tickets",
                             "previous_state")).isTrue();
+                    assertThat(columnDataTypeInCurrentDatabase(
+                            jdbc,
+                            "tickets",
+                            "previous_state")).isEqualTo("enum");
                     assertThat(tableExistsInCurrentDatabase(
                             jdbc,
                             "ticket_pending_line_items")).isTrue();
@@ -56,5 +60,17 @@ class KitchenMigrationTest {
                 table,
                 column);
         return count != null && count == 1;
+    }
+
+    private static String columnDataTypeInCurrentDatabase(
+            JdbcTemplate jdbc,
+            String table,
+            String column) {
+        return jdbc.queryForObject(
+                "select data_type from information_schema.columns " +
+                        "where table_schema = database() and table_name = ? and column_name = ?",
+                String.class,
+                table,
+                column);
     }
 }
