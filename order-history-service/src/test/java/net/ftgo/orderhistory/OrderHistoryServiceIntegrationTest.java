@@ -1,5 +1,8 @@
 package net.ftgo.orderhistory;
 
+import net.ftgo.common.Money;
+import net.ftgo.common.orderflow.events.OrderApproved;
+import net.ftgo.common.orderflow.events.OrderCreated;
 import net.ftgo.orderhistory.domain.OrderHistoryRecord;
 import net.ftgo.orderhistory.domain.ProcessedMessage;
 import net.ftgo.orderhistory.messaging.*;
@@ -37,7 +40,8 @@ class OrderHistoryServiceIntegrationTest {
     
     @Container
     static CassandraContainer<?> cassandra = new CassandraContainer<>("cassandra:4.1")
-        .withExposedPorts(9042);
+        .withExposedPorts(9042)
+        .withInitScript("order-history-test-keyspace.cql");
     
     @DynamicPropertySource
     static void cassandraProperties(DynamicPropertyRegistry registry) {
@@ -66,20 +70,20 @@ class OrderHistoryServiceIntegrationTest {
     @Test
     void testCompleteOrderLifecycleEventFlow() throws Exception {
         // Step 1: OrderCreated
-        OrderCreatedEvent orderCreated = new OrderCreatedEvent();
+        OrderCreated orderCreated = new OrderCreated();
         orderCreated.setOrderId(123L);
         orderCreated.setConsumerId(456L);
         orderCreated.setRestaurantId(789L);
         orderCreated.setStatus("APPROVAL_PENDING");
-        orderCreated.setOrderTotal(new BigDecimal("45.99"));
+        orderCreated.setOrderTotal(new Money("45.99"));
         orderCreated.setDeliveryAddress("123 Main St");
         orderCreated.setDeliveryTime(LocalDateTime.now().plusHours(1));
         orderCreated.setCreatedAt(LocalDateTime.now());
         
-        OrderCreatedEvent.OrderLineItemDto lineItem = new OrderCreatedEvent.OrderLineItemDto();
+        OrderCreated.LineItem lineItem = new OrderCreated.LineItem();
         lineItem.setMenuItemId(1L);
         lineItem.setName("Burger");
-        lineItem.setPrice(new BigDecimal("12.99"));
+        lineItem.setPrice(new Money("12.99"));
         lineItem.setQuantity(2);
         orderCreated.setLineItems(Arrays.asList(lineItem));
         
@@ -87,7 +91,7 @@ class OrderHistoryServiceIntegrationTest {
             .findAndRegisterModules()
             .writeValueAsString(orderCreated);
         
-        eventHandlers.handleOrderEvent(payload1, "Order#123", "OrderCreatedEvent");
+        eventHandlers.handleOrderEvent(payload1, "Order#123", "OrderCreated");
         
         // Verify order created
         await().atMost(5, TimeUnit.SECONDS).untilAsserted(() -> {
@@ -109,25 +113,26 @@ class OrderHistoryServiceIntegrationTest {
         
         eventHandlers.handleAccountEvent(payload2, "Account#777", "CardAuthorizedEvent");
         
-        // Verify authorization status updated
-        await().atMost(5, TimeUnit.SECONDS).untilAsserted(() -> {
-            Optional<OrderHistoryRecord> record = orderHistoryRepository.findById("123");
-            assertTrue(record.isPresent());
-            assertEquals("APPROVED", record.get().getAuthorizationStatus());
-        });
+        // CardAuthorized is audit information; the read model derives authorization state
+        // from the final OrderApproved outcome.
+        Optional<OrderHistoryRecord> afterAuthorization = orderHistoryRepository.findById("123");
+        assertTrue(afterAuthorization.isPresent());
+        assertNull(afterAuthorization.get().getAuthorizationStatus());
         
         // Step 3: OrderApproved
-        OrderApprovedEvent orderApproved = new OrderApprovedEvent(123L);
+        OrderApproved orderApproved = new OrderApproved();
+        orderApproved.setOrderId(123L);
         String payload3 = new com.fasterxml.jackson.databind.ObjectMapper()
             .writeValueAsString(orderApproved);
         
-        eventHandlers.handleOrderEvent(payload3, "Order#123", "OrderApprovedEvent");
+        eventHandlers.handleOrderEvent(payload3, "Order#123", "OrderApproved");
         
         // Verify order status updated
         await().atMost(5, TimeUnit.SECONDS).untilAsserted(() -> {
             Optional<OrderHistoryRecord> record = orderHistoryRepository.findById("123");
             assertTrue(record.isPresent());
             assertEquals("APPROVED", record.get().getStatus());
+            assertEquals("APPROVED", record.get().getAuthorizationStatus());
         });
         
         // Step 4: TicketAccepted
@@ -207,8 +212,8 @@ class OrderHistoryServiceIntegrationTest {
         });
         
         // Verify all messages marked as processed
-        assertTrue(processedMessageRepository.existsById("Order#123-OrderCreatedEvent"));
-        assertTrue(processedMessageRepository.existsById("Order#123-OrderApprovedEvent"));
+        assertTrue(processedMessageRepository.existsById("Order#123-OrderCreated"));
+        assertTrue(processedMessageRepository.existsById("Order#123-OrderApproved"));
         assertTrue(processedMessageRepository.existsById("Account#777-CardAuthorizedEvent"));
         assertTrue(processedMessageRepository.existsById("Ticket#999-TicketAcceptedEvent"));
         assertTrue(processedMessageRepository.existsById("Ticket#999-TicketReadyEvent"));
@@ -219,12 +224,12 @@ class OrderHistoryServiceIntegrationTest {
     @Test
     void testIdempotentEventProcessing() throws Exception {
         // Create order
-        OrderCreatedEvent orderCreated = new OrderCreatedEvent();
+        OrderCreated orderCreated = new OrderCreated();
         orderCreated.setOrderId(456L);
         orderCreated.setConsumerId(789L);
         orderCreated.setRestaurantId(111L);
         orderCreated.setStatus("APPROVAL_PENDING");
-        orderCreated.setOrderTotal(new BigDecimal("25.99"));
+        orderCreated.setOrderTotal(new Money("25.99"));
         orderCreated.setDeliveryAddress("456 Oak Ave");
         orderCreated.setDeliveryTime(LocalDateTime.now().plusHours(1));
         orderCreated.setCreatedAt(LocalDateTime.now());
@@ -235,7 +240,7 @@ class OrderHistoryServiceIntegrationTest {
             .writeValueAsString(orderCreated);
         
         // Process event first time
-        eventHandlers.handleOrderEvent(payload, "Order#456", "OrderCreatedEvent");
+        eventHandlers.handleOrderEvent(payload, "Order#456", "OrderCreated");
         
         await().atMost(5, TimeUnit.SECONDS).untilAsserted(() -> {
             Optional<OrderHistoryRecord> record = orderHistoryRepository.findById("456");
@@ -246,7 +251,7 @@ class OrderHistoryServiceIntegrationTest {
         LocalDateTime firstUpdatedAt = firstRecord.getUpdatedAt();
         
         // Process same event second time (duplicate)
-        eventHandlers.handleOrderEvent(payload, "Order#456", "OrderCreatedEvent");
+        eventHandlers.handleOrderEvent(payload, "Order#456", "OrderCreated");
         
         // Wait a bit to ensure no update happens
         Thread.sleep(1000);

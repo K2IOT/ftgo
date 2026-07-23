@@ -16,7 +16,7 @@ import org.testcontainers.utility.DockerImageName;
 public abstract class OrderServiceIntegrationTestBase {
 
     @Container
-    static MySQLContainer<?> mysql = new MySQLContainer<>(DockerImageName.parse("mysql:8.0"))
+    static MySQLContainer<?> mysql = new MySQLContainer<>(DockerImageName.parse("mysql:8.0.36"))
             .withDatabaseName("ftgo_order_test")
             .withUsername("test")
             .withPassword("test")
@@ -34,7 +34,7 @@ public abstract class OrderServiceIntegrationTestBase {
         registry.add("spring.kafka.bootstrap-servers", kafka::getBootstrapServers);
         registry.add("eventuatelocal.kafka.bootstrap.servers", kafka::getBootstrapServers);
         registry.add("eventuate.database.schema", () -> "none");
-        registry.add("spring.sql.init.mode", () -> "always");
-        registry.add("spring.sql.init.schema-locations", () -> "classpath:eventuate-schema-mysql.sql");
+        registry.add("spring.flyway.enabled", () -> true);
+        registry.add("spring.jpa.hibernate.ddl-auto", () -> "validate");
     }
 }

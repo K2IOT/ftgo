@@ -164,7 +164,15 @@ public class Account {
             throw new IllegalArgumentException("New amount must be positive");
         }
         
-        // Find the existing authorization
+        // Check idempotency before inspecting the original authorization state. A retry of a
+        // successful revision sees the original authorization as REVERSED, but must still return
+        // the authorization created by the first request.
+        Authorization existing = findAuthorizationByRequestId(newRequestId);
+        if (existing != null) {
+            return existing;
+        }
+
+        // Find the existing authorization only for a genuinely new revision request.
         Authorization existingAuth = findAuthorizationById(authorizationId);
         if (existingAuth == null) {
             throw new IllegalArgumentException(
@@ -178,12 +186,6 @@ public class Account {
         }
         if (existingAuth.isDenied()) {
             throw new IllegalStateException("Cannot revise a denied authorization");
-        }
-        
-        // Check for idempotency - if new authorization with newRequestId already exists, return it
-        Authorization existing = findAuthorizationByRequestId(newRequestId);
-        if (existing != null) {
-            return existing; // Return cached result
         }
         
         // Reverse the old authorization

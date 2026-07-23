@@ -1,0 +1,87 @@
+name: Phase 01 Fresh Stack Smoke
+
+on:
+  push:
+    branches:
+      - agent/ftgo-phase-01-runtime-foundation
+    paths:
+      - '.github/workflows/phase-01-fresh-stack.yml'
+      - 'gradle/wrapper/**'
+      - 'gradlew'
+      - 'build.gradle'
+      - 'settings.gradle'
+      - 'scripts/smoke/**'
+      - 'scripts/ci/**'
+      - 'deployment/tests/**'
+      - 'deployment/debezium/connectors/**'
+      - 'deployment/configure-debezium.sh'
+      - 'api-gateway/**'
+      - '*-service/**'
+  pull_request:
+    branches:
+      - dev
+    paths:
+      - '.github/workflows/phase-01-fresh-stack.yml'
+      - 'gradle/wrapper/**'
+      - 'gradlew'
+      - 'build.gradle'
+      - 'settings.gradle'
+      - 'scripts/smoke/**'
+      - 'scripts/ci/**'
+      - 'deployment/tests/**'
+      - 'deployment/debezium/connectors/**'
+      - 'deployment/configure-debezium.sh'
+      - 'api-gateway/**'
+      - '*-service/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: phase-01-fresh-stack-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fresh-stack-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - name: Set up Java 21
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Verify Gradle 8.5 wrapper checksum
+        run: bash scripts/ci/verify-gradle-wrapper.sh
+      - name: Verify fresh-stack contracts
+        run: python3 -m unittest deployment/tests/test_fresh_stack_contract.py
+      - name: Run two clean-volume smoke cycles
+        id: smoke
+        shell: bash
+        run: |
+          set +e
+          chmod +x gradlew scripts/smoke/*.sh deployment/tests/run-debezium-smoke.sh
+          timeout 45m ./scripts/smoke/fresh-stack.sh --runs 2 2>&1 | tee fresh-stack.log
+          status=${PIPESTATUS[0]}
+          echo "status=${status}" >> "$GITHUB_OUTPUT"
+          exit 0
+      - name: Upload fresh-stack diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: phase-01-fresh-stack-diagnostics
+          if-no-files-found: warn
+          path: |
+            fresh-stack.log
+            build/gradle-bootstrap-verification.txt
+            build/fresh-stack-smoke/**
+            deployment/tests/debezium-smoke.log
+            deployment/tests/debezium-smoke-record.txt
+            deployment/tests/debezium-smoke-containers.log
+      - name: Preserve smoke result
+        if: always()
+        shell: bash
+        run: exit '${{ steps.smoke.outputs.status }}'

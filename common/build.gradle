@@ -1,9 +1,17 @@
-// Common module - shared DTOs and value objects
+// Common module - shared DTOs, value objects, and test fixtures
 // This module is a library, not a Spring Boot application
+
+apply plugin: 'java-test-fixtures'
 
 dependencies {
     implementation 'com.fasterxml.jackson.core:jackson-databind'
     implementation 'io.eventuate.tram.core:eventuate-tram-commands'
     implementation 'jakarta.validation:jakarta.validation-api'
     implementation 'jakarta.persistence:jakarta.persistence-api:3.1.0'
+
+    testFixturesImplementation 'org.testcontainers:mysql:1.19.3'
+    testFixturesImplementation 'org.springframework:spring-jdbc'
+    testFixturesImplementation 'org.flywaydb:flyway-core'
+    testFixturesImplementation 'org.flywaydb:flyway-mysql'
+    testFixturesRuntimeOnly 'com.mysql:mysql-connector-j'
 }

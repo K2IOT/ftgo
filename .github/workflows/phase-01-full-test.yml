@@ -1,0 +1,89 @@
+name: Phase 01 Full Gradle Verification
+
+on:
+  push:
+    branches:
+      - agent/ftgo-phase-01-runtime-foundation
+    paths:
+      - '.github/workflows/phase-01-full-test.yml'
+      - 'gradle/wrapper/**'
+      - 'gradlew'
+      - 'build.gradle'
+      - 'settings.gradle'
+      - 'scripts/ci/**'
+      - 'common/**'
+      - 'api-gateway/**'
+      - 'order-service/**'
+      - 'consumer-service/**'
+      - 'restaurant-service/**'
+      - 'kitchen-service/**'
+      - 'accounting-service/**'
+      - 'delivery-service/**'
+      - 'order-history-service/**'
+  pull_request:
+    branches:
+      - dev
+    paths:
+      - '.github/workflows/phase-01-full-test.yml'
+      - 'gradle/wrapper/**'
+      - 'gradlew'
+      - 'build.gradle'
+      - 'settings.gradle'
+      - 'scripts/ci/**'
+      - 'common/**'
+      - 'api-gateway/**'
+      - 'order-service/**'
+      - 'consumer-service/**'
+      - 'restaurant-service/**'
+      - 'kitchen-service/**'
+      - 'accounting-service/**'
+      - 'delivery-service/**'
+      - 'order-history-service/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: phase-01-full-test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  clean-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - name: Set up Java 21
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Verify Gradle 8.5 wrapper checksum
+        run: bash scripts/ci/verify-gradle-wrapper.sh
+      - name: Run full clean test suite with checked-in wrapper
+        id: gradle
+        shell: bash
+        run: |
+          set +e
+          chmod +x gradlew
+          timeout 40m ./gradlew --no-daemon clean test --stacktrace --continue 2>&1 | tee full-test.log
+          status=${PIPESTATUS[0]}
+          echo "status=${status}" >> "$GITHUB_OUTPUT"
+          exit 0
+      - name: Upload full-test diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: phase-01-full-test-diagnostics
+          if-no-files-found: warn
+          path: |
+            full-test.log
+            build/wrapper-verification.txt
+            '**/build/reports/tests/**'
+            '**/build/test-results/**'
+      - name: Preserve Gradle result
+        if: always()
+        shell: bash
+        run: exit '${{ steps.gradle.outputs.status }}'

@@ -19,18 +19,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 class OrderServiceMigrationTest {
 
     @Container
-    static MySQLContainer<?> mysql = new MySQLContainer<>(DockerImageName.parse("mysql:8.0"))
-        .withDatabaseName("ftgo_order")
-        .withUsername("test")
-        .withPassword("test");
+    static MySQLContainer<?> mysql = new MySQLContainer<>(DockerImageName.parse("mysql:8.0.36"))
+            .withDatabaseName("ftgo_order")
+            .withUsername("test")
+            .withPassword("test");
 
     @Test
     void migrationCreatesOrderColumnsNeededBySagaState() throws Exception {
         Flyway.configure()
-            .dataSource(mysql.getJdbcUrl(), mysql.getUsername(), mysql.getPassword())
-            .locations("classpath:db/migration")
-            .load()
-            .migrate();
+                .dataSource(mysql.getJdbcUrl(), mysql.getUsername(), mysql.getPassword())
+                .locations("filesystem:src/main/resources/db/migration")
+                .load()
+                .migrate();
 
         try (Connection connection = DriverManager.getConnection(
                 mysql.getJdbcUrl(), mysql.getUsername(), mysql.getPassword());
@@ -42,7 +42,7 @@ class OrderServiceMigrationTest {
             }
 
             assertThat(columnNames)
-                .contains("ticket_id", "authorization_id");
+                    .contains("ticket_id", "authorization_id");
         }
     }
 }

@@ -1,6 +1,8 @@
 spring:
   application:
     name: kitchen-service
+  autoconfigure:
+    exclude: org.springframework.boot.autoconfigure.kafka.KafkaAutoConfiguration
   datasource:
     url: jdbc:mysql://localhost:3309/ftgo_kitchen?createDatabaseIfNotExist=true
     username: ftgo_user
@@ -19,6 +21,18 @@ spring:
     bootstrap-servers: localhost:9092
     consumer:
       group-id: kitchen-service
+
+eventuate:
+  database:
+    schema: none
+
+eventuatelocal:
+  kafka:
+    bootstrap:
+      servers: ${spring.kafka.bootstrap-servers}
+  cdc:
+    reader:
+      name: MySqlReader
 
 server:
   port: 8084

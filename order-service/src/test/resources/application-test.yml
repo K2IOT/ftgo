@@ -6,38 +6,34 @@ spring:
     password: rootpassword
   jpa:
     hibernate:
-      ddl-auto: create-drop
+      ddl-auto: validate
     properties:
       hibernate:
         dialect: org.hibernate.dialect.MySQLDialect
     show-sql: false
   flyway:
-    enabled: false
-  main:
-    allow-bean-definition-overriding: true
+    enabled: true
+    locations: filesystem:src/main/resources/db/migration
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      group-id: order-service-test
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
 
-# Eventuate Tram configuration for testing
 eventuate:
   database:
-    schema: eventuate
-  local:
-    kafka:
-      bootstrap:
-        servers: ${spring.kafka.bootstrap-servers:localhost:9092}
+    schema: none
 
-# Kafka configuration (overridden by Testcontainers in integration tests)
-spring.kafka:
-  bootstrap-servers: localhost:9092
-  consumer:
-    group-id: order-service-test
-    auto-offset-reset: earliest
-    key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-    value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-  producer:
-    key-serializer: org.apache.kafka.common.serialization.StringSerializer
-    value-serializer: org.apache.kafka.common.serialization.StringSerializer
+eventuatelocal:
+  kafka:
+    bootstrap:
+      servers: ${spring.kafka.bootstrap-servers:localhost:9092}
 
-# Logging configuration
 logging:
   level:
     root: INFO
@@ -48,7 +44,6 @@ logging:
     org.springframework.kafka: INFO
     org.apache.kafka: WARN
 
-# Disable actuator endpoints in tests
 management:
   endpoints:
     enabled-by-default: false

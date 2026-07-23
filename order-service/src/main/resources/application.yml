@@ -1,6 +1,8 @@
 spring:
   application:
     name: order-service
+  autoconfigure:
+    exclude: org.springframework.boot.autoconfigure.kafka.KafkaAutoConfiguration
   datasource:
     url: jdbc:mysql://localhost:3306/ftgo_order?createDatabaseIfNotExist=true
     username: ftgo_user
@@ -31,7 +33,10 @@ spring:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.apache.kafka.common.serialization.StringSerializer
 
-# Eventuate Tram configuration for saga orchestration
+eventuate:
+  database:
+    schema: none
+
 eventuatelocal:
   kafka:
     bootstrap:
