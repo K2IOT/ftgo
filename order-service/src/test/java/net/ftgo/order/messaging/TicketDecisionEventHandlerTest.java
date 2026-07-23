@@ -29,6 +29,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -79,7 +80,7 @@ class TicketDecisionEventHandlerTest {
 
         assertThat(order.getState()).isEqualTo(OrderState.CONFIRMATION_PENDING);
         ArgumentCaptor<ConfirmOrderSagaData> data = ArgumentCaptor.forClass(ConfirmOrderSagaData.class);
-        verify(sagaInstanceFactory, times(1)).create(confirmOrderSaga, data.capture());
+        verify(sagaInstanceFactory, times(1)).create(eq(confirmOrderSaga), data.capture());
         assertThat(data.getValue().getOrderId()).isEqualTo(101L);
         assertThat(data.getValue().getConsumerId()).isEqualTo(301L);
         assertThat(data.getValue().getAuthorizationId()).isEqualTo(501L);
@@ -101,7 +102,7 @@ class TicketDecisionEventHandlerTest {
 
         assertThat(order.getState()).isEqualTo(OrderState.REJECTION_PENDING);
         ArgumentCaptor<RejectOrderSagaData> data = ArgumentCaptor.forClass(RejectOrderSagaData.class);
-        verify(sagaInstanceFactory, times(1)).create(rejectOrderSaga, data.capture());
+        verify(sagaInstanceFactory, times(1)).create(eq(rejectOrderSaga), data.capture());
         assertThat(data.getValue().getFailureCode()).isEqualTo("CAPACITY");
         assertThat(data.getValue().getAuthorizationId()).isEqualTo(501L);
         assertThat(data.getValue().getCreditReservationId()).isEqualTo(601L);
@@ -126,7 +127,7 @@ class TicketDecisionEventHandlerTest {
 
         assertThat(order.getState()).isEqualTo(OrderState.CONFIRMATION_PENDING);
         verify(sagaInstanceFactory, never()).create(
-            org.mockito.ArgumentMatchers.eq(rejectOrderSaga),
+            eq(rejectOrderSaga),
             org.mockito.ArgumentMatchers.any(RejectOrderSagaData.class)
         );
     }
