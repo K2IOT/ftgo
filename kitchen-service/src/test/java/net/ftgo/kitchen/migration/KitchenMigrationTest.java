@@ -21,6 +21,10 @@ class KitchenMigrationTest {
                     assertThat(columnDataTypeInCurrentDatabase(
                             jdbc,
                             "tickets",
+                            "state")).isEqualTo("enum");
+                    assertThat(columnDataTypeInCurrentDatabase(
+                            jdbc,
+                            "tickets",
                             "previous_state")).isEqualTo("enum");
                     assertThat(tableExistsInCurrentDatabase(
                             jdbc,
