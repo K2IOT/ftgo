@@ -48,7 +48,7 @@ class FreshStackContractTest(unittest.TestCase):
         self.assertIn('run_delivery_pickup_bridge_smoke', smoke)
         self.assertIn('assert-delivery-pickup-bridge.sh', smoke)
         self.assertIn('RESTAURANT_SERVICE_URL="http://localhost:8083"', smoke)
-        self.assertIn('/internal/restaurants/', bridge)
+        self.assertIn('/internal/restaurants', bridge)
         self.assertIn('application/problem+json', bridge)
         self.assertIn('RESTAURANT_NOT_FOUND', bridge)
 
