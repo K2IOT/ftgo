@@ -6,25 +6,36 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.KafkaContainer;
 import org.testcontainers.containers.MySQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
+/**
+ * Shared infrastructure for Order Service saga integration tests.
+ *
+ * <p>The containers are JVM singletons rather than JUnit-managed @Container
+ * fields. Spring caches the application context across subclasses, while the
+ * JUnit Testcontainers extension stops inherited static containers after each
+ * test class. That combination leaves cached Eventuate consumers connected to
+ * a broker that has already been stopped. Starting the containers once keeps
+ * the cached context and its broker/database endpoints valid for the complete
+ * module test run.</p>
+ */
 @SpringBootTest
-@Testcontainers
 @ActiveProfiles("test")
 public abstract class OrderServiceIntegrationTestBase {
 
-    @Container
-    static MySQLContainer<?> mysql = new MySQLContainer<>(DockerImageName.parse("mysql:8.0.36"))
+    static final MySQLContainer<?> mysql =
+        new MySQLContainer<>(DockerImageName.parse("mysql:8.0.36"))
             .withDatabaseName("ftgo_order_test")
             .withUsername("test")
-            .withPassword("test")
-            .withReuse(true);
+            .withPassword("test");
 
-    @Container
-    static KafkaContainer kafka = new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.5.0"))
-            .withReuse(true);
+    static final KafkaContainer kafka =
+        new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.5.0"));
+
+    static {
+        mysql.start();
+        kafka.start();
+    }
 
     @DynamicPropertySource
     static void configureProperties(DynamicPropertyRegistry registry) {
