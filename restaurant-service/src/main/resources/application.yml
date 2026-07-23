@@ -1,6 +1,8 @@
 spring:
   application:
     name: restaurant-service
+  autoconfigure:
+    exclude: org.springframework.boot.autoconfigure.kafka.KafkaAutoConfiguration
   datasource:
     url: jdbc:mysql://localhost:3308/ftgo_restaurant?createDatabaseIfNotExist=true
     username: ftgo_user
@@ -13,12 +15,27 @@ spring:
   jpa:
     hibernate:
       ddl-auto: validate
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQLDialect
   flyway:
     enabled: true
   kafka:
     bootstrap-servers: localhost:9092
     consumer:
       group-id: restaurant-service
+
+eventuate:
+  database:
+    schema: none
+
+eventuatelocal:
+  kafka:
+    bootstrap:
+      servers: ${spring.kafka.bootstrap-servers}
+  cdc:
+    reader:
+      name: MySqlReader
 
 server:
   port: 8083

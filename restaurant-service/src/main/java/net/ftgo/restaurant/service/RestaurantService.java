@@ -1,5 +1,6 @@
 package net.ftgo.restaurant.service;
 
+import net.ftgo.common.Money;
 import net.ftgo.restaurant.domain.MenuItem;
 import net.ftgo.restaurant.domain.Restaurant;
 import net.ftgo.restaurant.domain.RestaurantMenuChanged;
@@ -14,9 +15,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.stream.Collectors;
 
-/**
- * Service for managing restaurants and menu items.
- */
 @Service
 public class RestaurantService {
 
@@ -36,69 +34,52 @@ public class RestaurantService {
 
     @Transactional
     public Restaurant createRestaurant(Restaurant restaurant) {
-        logger.info("Creating restaurant: {}", restaurant.getName());
-        Restaurant saved = restaurantRepository.save(restaurant);
-        logger.info("Created restaurant with ID: {}", saved.getId());
-        return saved;
+        return restaurantRepository.save(restaurant);
     }
 
     public Restaurant findRestaurant(Long restaurantId) {
         return restaurantRepository.findById(restaurantId)
-                .orElseThrow(() -> new RestaurantNotFoundException(restaurantId));
+            .orElseThrow(() -> new RestaurantNotFoundException(restaurantId));
     }
 
     @Transactional
     public MenuItem createMenuItem(Long restaurantId, MenuItem menuItem) {
         Restaurant restaurant = findRestaurant(restaurantId);
-
-        logger.info("Creating menu item '{}' for restaurant {}", menuItem.getName(), restaurantId);
         MenuItem saved = menuItemRepository.save(menuItem);
-
+        advanceMenuVersion(restaurant);
         publishMenuChangedEvent(restaurantId, restaurant);
-
-        logger.info("Created menu item with ID: {}", saved.getId());
         return saved;
     }
 
     @Transactional
     public MenuItem updateMenuItem(Long restaurantId, Long menuItemId,
                                    String name, String description,
-                                   net.ftgo.common.Money price, Boolean available) {
+                                   Money price, Boolean available) {
         Restaurant restaurant = findRestaurant(restaurantId);
-
         MenuItem menuItem = menuItemRepository.findByRestaurantIdAndId(restaurantId, menuItemId)
-                .orElseThrow(() -> new MenuItemNotFoundException(restaurantId, menuItemId));
-
-        logger.info("Updating menu item {} for restaurant {}", menuItemId, restaurantId);
+            .orElseThrow(() -> new MenuItemNotFoundException(restaurantId, menuItemId));
 
         if (name != null || description != null || price != null) {
             menuItem.updateDetails(name, description, price);
         }
-
         if (available != null) {
             menuItem.setAvailable(available);
         }
 
         MenuItem updated = menuItemRepository.save(menuItem);
+        advanceMenuVersion(restaurant);
         publishMenuChangedEvent(restaurantId, restaurant);
-
-        logger.info("Updated menu item {}", menuItemId);
         return updated;
     }
 
     @Transactional
     public void deleteMenuItem(Long restaurantId, Long menuItemId) {
         Restaurant restaurant = findRestaurant(restaurantId);
-
         MenuItem menuItem = menuItemRepository.findByRestaurantIdAndId(restaurantId, menuItemId)
-                .orElseThrow(() -> new MenuItemNotFoundException(restaurantId, menuItemId));
-
-        logger.info("Deleting menu item {} for restaurant {}", menuItemId, restaurantId);
+            .orElseThrow(() -> new MenuItemNotFoundException(restaurantId, menuItemId));
         menuItemRepository.delete(menuItem);
-
+        advanceMenuVersion(restaurant);
         publishMenuChangedEvent(restaurantId, restaurant);
-
-        logger.info("Deleted menu item {}", menuItemId);
     }
 
     public List<MenuItem> getMenuItems(Long restaurantId) {
@@ -106,49 +87,29 @@ public class RestaurantService {
     }
 
     public boolean validateMenuItems(Long restaurantId, List<Long> menuItemIds) {
-        for (Long menuItemId : menuItemIds) {
-            MenuItem menuItem = menuItemRepository.findByRestaurantIdAndId(restaurantId, menuItemId)
-                    .orElse(null);
-
-            if (menuItem == null) {
-                logger.warn("Menu item {} not found for restaurant {}", menuItemId, restaurantId);
-                return false;
-            }
-
-            if (!menuItem.isAvailable()) {
-                logger.warn("Menu item {} is not available for restaurant {}", menuItemId, restaurantId);
-                return false;
-            }
-        }
-
-        return true;
+        return menuItemRepository.findByRestaurantIdAndIdIn(restaurantId, menuItemIds).stream()
+            .filter(MenuItem::isAvailable)
+            .map(MenuItem::getId)
+            .collect(java.util.stream.Collectors.toSet())
+            .containsAll(menuItemIds);
     }
 
-    /**
-     * Publishes a menu snapshot using the authoritative restaurant ID supplied
-     * by the service boundary. A newly constructed/mock Restaurant can have a
-     * null entity ID before persistence, so the aggregate field must not be used
-     * to select or key the event.
-     */
+    private void advanceMenuVersion(Restaurant restaurant) {
+        restaurant.incrementMenuVersion();
+        restaurantRepository.save(restaurant);
+    }
+
     private void publishMenuChangedEvent(Long restaurantId, Restaurant restaurant) {
-        List<MenuItem> menuItems = menuItemRepository.findByRestaurantId(restaurantId);
+        List<RestaurantMenuChanged.MenuItemInfo> menuItemInfos = menuItemRepository
+            .findByRestaurantId(restaurantId)
+            .stream()
+            .map(item -> new RestaurantMenuChanged.MenuItemInfo(
+                item.getId(), item.getName(), item.getDescription(),
+                item.getPrice().toString(), item.getAvailable()))
+            .collect(Collectors.toList());
 
-        List<RestaurantMenuChanged.MenuItemInfo> menuItemInfos = menuItems.stream()
-                .map(item -> new RestaurantMenuChanged.MenuItemInfo(
-                        item.getId(),
-                        item.getName(),
-                        item.getDescription(),
-                        item.getPrice().toString(),
-                        item.getAvailable()
-                ))
-                .collect(Collectors.toList());
-
-        RestaurantMenuChanged event = new RestaurantMenuChanged(
-                restaurantId,
-                restaurant.getName(),
-                menuItemInfos
-        );
-
-        eventPublisher.publishRestaurantEvent(restaurantId, event);
+        eventPublisher.publishRestaurantEvent(restaurantId, new RestaurantMenuChanged(
+            restaurantId, restaurant.getName(), menuItemInfos));
+        logger.info("Published menu version {} for restaurant {}", restaurant.getMenuVersion(), restaurantId);
     }
 }
