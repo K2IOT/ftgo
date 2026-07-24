@@ -7,6 +7,9 @@ package net.ftgo.common.channels;
 public class ChannelNames {
 
     public static final String ORDER_SERVICE_COMMAND_CHANNEL = "orderService";
+    public static final String CREATE_ORDER_SAGA_COMMAND_CHANNEL = "createOrderSagaCommands";
+    public static final String CANCEL_ORDER_SAGA_COMMAND_CHANNEL = "cancelOrderSagaCommands";
+    public static final String REVISE_ORDER_SAGA_COMMAND_CHANNEL = "reviseOrderSagaCommands";
     public static final String CONSUMER_SERVICE_COMMAND_CHANNEL = "consumerService";
     public static final String RESTAURANT_SERVICE_COMMAND_CHANNEL = "restaurantService";
     public static final String KITCHEN_SERVICE_COMMAND_CHANNEL = "kitchenService";

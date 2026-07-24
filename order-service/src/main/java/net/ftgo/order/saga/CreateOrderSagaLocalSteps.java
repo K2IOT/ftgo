@@ -7,6 +7,7 @@ import io.eventuate.tram.sagas.participant.SagaCommandHandlersBuilder;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import net.ftgo.common.Address;
+import net.ftgo.common.channels.ChannelNames;
 import net.ftgo.common.orderflow.events.OrderApproved;
 import net.ftgo.common.orderflow.events.OrderRejected;
 import net.ftgo.order.domain.Order;
@@ -77,7 +78,7 @@ public class CreateOrderSagaLocalSteps {
 
     public CommandHandlers commandHandlers() {
         return SagaCommandHandlersBuilder
-            .fromChannel("orderService")
+            .fromChannel(ChannelNames.CREATE_ORDER_SAGA_COMMAND_CHANNEL)
             .onMessage(RejectOrderCommand.class, this::rejectOrderTransactionally)
             .onMessage(ApproveOrderCommand.class, this::approveOrderTransactionally)
             .build();

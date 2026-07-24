@@ -72,7 +72,7 @@ public class CreateOrderSaga implements SimpleSaga<CreateOrderSagaData> {
 
     private CommandWithDestination rejectOrder(CreateOrderSagaData data) {
         return send(new CreateOrderSagaLocalSteps.RejectOrderCommand(data.getOrderId()))
-            .to(ChannelNames.ORDER_SERVICE_COMMAND_CHANNEL)
+            .to(ChannelNames.CREATE_ORDER_SAGA_COMMAND_CHANNEL)
             .build();
     }
 

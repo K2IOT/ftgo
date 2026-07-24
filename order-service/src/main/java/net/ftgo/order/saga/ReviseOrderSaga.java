@@ -237,7 +237,7 @@ public class ReviseOrderSaga implements SimpleSaga<ReviseOrderSagaData> {
                 data.getRevisedLineItems(),
                 data.getCurrentAuthorizationId()
             ))
-            .to(ChannelNames.ORDER_SERVICE_COMMAND_CHANNEL)
+            .to(ChannelNames.REVISE_ORDER_SAGA_COMMAND_CHANNEL)
             .build();
     }
 
