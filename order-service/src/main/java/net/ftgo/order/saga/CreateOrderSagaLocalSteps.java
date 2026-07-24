@@ -130,7 +130,7 @@ public class CreateOrderSagaLocalSteps {
         }
 
         order.reject();
-        order = orderRepository.saveAndFlush(order);
+        orderRepository.saveAndFlush(order);
         eventPublisher.publishOrderEvent(
             order.getId(),
             order.getVersion().longValue(),
@@ -162,7 +162,7 @@ public class CreateOrderSagaLocalSteps {
         order.setTicketId(command.getTicketId());
         order.setAuthorizationId(command.getAuthorizationId());
         order.approve();
-        order = orderRepository.saveAndFlush(order);
+        orderRepository.saveAndFlush(order);
         eventPublisher.publishOrderEvent(
             order.getId(),
             order.getVersion().longValue(),
