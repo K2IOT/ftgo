@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -51,9 +52,14 @@ class CreateOrderSagaLocalStepsTest {
     }
 
     @Test
-    void approveOrderPublishesSharedOrderApprovedWithRequestedDeliveryDetails() {
+    void approveOrderPublishesSharedOrderApprovedWithAggregateVersion() {
         LocalDateTime deliveryTime = LocalDateTime.now().plusHours(2);
-        Address deliveryAddress = new Address("456 Consumer Ave", "San Francisco", "CA", "94103");
+        Address deliveryAddress = new Address(
+            "456 Consumer Ave",
+            "San Francisco",
+            "CA",
+            "94103"
+        );
         Order order = new Order(
             202L,
             303L,
@@ -70,8 +76,13 @@ class CreateOrderSagaLocalStepsTest {
         localSteps.approveOrder(approveOrderCommandMessage);
 
         assertEquals(OrderState.APPROVED, order.getState());
+        verify(orderRepository).saveAndFlush(order);
         ArgumentCaptor<OrderApproved> eventCaptor = ArgumentCaptor.forClass(OrderApproved.class);
-        verify(eventPublisher).publishOrderEvent(org.mockito.ArgumentMatchers.eq(101L), eventCaptor.capture());
+        verify(eventPublisher).publishOrderEvent(
+            eq(101L),
+            eq(order.getVersion().longValue()),
+            eventCaptor.capture()
+        );
         OrderApproved event = eventCaptor.getValue();
         assertEquals(101L, event.getOrderId());
         assertEquals(202L, event.getConsumerId());
