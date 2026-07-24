@@ -55,6 +55,52 @@ jobs:
         shell: bash
         run: exit '${{ steps.gradle.outputs.status }}'
 
+  idempotent-command-contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - name: Set up Java 21
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Verify Gradle 8.5 wrapper checksum
+        run: bash scripts/ci/verify-gradle-wrapper.sh
+      - name: Run lost-reply contracts
+        id: gradle
+        shell: bash
+        run: |
+          set +e
+          chmod +x gradlew
+          timeout 10m ./gradlew --no-daemon \
+            :common:test --tests 'net.ftgo.common.messaging.IdempotentCommandExecutorTest' \
+            :kitchen-service:test --tests 'net.ftgo.kitchen.messaging.LostReplyIdempotencyTest' \
+            :accounting-service:test --tests 'net.ftgo.accounting.messaging.LostReplyIdempotencyTest' \
+            --stacktrace --info 2>&1 | tee phase03-idempotent-command-contracts.log
+          status=${PIPESTATUS[0]}
+          echo "status=${status}" >> "$GITHUB_OUTPUT"
+          exit 0
+      - name: Upload idempotency diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: phase03-idempotent-command-contracts-attempt-${{ github.run_attempt }}
+          if-no-files-found: warn
+          path: |
+            phase03-idempotent-command-contracts.log
+            common/build/reports/tests/**
+            common/build/test-results/**
+            kitchen-service/build/reports/tests/**
+            kitchen-service/build/test-results/**
+            accounting-service/build/reports/tests/**
+            accounting-service/build/test-results/**
+      - name: Preserve idempotency result
+        if: always()
+        shell: bash
+        run: exit '${{ steps.gradle.outputs.status }}'
+
   outbox-contracts:
     runs-on: ubuntu-latest
     timeout-minutes: 5
