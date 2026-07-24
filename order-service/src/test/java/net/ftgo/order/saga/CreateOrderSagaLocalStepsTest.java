@@ -67,7 +67,7 @@ class CreateOrderSagaLocalStepsTest {
             new DeliveryInfo(deliveryAddress, deliveryTime),
             new PaymentInfo("tok_test_123")
         );
-        setOrderId(order, 101L);
+        setPersistedIdentity(order, 101L, 0);
         var command = new CreateOrderSagaLocalSteps.ApproveOrderCommand(101L, 404L, 505L);
 
         when(approveOrderCommandMessage.getCommand()).thenReturn(command);
@@ -94,13 +94,16 @@ class CreateOrderSagaLocalStepsTest {
         assertEquals(deliveryTime, event.getDeliveryTime());
     }
 
-    private void setOrderId(Order order, Long orderId) {
+    private void setPersistedIdentity(Order order, Long orderId, Integer version) {
         try {
             var idField = Order.class.getDeclaredField("id");
             idField.setAccessible(true);
             idField.set(order, orderId);
+            var versionField = Order.class.getDeclaredField("version");
+            versionField.setAccessible(true);
+            versionField.set(order, version);
         } catch (Exception e) {
-            throw new RuntimeException("Failed to set order ID", e);
+            throw new RuntimeException("Failed to set persisted Order identity", e);
         }
     }
 }
