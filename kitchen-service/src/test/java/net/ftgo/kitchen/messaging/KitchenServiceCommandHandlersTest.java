@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.eventuate.tram.commands.common.ReplyMessageHeaders;
 import io.eventuate.tram.commands.consumer.CommandMessage;
 import io.eventuate.tram.messaging.common.Message;
+import net.ftgo.common.messaging.IdempotentCommandExecutor;
 import net.ftgo.common.orderflow.commands.ApproveTicketCommand;
 import net.ftgo.common.orderflow.commands.BeginCancelTicketCommand;
 import net.ftgo.common.orderflow.commands.BeginReviseTicketCommand;
@@ -19,6 +20,7 @@ import net.ftgo.kitchen.domain.Ticket;
 import net.ftgo.kitchen.domain.TicketLineItem;
 import net.ftgo.kitchen.domain.TicketState;
 import net.ftgo.kitchen.repository.TicketRepository;
+import net.ftgo.testsupport.InMemoryProcessedCommandStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -29,6 +31,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -37,6 +40,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -58,7 +62,11 @@ class KitchenServiceCommandHandlersTest {
 
     @BeforeEach
     void setUp() {
-        handlers = new KitchenServiceCommandHandlers(ticketRepository, eventPublisher);
+        handlers = new KitchenServiceCommandHandlers(
+            ticketRepository,
+            eventPublisher,
+            new IdempotentCommandExecutor(new InMemoryProcessedCommandStore())
+        );
     }
 
     @Test
@@ -129,6 +137,7 @@ class KitchenServiceCommandHandlersTest {
         Ticket ticket = mock(Ticket.class);
         when(ticket.getId()).thenReturn(TICKET_ID);
         when(ticket.getOrderId()).thenReturn(ORDER_ID);
+        when(ticket.getVersion()).thenReturn(7L);
         when(ticket.getState())
             .thenReturn(TicketState.CREATE_PENDING)
             .thenReturn(TicketState.CANCEL_PENDING);
@@ -139,8 +148,10 @@ class KitchenServiceCommandHandlersTest {
 
         verify(ticket).cancel();
         verify(ticket).confirmCancel();
-        verify(eventPublisher, org.mockito.Mockito.times(2)).publishTicketEvent(
+        verify(ticketRepository, times(2)).saveAndFlush(ticket);
+        verify(eventPublisher, times(2)).publishTicketEvent(
             eq(TICKET_ID),
+            eq(7L),
             any(TicketCancelledEvent.class)
         );
     }
@@ -216,6 +227,7 @@ class KitchenServiceCommandHandlersTest {
     @SuppressWarnings("unchecked")
     private <T> CommandMessage<T> message(T command) {
         CommandMessage<T> message = mock(CommandMessage.class);
+        when(message.getMessageId()).thenReturn(UUID.randomUUID().toString());
         when(message.getCommand()).thenReturn(command);
         return message;
     }
