@@ -3,19 +3,22 @@ package net.ftgo.common.orderflow.replies;
 public class CardAuthorized {
 
     private Long authorizationId;
+    private Long orderId;
 
     public CardAuthorized() {
     }
 
     public CardAuthorized(Long authorizationId) {
-        this.authorizationId = authorizationId;
+        this(authorizationId, null);
     }
 
-    public Long getAuthorizationId() {
-        return authorizationId;
+    public CardAuthorized(Long authorizationId, Long orderId) {
+        this.authorizationId = authorizationId;
+        this.orderId = orderId;
     }
 
-    public void setAuthorizationId(Long authorizationId) {
-        this.authorizationId = authorizationId;
-    }
+    public Long getAuthorizationId() { return authorizationId; }
+    public void setAuthorizationId(Long authorizationId) { this.authorizationId = authorizationId; }
+    public Long getOrderId() { return orderId; }
+    public void setOrderId(Long orderId) { this.orderId = orderId; }
 }

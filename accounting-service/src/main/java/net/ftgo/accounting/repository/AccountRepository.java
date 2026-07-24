@@ -3,38 +3,24 @@ package net.ftgo.accounting.repository;
 import net.ftgo.accounting.domain.Account;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.Optional;
 
-/**
- * Repository for Account aggregate persistence.
- */
 @Repository
 public interface AccountRepository extends JpaRepository<Account, Long> {
 
-    /**
-     * Loads the complete Account aggregate so authorization operations can be
-     * performed safely after the repository method returns.
-     */
     @Override
     @EntityGraph(attributePaths = "authorizations")
     Optional<Account> findById(Long id);
 
-    /**
-     * Finds an account by consumer ID with its authorization history loaded.
-     *
-     * @param consumerId the consumer ID to search for
-     * @return an Optional containing the account if found, empty otherwise
-     */
     @EntityGraph(attributePaths = "authorizations")
     Optional<Account> findByConsumerId(Long consumerId);
 
-    /**
-     * Checks if an account exists for the given consumer ID.
-     *
-     * @param consumerId the consumer ID to check
-     * @return true if an account exists for the consumer, false otherwise
-     */
+    @Query("select distinct a from Account a join fetch a.authorizations auth where auth.id = :authorizationId")
+    Optional<Account> findByAuthorizationId(@Param("authorizationId") Long authorizationId);
+
     boolean existsByConsumerId(Long consumerId);
 }

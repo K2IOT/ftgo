@@ -7,152 +7,178 @@ import io.eventuate.tram.sagas.participant.SagaCommandHandlersBuilder;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import net.ftgo.common.Address;
+import net.ftgo.common.channels.ChannelNames;
 import net.ftgo.common.orderflow.events.OrderApproved;
 import net.ftgo.common.orderflow.events.OrderRejected;
 import net.ftgo.order.domain.Order;
+import net.ftgo.order.domain.OrderState;
 import net.ftgo.order.messaging.DomainEventPublisher;
 import net.ftgo.order.repository.OrderRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Component;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
+
+import java.util.Objects;
+import java.util.function.Supplier;
 
 import static io.eventuate.tram.commands.consumer.CommandHandlerReplyBuilder.withSuccess;
 
 /**
- * Local saga participant for CreateOrderSaga.
- * 
- * Handles local steps that operate on the Order aggregate:
- * - rejectOrder: Compensation for createOrder step
- * - approveOrder: Final step to approve the order
- * 
- * These steps are executed locally within the Order Service and don't
- * involve remote service calls.
- * 
- * Responsibilities:
- * - Update Order aggregate state
- * - Publish domain events via transactional outbox
- * - Increment metrics counters
- * - Log saga failures
+ * Local aggregate transitions used by CreateOrderSaga.
+ *
+ * <p>The class is registered explicitly by CreateOrderSagaConfiguration to
+ * avoid duplicate component and configuration beans.</p>
  */
-@Component
 public class CreateOrderSagaLocalSteps {
-    
+
     private static final Logger logger = LoggerFactory.getLogger(CreateOrderSagaLocalSteps.class);
-    
+
     private final OrderRepository orderRepository;
     private final DomainEventPublisher eventPublisher;
     private final Counter ordersApprovedCounter;
     private final Counter ordersRejectedCounter;
     private final Counter sagaFailuresCounter;
-    
-    public CreateOrderSagaLocalSteps(OrderRepository orderRepository,
-                                    DomainEventPublisher eventPublisher,
-                                    MeterRegistry meterRegistry) {
+    private final TransactionTemplate transactionTemplate;
+
+    /**
+     * Constructor retained for focused unit tests that use mocked repositories.
+     */
+    public CreateOrderSagaLocalSteps(
+        OrderRepository orderRepository,
+        DomainEventPublisher eventPublisher,
+        MeterRegistry meterRegistry
+    ) {
+        this(orderRepository, eventPublisher, meterRegistry, null);
+    }
+
+    public CreateOrderSagaLocalSteps(
+        OrderRepository orderRepository,
+        DomainEventPublisher eventPublisher,
+        MeterRegistry meterRegistry,
+        PlatformTransactionManager transactionManager
+    ) {
         this.orderRepository = orderRepository;
         this.eventPublisher = eventPublisher;
-        
-        // Initialize metrics counters
         this.ordersApprovedCounter = Counter.builder("order_service_approved_orders_total")
             .description("Total number of approved orders")
             .register(meterRegistry);
-        
         this.ordersRejectedCounter = Counter.builder("order_service_rejected_orders_total")
             .description("Total number of rejected orders")
             .register(meterRegistry);
-        
         this.sagaFailuresCounter = Counter.builder("order_service_saga_failures_total")
             .description("Total number of saga failures")
             .tag("saga", "CreateOrderSaga")
             .register(meterRegistry);
+        this.transactionTemplate = transactionManager == null
+            ? null
+            : new TransactionTemplate(transactionManager);
     }
-    
-    /**
-     * Defines command handlers for local saga steps.
-     * 
-     * @return command handlers for Order Service channel
-     */
+
     public CommandHandlers commandHandlers() {
         return SagaCommandHandlersBuilder
-            .fromChannel("orderService")
-            .onMessage(RejectOrderCommand.class, this::rejectOrder)
-            .onMessage(ApproveOrderCommand.class, this::approveOrder)
+            .fromChannel(ChannelNames.CREATE_ORDER_SAGA_COMMAND_CHANNEL)
+            .onMessage(RejectOrderCommand.class, this::rejectOrderTransactionally)
+            .onMessage(ApproveOrderCommand.class, this::approveOrderTransactionally)
             .build();
     }
-    
+
+    private Message rejectOrderTransactionally(CommandMessage<RejectOrderCommand> message) {
+        return executeInTransaction(() -> rejectOrder(message));
+    }
+
+    private Message approveOrderTransactionally(CommandMessage<ApproveOrderCommand> message) {
+        return executeInTransaction(() -> approveOrder(message));
+    }
+
+    private Message executeInTransaction(Supplier<Message> operation) {
+        if (transactionTemplate == null) {
+            return operation.get();
+        }
+        return Objects.requireNonNull(
+            transactionTemplate.execute(status -> operation.get()),
+            "Create saga local command handler returned no reply"
+        );
+    }
+
     /**
-     * Rejects an order (compensation for createOrder step).
-     * Transitions order from APPROVAL_PENDING to REJECTED state.
-     * 
-     * This method is called when CreateOrderSaga fails before the pivot point.
-     * It publishes an OrderRejected event and increments metrics counters.
-     * 
-     * @param cm the command message
-     * @return success reply
+     * Final successful CreateOrderSaga transition. Approval is intentionally
+     * deferred until a TicketAcceptedEvent starts ConfirmOrderSaga.
      */
     @Transactional
-    public Message rejectOrder(CommandMessage<RejectOrderCommand> cm) {
-        RejectOrderCommand command = cm.getCommand();
-        Long orderId = command.getOrderId();
-        
-        logger.warn("Rejecting order due to saga failure: orderId={}", orderId);
-        
-        Order order = orderRepository.findById(orderId)
+    public boolean awaitRestaurantAcceptance(CreateOrderSagaData data) {
+        Order order = orderRepository.findByIdWithLock(data.getOrderId())
+            .orElseThrow(() -> new IllegalArgumentException(
+                "Order not found: " + data.getOrderId()
+            ));
+
+        boolean changed = order.awaitRestaurantAcceptance(
+            data.getTicketId(),
+            data.getAuthorizationId(),
+            data.getCreditReservationId(),
+            data.getAcceptanceDeadline()
+        );
+        if (changed) {
+            orderRepository.save(order);
+        }
+        return changed;
+    }
+
+    /**
+     * CreateOrderSaga compensation. Duplicate compensation is a successful
+     * no-op and does not publish another rejection event.
+     */
+    @Transactional
+    public Message rejectOrder(CommandMessage<RejectOrderCommand> message) {
+        Long orderId = message.getCommand().getOrderId();
+        Order order = orderRepository.findByIdWithLock(orderId)
             .orElseThrow(() -> new IllegalArgumentException("Order not found: " + orderId));
-        
-        // Transition to REJECTED state
+
+        if (order.getState() == OrderState.REJECTED) {
+            return withSuccess();
+        }
+        if (order.getState() != OrderState.APPROVAL_PENDING) {
+            throw new IllegalStateException(
+                "Cannot compensate create order in state " + order.getState()
+            );
+        }
+
         order.reject();
         orderRepository.save(order);
-        
-        // Publish OrderRejected event via transactional outbox
-        OrderRejected event = new OrderRejected(
+        eventPublisher.publishOrderEvent(order.getId(), new OrderRejected(
             order.getId(),
             order.getConsumerId(),
             order.getRestaurantId(),
-            "Saga failed before pivot point"
-        );
-        eventPublisher.publishOrderEvent(order.getId(), event);
-        
-        // Increment metrics counters
+            "CREATE_ORDER_COMPENSATION:Order preparation failed"
+        ));
         ordersRejectedCounter.increment();
         sagaFailuresCounter.increment();
-        
-        logger.warn("Order rejected: orderId={}, state={}", orderId, order.getState());
-        
+        logger.warn("CreateOrderSaga compensated order {}", orderId);
         return withSuccess();
     }
-    
+
     /**
-     * Approves an order (final saga step).
-     * Transitions order from APPROVAL_PENDING to APPROVED state.
-     * 
-     * This method is called when CreateOrderSaga completes successfully.
-     * It publishes an OrderApproved event and increments metrics counters.
-     * 
-     * @param cm the command message
-     * @return success reply
+     * Legacy Phase 01 endpoint retained during rolling deployment. The new
+     * CreateOrderSaga never invokes this command.
      */
     @Transactional
-    public Message approveOrder(CommandMessage<ApproveOrderCommand> cm) {
-        ApproveOrderCommand command = cm.getCommand();
-        Long orderId = command.getOrderId();
-        
-        logger.info("Approving order after successful saga: orderId={}", orderId);
-        
-        Order order = orderRepository.findById(orderId)
-            .orElseThrow(() -> new IllegalArgumentException("Order not found: " + orderId));
-        
-        // Store saga-created resource IDs on the Order entity
-        // These are needed later by Cancel/Revise sagas
+    public Message approveOrder(CommandMessage<ApproveOrderCommand> message) {
+        ApproveOrderCommand command = message.getCommand();
+        Order order = orderRepository.findByIdWithLock(command.getOrderId())
+            .orElseThrow(() -> new IllegalArgumentException(
+                "Order not found: " + command.getOrderId()
+            ));
+
+        if (order.getState() == OrderState.APPROVED) {
+            return withSuccess();
+        }
+
         order.setTicketId(command.getTicketId());
         order.setAuthorizationId(command.getAuthorizationId());
-        
-        // Transition to APPROVED state
         order.approve();
         orderRepository.save(order);
-        
-        // Publish OrderApproved event via transactional outbox
-        OrderApproved event = new OrderApproved(
+        eventPublisher.publishOrderEvent(order.getId(), new OrderApproved(
             order.getId(),
             order.getConsumerId(),
             order.getRestaurantId(),
@@ -161,15 +187,8 @@ public class CreateOrderSagaLocalSteps {
             command.getAuthorizationId(),
             toAddress(order.getDeliveryInfo().getDeliveryAddress()),
             order.getDeliveryInfo().getDeliveryTime()
-        );
-        eventPublisher.publishOrderEvent(order.getId(), event);
-        
-        // Increment metrics counter
+        ));
         ordersApprovedCounter.increment();
-        
-        logger.info("Order approved: orderId={}, state={}, ticketId={}, authorizationId={}",
-            orderId, order.getState(), command.getTicketId(), command.getAuthorizationId());
-        
         return withSuccess();
     }
 
@@ -183,70 +202,67 @@ public class CreateOrderSagaLocalSteps {
         if (stateZip.length != 2) {
             return new Address(deliveryAddress, "Unknown", "NA", "00000");
         }
-
-        return new Address(streetCityStateZip[0], streetCityStateZip[1], stateZip[0], stateZip[1]);
+        return new Address(
+            streetCityStateZip[0],
+            streetCityStateZip[1],
+            stateZip[0],
+            stateZip[1]
+        );
     }
-    
-    /**
-     * Command to reject an order (local compensation).
-     */
+
     public static class RejectOrderCommand implements io.eventuate.tram.commands.common.Command {
         private Long orderId;
-        
+
         public RejectOrderCommand() {
         }
-        
+
         public RejectOrderCommand(Long orderId) {
             this.orderId = orderId;
         }
-        
+
         public Long getOrderId() {
             return orderId;
         }
-        
+
         public void setOrderId(Long orderId) {
             this.orderId = orderId;
         }
     }
-    
-    /**
-     * Command to approve an order (local step).
-     * Carries ticketId and authorizationId from saga data to be stored on the Order entity.
-     */
+
     public static class ApproveOrderCommand implements io.eventuate.tram.commands.common.Command {
         private Long orderId;
         private Long ticketId;
         private Long authorizationId;
-        
+
         public ApproveOrderCommand() {
         }
-        
+
         public ApproveOrderCommand(Long orderId, Long ticketId, Long authorizationId) {
             this.orderId = orderId;
             this.ticketId = ticketId;
             this.authorizationId = authorizationId;
         }
-        
+
         public Long getOrderId() {
             return orderId;
         }
-        
+
         public void setOrderId(Long orderId) {
             this.orderId = orderId;
         }
-        
+
         public Long getTicketId() {
             return ticketId;
         }
-        
+
         public void setTicketId(Long ticketId) {
             this.ticketId = ticketId;
         }
-        
+
         public Long getAuthorizationId() {
             return authorizationId;
         }
-        
+
         public void setAuthorizationId(Long authorizationId) {
             this.authorizationId = authorizationId;
         }

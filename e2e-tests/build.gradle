@@ -1,0 +1,9 @@
+description = 'Real-process verification for the Phase 02 core order flow'
+
+bootJar {
+    enabled = false
+}
+
+jar {
+    enabled = true
+}

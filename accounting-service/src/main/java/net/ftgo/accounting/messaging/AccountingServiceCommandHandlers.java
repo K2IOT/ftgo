@@ -6,15 +6,24 @@ import io.eventuate.tram.messaging.common.Message;
 import io.eventuate.tram.sagas.participant.SagaCommandHandlersBuilder;
 import net.ftgo.accounting.domain.Account;
 import net.ftgo.accounting.domain.Authorization;
+import net.ftgo.accounting.payment.PaymentAuthorizationDecision;
+import net.ftgo.accounting.payment.PaymentAuthorizationGateway;
 import net.ftgo.accounting.repository.AccountRepository;
 import net.ftgo.common.Money;
+import net.ftgo.common.channels.ChannelNames;
 import net.ftgo.common.orderflow.commands.AuthorizeCardCommand;
+import net.ftgo.common.orderflow.commands.CaptureAuthorizationCommand;
+import net.ftgo.common.orderflow.commands.RefundPaymentCommand;
 import net.ftgo.common.orderflow.commands.ReverseAuthorizationCommand;
 import net.ftgo.common.orderflow.commands.ReviseAuthorizationCommand;
+import net.ftgo.common.orderflow.commands.VoidAuthorizationCommand;
 import net.ftgo.common.orderflow.replies.AuthorizationRevised;
+import net.ftgo.common.orderflow.replies.AuthorizationVoided;
+import net.ftgo.common.orderflow.replies.CardAuthorizationDenied;
 import net.ftgo.common.orderflow.replies.CardAuthorized;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import net.ftgo.common.orderflow.replies.PaymentCaptured;
+import net.ftgo.common.orderflow.replies.PaymentRefunded;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,207 +32,253 @@ import java.time.LocalDateTime;
 import static io.eventuate.tram.commands.consumer.CommandHandlerReplyBuilder.withFailure;
 import static io.eventuate.tram.commands.consumer.CommandHandlerReplyBuilder.withSuccess;
 
-/**
- * Command handlers for Accounting Service saga participation.
- * 
- * Handles commands from sagas:
- * - AuthorizeCardCommand: Authorizes credit card with idempotency (CreateOrderSaga pivot point)
- * - ReverseAuthorizationCommand: Reverses authorization (CancelOrderSaga pivot point)
- * - ReviseAuthorizationCommand: Revises authorization to new amount (ReviseOrderSaga pivot point)
- * 
- * All authorization attempts are recorded with timestamp, amount, and outcome for audit purposes.
- */
 @Component
 public class AccountingServiceCommandHandlers {
-    
-    private static final Logger logger = LoggerFactory.getLogger(AccountingServiceCommandHandlers.class);
-    
+
     private final AccountRepository accountRepository;
     private final DomainEventPublisher eventPublisher;
-    
-    public AccountingServiceCommandHandlers(AccountRepository accountRepository,
-                                           DomainEventPublisher eventPublisher) {
+    private final PaymentAuthorizationGateway paymentAuthorizationGateway;
+
+    /**
+     * Source-compatible constructor for legacy tests and rolling-upgrade
+     * integrations that predate the payment-provider boundary.
+     */
+    public AccountingServiceCommandHandlers(
+        AccountRepository accountRepository,
+        DomainEventPublisher eventPublisher
+    ) {
+        this(accountRepository, eventPublisher, (paymentToken, amount) ->
+            PaymentAuthorizationDecision.allow());
+    }
+
+    @Autowired
+    public AccountingServiceCommandHandlers(
+        AccountRepository accountRepository,
+        DomainEventPublisher eventPublisher,
+        PaymentAuthorizationGateway paymentAuthorizationGateway
+    ) {
         this.accountRepository = accountRepository;
         this.eventPublisher = eventPublisher;
+        this.paymentAuthorizationGateway = paymentAuthorizationGateway;
     }
-    
-    /**
-     * Builds command handlers for Accounting Service.
-     * 
-     * @return CommandHandlers configured for accountingService channel
-     */
+
     public CommandHandlers commandHandlers() {
         return SagaCommandHandlersBuilder
-                .fromChannel("accountingService")
-                .onMessage(AuthorizeCardCommand.class, this::handleAuthorizeCard)
-                .onMessage(ReverseAuthorizationCommand.class, this::handleReverseAuthorization)
-                .onMessage(ReviseAuthorizationCommand.class, this::handleReviseAuthorization)
-                .build();
+            .fromChannel(ChannelNames.ACCOUNTING_SERVICE_COMMAND_CHANNEL)
+            .onMessage(AuthorizeCardCommand.class, this::handleAuthorizeCard)
+            .onMessage(CaptureAuthorizationCommand.class, this::handleCaptureAuthorization)
+            .onMessage(VoidAuthorizationCommand.class, this::handleVoidAuthorization)
+            .onMessage(RefundPaymentCommand.class, this::handleRefundPayment)
+            .onMessage(ReverseAuthorizationCommand.class, this::handleReverseAuthorization)
+            .onMessage(ReviseAuthorizationCommand.class, this::handleReviseAuthorization)
+            .build();
     }
-    
-    /**
-     * Handles AuthorizeCardCommand from CreateOrderSaga.
-     * 
-     * Authorizes credit card with idempotency check using requestId.
-     * Duplicate requests with same requestId return cached result without creating new authorization.
-     * 
-     * Records authorization attempt with timestamp, amount, and outcome for audit.
-     * 
-     * @param cm the command message
-     * @return success reply with CardAuthorized or failure reply with error message
-     */
+
     @Transactional
-    public Message handleAuthorizeCard(CommandMessage<AuthorizeCardCommand> cm) {
-        AuthorizeCardCommand command = cm.getCommand();
-        
-        logger.info("Authorizing card for consumer {} with requestId {} and amount {}", 
-            command.getConsumerId(), command.getRequestId(), command.getAmount());
-        
+    public Message handleAuthorizeCard(CommandMessage<AuthorizeCardCommand> message) {
+        AuthorizeCardCommand command = message.getCommand();
         try {
-            // Find or create account for consumer
+            PaymentAuthorizationDecision decision = paymentAuthorizationGateway.authorize(
+                command.getPaymentToken(),
+                command.getAmount()
+            );
+            if (!decision.approved()) {
+                return withFailure(new CardAuthorizationDenied(
+                    command.getOrderId(),
+                    decision.reason()
+                ));
+            }
+
             Account account = accountRepository.findByConsumerId(command.getConsumerId())
-                .orElseGet(() -> {
-                    logger.info("Creating new account for consumer {}", command.getConsumerId());
-                    Account newAccount = new Account(command.getConsumerId());
-                    return accountRepository.save(newAccount);
-                });
-            
-            // Authorize with idempotency check
-            Authorization authorization = account.authorize(command.getRequestId(), command.getAmount());
-            
-            // Save account (cascades to authorization)
+                .orElseGet(() -> accountRepository.save(new Account(command.getConsumerId())));
+
+            Authorization existing = account.findAuthorizationByRequestId(command.getRequestId());
+            if (existing != null) {
+                if (command.getOrderId() != null
+                    && !existing.matches(command.getOrderId(), command.getAmount())) {
+                    return withFailure(new CardAuthorizationDenied(
+                        command.getOrderId(),
+                        "Request ID conflict"
+                    ));
+                }
+                return withSuccess(new CardAuthorized(
+                    existing.getId(),
+                    command.getOrderId()
+                ));
+            }
+
+            Authorization authorization = command.getOrderId() == null
+                ? account.authorize(command.getRequestId(), command.getAmount())
+                : account.authorize(
+                    command.getOrderId(),
+                    command.getRequestId(),
+                    command.getAmount()
+                );
             accountRepository.save(account);
-            
-            // Publish CardAuthorized event to outbox
-            CardAuthorizedEvent event = new CardAuthorizedEvent(
+
+            eventPublisher.publishAccountEvent(account.getId(), new CardAuthorizedEvent(
                 account.getId(),
                 authorization.getId(),
                 authorization.getRequestId(),
                 authorization.getAmount().getAmount(),
                 authorization.getCreatedAt()
-            );
-            eventPublisher.publishAccountEvent(account.getId(), event);
-            
-            logger.info("Card authorized successfully for consumer {} with authorization ID {} (requestId: {})", 
-                command.getConsumerId(), authorization.getId(), command.getRequestId());
-            
-            return withSuccess(new CardAuthorized(authorization.getId()));
-            
+            ));
+            return withSuccess(new CardAuthorized(
+                authorization.getId(),
+                command.getOrderId()
+            ));
         } catch (IllegalArgumentException e) {
-            logger.error("Card authorization failed for consumer {}: {}", 
-                command.getConsumerId(), e.getMessage());
+            if (command.getOrderId() != null) {
+                return withFailure(new CardAuthorizationDenied(
+                    command.getOrderId(),
+                    e.getMessage()
+                ));
+            }
             return withFailure(e.getMessage());
         } catch (Exception e) {
-            logger.error("Unexpected error authorizing card for consumer {}", 
-                command.getConsumerId(), e);
             return withFailure("Internal error authorizing card");
         }
     }
-    
-    /**
-     * Handles ReverseAuthorizationCommand from CancelOrderSaga.
-     * 
-     * Reverses an existing authorization.
-     * Records reversal with timestamp for audit.
-     * 
-     * @param cm the command message
-     * @return success reply with AuthorizationReversed or failure reply with error message
-     */
+
     @Transactional
-    public Message handleReverseAuthorization(CommandMessage<ReverseAuthorizationCommand> cm) {
-        ReverseAuthorizationCommand command = cm.getCommand();
-        
-        logger.info("Reversing authorization {} for consumer {}", 
-            command.getAuthorizationId(), command.getConsumerId());
-        
+    public Message handleCaptureAuthorization(CommandMessage<CaptureAuthorizationCommand> message) {
+        CaptureAuthorizationCommand command = message.getCommand();
         try {
-            // Find account
+            Account account = requireAccount(command.getAuthorizationId());
+            boolean changed = account.captureAuthorization(
+                command.getOrderId(),
+                command.getAuthorizationId(),
+                command.getRequestId()
+            );
+            accountRepository.save(account);
+            if (changed) {
+                eventPublisher.publishAccountEvent(account.getId(), new PaymentCapturedEvent(
+                    account.getId(),
+                    command.getOrderId(),
+                    command.getAuthorizationId(),
+                    command.getRequestId(),
+                    LocalDateTime.now()
+                ));
+            }
+            return withSuccess(new PaymentCaptured(
+                command.getAuthorizationId(),
+                command.getAuthorizationId(),
+                command.getOrderId()
+            ));
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return withFailure(e.getMessage());
+        }
+    }
+
+    @Transactional
+    public Message handleVoidAuthorization(CommandMessage<VoidAuthorizationCommand> message) {
+        VoidAuthorizationCommand command = message.getCommand();
+        try {
+            Account account = requireAccount(command.getAuthorizationId());
+            boolean changed = account.voidAuthorization(
+                command.getOrderId(),
+                command.getAuthorizationId(),
+                command.getReason(),
+                command.getRequestId()
+            );
+            accountRepository.save(account);
+            if (changed) {
+                eventPublisher.publishAccountEvent(account.getId(), new AuthorizationVoidedEvent(
+                    account.getId(),
+                    command.getOrderId(),
+                    command.getAuthorizationId(),
+                    command.getReason(),
+                    command.getRequestId(),
+                    LocalDateTime.now()
+                ));
+            }
+            return withSuccess(new AuthorizationVoided(
+                command.getAuthorizationId(),
+                command.getOrderId()
+            ));
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return withFailure(e.getMessage());
+        }
+    }
+
+    @Transactional
+    public Message handleRefundPayment(CommandMessage<RefundPaymentCommand> message) {
+        RefundPaymentCommand command = message.getCommand();
+        try {
+            Account account = requireAccount(command.getCaptureId());
+            boolean changed = account.refundPayment(
+                command.getOrderId(),
+                command.getCaptureId(),
+                command.getAmount(),
+                command.getReason(),
+                command.getRequestId()
+            );
+            accountRepository.save(account);
+            if (changed) {
+                eventPublisher.publishAccountEvent(account.getId(), new PaymentRefundedEvent(
+                    account.getId(),
+                    command.getOrderId(),
+                    command.getCaptureId(),
+                    command.getReason(),
+                    command.getRequestId(),
+                    LocalDateTime.now()
+                ));
+            }
+            return withSuccess(new PaymentRefunded(
+                command.getCaptureId(),
+                command.getCaptureId(),
+                command.getOrderId()
+            ));
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return withFailure(e.getMessage());
+        }
+    }
+
+    @Transactional
+    public Message handleReverseAuthorization(CommandMessage<ReverseAuthorizationCommand> message) {
+        ReverseAuthorizationCommand command = message.getCommand();
+        try {
             Account account = accountRepository.findByConsumerId(command.getConsumerId())
                 .orElseThrow(() -> new IllegalArgumentException(
-                    String.format("Account not found for consumer %d", command.getConsumerId())
+                    "Account not found for consumer " + command.getConsumerId()
                 ));
-            
-            // Reverse authorization
             account.reverseAuthorization(command.getAuthorizationId());
-            
-            // Save account
             accountRepository.save(account);
-            
-            // Publish CardReversed event to outbox
-            CardReversed event = new CardReversed(
+            eventPublisher.publishAccountEvent(account.getId(), new CardReversed(
                 account.getId(),
                 command.getAuthorizationId(),
                 LocalDateTime.now()
-            );
-            eventPublisher.publishAccountEvent(account.getId(), event);
-            
-            logger.info("Authorization {} reversed successfully for consumer {}", 
-                command.getAuthorizationId(), command.getConsumerId());
-            
+            ));
             return withSuccess(new AuthorizationReversed(command.getAuthorizationId()));
-            
         } catch (IllegalArgumentException | IllegalStateException e) {
-            logger.error("Authorization reversal failed for consumer {}: {}", 
-                command.getConsumerId(), e.getMessage());
             return withFailure(e.getMessage());
-        } catch (Exception e) {
-            logger.error("Unexpected error reversing authorization {} for consumer {}", 
-                command.getAuthorizationId(), command.getConsumerId(), e);
-            return withFailure("Internal error reversing authorization");
         }
     }
-    
-    /**
-     * Handles ReviseAuthorizationCommand from ReviseOrderSaga.
-     * 
-     * Revises an existing authorization to a new amount by:
-     * 1. Reversing the old authorization
-     * 2. Creating a new authorization with the new amount
-     * 
-     * Uses idempotency check to handle duplicate revision requests.
-     * Records revision with timestamp for audit.
-     * 
-     * @param cm the command message
-     * @return success reply with AuthorizationRevised or failure reply with error message
-     */
+
     @Transactional
-    public Message handleReviseAuthorization(CommandMessage<ReviseAuthorizationCommand> cm) {
-        ReviseAuthorizationCommand command = cm.getCommand();
-        
-        logger.info("Revising authorization {} for consumer {} to new amount {}", 
-            command.getAuthorizationId(), command.getConsumerId(), command.getNewAmount());
-        
+    public Message handleReviseAuthorization(CommandMessage<ReviseAuthorizationCommand> message) {
+        ReviseAuthorizationCommand command = message.getCommand();
         try {
-            // Find account
             Account account = accountRepository.findByConsumerId(command.getConsumerId())
                 .orElseThrow(() -> new IllegalArgumentException(
-                    String.format("Account not found for consumer %d", command.getConsumerId())
+                    "Account not found for consumer " + command.getConsumerId()
                 ));
-            
-            // Revise authorization
-            Money newAmount = new Money(command.getNewAmount());
-            Authorization newAuthorization = account.reviseAuthorization(
-                command.getAuthorizationId(), 
-                newAmount, 
+            Authorization revised = account.reviseAuthorization(
+                command.getAuthorizationId(),
+                new Money(command.getNewAmount()),
                 command.getRequestId()
             );
-            
-            // Save account
             accountRepository.save(account);
-            
-            logger.info("Authorization {} revised successfully for consumer {} with new authorization ID {}", 
-                command.getAuthorizationId(), command.getConsumerId(), newAuthorization.getId());
-            
-            return withSuccess(new AuthorizationRevised(newAuthorization.getId()));
-            
+            return withSuccess(new AuthorizationRevised(revised.getId()));
         } catch (IllegalArgumentException | IllegalStateException e) {
-            logger.error("Authorization revision failed for consumer {}: {}", 
-                command.getConsumerId(), e.getMessage());
             return withFailure(e.getMessage());
-        } catch (Exception e) {
-            logger.error("Unexpected error revising authorization {} for consumer {}", 
-                command.getAuthorizationId(), command.getConsumerId(), e);
-            return withFailure("Internal error revising authorization");
         }
+    }
+
+    private Account requireAccount(Long authorizationId) {
+        return accountRepository.findByAuthorizationId(authorizationId)
+            .orElseThrow(() -> new IllegalArgumentException(
+                "Account not found for authorization " + authorizationId
+            ));
     }
 }

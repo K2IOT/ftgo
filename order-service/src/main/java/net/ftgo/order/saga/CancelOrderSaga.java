@@ -211,7 +211,7 @@ public class CancelOrderSaga implements SimpleSaga<CancelOrderSagaData> {
             data.getOrderId());
         
         return send(new CancelOrderSagaLocalSteps.ConfirmCancelCommand(data.getOrderId()))
-            .to(ChannelNames.ORDER_SERVICE_COMMAND_CHANNEL)
+            .to(ChannelNames.CANCEL_ORDER_SAGA_COMMAND_CHANNEL)
             .build();
     }
 }

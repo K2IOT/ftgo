@@ -8,267 +8,218 @@ import net.ftgo.common.orderflow.commands.ApproveTicketCommand;
 import net.ftgo.common.orderflow.commands.AuthorizeCardCommand;
 import net.ftgo.common.orderflow.commands.CancelTicketCommand;
 import net.ftgo.common.orderflow.commands.CreateTicketCommand;
-import net.ftgo.common.orderflow.commands.VerifyConsumerCommand;
+import net.ftgo.common.orderflow.commands.ReleaseConsumerCreditCommand;
+import net.ftgo.common.orderflow.commands.ReserveConsumerCreditCommand;
+import net.ftgo.common.orderflow.commands.ValidateOrderMenuCommand;
+import net.ftgo.common.orderflow.commands.VoidAuthorizationCommand;
+import net.ftgo.common.orderflow.menu.OrderMenuLineItem;
 import net.ftgo.common.orderflow.replies.CardAuthorized;
+import net.ftgo.common.orderflow.replies.ConsumerCreditReserved;
+import net.ftgo.common.orderflow.replies.OrderMenuValidated;
 import net.ftgo.common.orderflow.replies.TicketCreated;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+
+import java.util.List;
 
 import static io.eventuate.tram.commands.consumer.CommandWithDestinationBuilder.send;
 
 /**
- * CreateOrderSaga orchestrates the distributed transaction for order placement.
- * 
- * This saga coordinates order approval across multiple services:
- * - Consumer Service: Verifies consumer credit limit
- * - Kitchen Service: Creates and approves kitchen ticket
- * - Accounting Service: Authorizes credit card payment
- * 
- * Saga Steps:
- * 1. createOrder (local) - Creates order in APPROVAL_PENDING state
- * 2. verifyConsumer - Validates consumer exists and has sufficient credit
- * 3. createTicket - Creates kitchen ticket in CREATE_PENDING state
- * 4. authorizeCard - Authorizes payment (PIVOT POINT - first non-compensatable step)
- * 5. approveTicket - Approves kitchen ticket (retriable)
- * 6. approveOrder (local) - Transitions order to APPROVED state (retriable)
- * 
- * Compensation Logic:
- * - If saga fails before pivot (steps 1-3): Execute compensations in reverse order
- *   - cancelTicket (if ticket was created)
- *   - rejectOrder (always executed)
- * - If saga fails after pivot (steps 4-6): Retry until success (no compensation)
- * 
- * Pivot Point:
- * - Step 4 (authorizeCard) is the pivot point
- * - Once payment is authorized, we cannot compensate (money has been reserved)
- * - All steps after pivot must be retriable and eventually succeed
- * 
- * Semantic Lock:
- * - Order remains in APPROVAL_PENDING state during saga execution
- * - Prevents concurrent cancel/revise operations
- * - Released when saga completes (APPROVED or REJECTED)
+ * Prepares all remote resources required for an order and then waits for the
+ * restaurant's asynchronous acceptance decision.
+ *
+ * <p>No step in this saga is a pivot. Every completed participant operation
+ * has an idempotent compensation, so any failure before the final local step
+ * converges to a rejected order with no held credit or authorization.</p>
  */
 public class CreateOrderSaga implements SimpleSaga<CreateOrderSagaData> {
-    
-    private static final Logger logger = LoggerFactory.getLogger(CreateOrderSaga.class);
-    
+
+    private final CreateOrderSagaLocalSteps localSteps;
     private final SagaDefinition<CreateOrderSagaData> sagaDefinition;
-    
-    /**
-     * Creates the CreateOrderSaga with its step definitions.
-     */
+
     public CreateOrderSaga() {
+        this(null);
+    }
+
+    public CreateOrderSaga(CreateOrderSagaLocalSteps localSteps) {
+        this.localSteps = localSteps;
         this.sagaDefinition = step()
-            .invokeLocal(this::createOrder)
             .withCompensation(this::rejectOrder)
         .step()
-            .invokeParticipant(this::verifyConsumer)
+            .invokeParticipant(this::validateMenu)
+            .onReply(OrderMenuValidated.class, this::handleMenuValidated)
+        .step()
+            .invokeParticipant(this::reserveCredit)
+            .onReply(ConsumerCreditReserved.class, this::handleCreditReserved)
+            .withCompensation(this::releaseCredit)
         .step()
             .invokeParticipant(this::createTicket)
-            .onReply(TicketCreated.class, this::handleCreateTicketReply)
+            .onReply(TicketCreated.class, this::handleTicketCreated)
             .withCompensation(this::cancelTicket)
         .step()
             .invokeParticipant(this::authorizeCard)
-            .onReply(CardAuthorized.class, this::handleAuthorizeCardReply)
+            .onReply(CardAuthorized.class, this::handleCardAuthorized)
+            .withCompensation(this::voidAuthorization)
         .step()
             .invokeParticipant(this::approveTicket)
         .step()
-            .invokeParticipant(this::approveOrderStep)
+            .invokeLocal(this::awaitRestaurantAcceptance)
         .build();
     }
-    
+
     @Override
     public SagaDefinition<CreateOrderSagaData> getSagaDefinition() {
         return sagaDefinition;
     }
-    
-    // Step 1: Create order (local)
-    
-    /**
-     * Creates the order in APPROVAL_PENDING state.
-     * This is a local step that doesn't send commands to other services.
-     * 
-     * Note: The actual order creation happens before the saga starts.
-     * This step is a placeholder for saga definition consistency.
-     * 
-     * @param data the saga data
-     */
-    private void createOrder(CreateOrderSagaData data) {
-        logger.info("CreateOrderSaga: Step 1 - createOrder for orderId={}", data.getOrderId());
-        // Order is already created in APPROVAL_PENDING state before saga starts
-        // This step exists for saga definition structure and compensation chain
-    }
-    
-    /**
-     * Compensation for createOrder: Rejects the order.
-     * Sends command to Order Service to reject the order.
-     * 
-     * @param data the saga data
-     * @return command to send to Order Service
-     */
+
     private CommandWithDestination rejectOrder(CreateOrderSagaData data) {
-        logger.warn("CreateOrderSaga: Compensation - rejectOrder for orderId={}", data.getOrderId());
-        
         return send(new CreateOrderSagaLocalSteps.RejectOrderCommand(data.getOrderId()))
-            .to(ChannelNames.ORDER_SERVICE_COMMAND_CHANNEL)
+            .to(ChannelNames.CREATE_ORDER_SAGA_COMMAND_CHANNEL)
             .build();
     }
-    
-    // Step 2: Verify consumer
-    
-    /**
-     * Sends command to Consumer Service to verify consumer credit limit.
-     * 
-     * @param data the saga data
-     * @return command to send to Consumer Service
-     */
-    private CommandWithDestination verifyConsumer(CreateOrderSagaData data) {
-        logger.info("CreateOrderSaga: Step 2 - verifyConsumer for consumerId={}, orderTotal={}",
-            data.getConsumerId(), data.getOrderTotal());
-        
-        return send(new VerifyConsumerCommand(data.getConsumerId(), data.getOrderTotal()))
+
+    private CommandWithDestination validateMenu(CreateOrderSagaData data) {
+        return send(new ValidateOrderMenuCommand(
+            data.getOrderId(),
+            data.getRestaurantId(),
+            data.getExpectedMenuVersion(),
+            requestedMenuItems(data)
+        ))
+            .to(ChannelNames.RESTAURANT_SERVICE_COMMAND_CHANNEL)
+            .build();
+    }
+
+    private void handleMenuValidated(CreateOrderSagaData data, OrderMenuValidated reply) {
+        data.setAuthoritativeMenuItems(reply.getAuthoritativeLineItems());
+        data.setAuthoritativeTotal(reply.getAuthoritativeTotal());
+    }
+
+    private CommandWithDestination reserveCredit(CreateOrderSagaData data) {
+        return send(new ReserveConsumerCreditCommand(
+            data.getConsumerId(),
+            data.getOrderId(),
+            data.getOrderTotal()
+        ))
             .to(ChannelNames.CONSUMER_SERVICE_COMMAND_CHANNEL)
             .build();
     }
-    
-    // Step 3: Create ticket
-    
-    /**
-     * Sends command to Kitchen Service to create a ticket.
-     * 
-     * @param data the saga data
-     * @return command to send to Kitchen Service
-     */
+
+    private void handleCreditReserved(CreateOrderSagaData data, ConsumerCreditReserved reply) {
+        data.setCreditReservationId(reply.getReservationId());
+    }
+
+    private CommandWithDestination releaseCredit(CreateOrderSagaData data) {
+        return send(new ReleaseConsumerCreditCommand(
+            data.getConsumerId(),
+            data.getOrderId(),
+            compensationReason(data)
+        ))
+            .to(ChannelNames.CONSUMER_SERVICE_COMMAND_CHANNEL)
+            .build();
+    }
+
     private CommandWithDestination createTicket(CreateOrderSagaData data) {
-        logger.info("CreateOrderSaga: Step 3 - createTicket for orderId={}, restaurantId={}",
-            data.getOrderId(), data.getRestaurantId());
-        
+        List<OrderMenuLineItem> items = authoritativeMenuItems(data);
         return send(new CreateTicketCommand(
-                data.getOrderId(),
-                data.getRestaurantId(),
-                data.getLineItems().stream()
-                    .map(item -> new CreateTicketCommand.TicketLineItemDTO(
-                        item.getMenuItemId(),
-                        item.getName(),
-                        item.getQuantity()
-                    ))
-                    .toList()
-            ))
+            data.getOrderId(),
+            data.getRestaurantId(),
+            items.stream()
+                .map(item -> new CreateTicketCommand.TicketLineItemDTO(
+                    item.getMenuItemId(),
+                    item.getExpectedName(),
+                    item.getQuantity()
+                ))
+                .toList()
+        ))
             .to(ChannelNames.KITCHEN_SERVICE_COMMAND_CHANNEL)
             .build();
     }
-    
-    /**
-     * Handles the reply from Kitchen Service after ticket creation.
-     * Stores the ticket ID in saga data for use in subsequent steps.
-     * 
-     * @param data the saga data
-     * @param reply the create ticket reply
-     */
-    private void handleCreateTicketReply(CreateOrderSagaData data, TicketCreated reply) {
-        logger.info("CreateOrderSaga: Received TicketCreated with ticketId={}", reply.getTicketId());
+
+    private void handleTicketCreated(CreateOrderSagaData data, TicketCreated reply) {
         data.setTicketId(reply.getTicketId());
     }
-    
-    /**
-     * Compensation for createTicket: Cancels the ticket.
-     * Sends command to Kitchen Service to cancel the ticket.
-     * 
-     * @param data the saga data
-     * @return command to send to Kitchen Service
-     */
+
     private CommandWithDestination cancelTicket(CreateOrderSagaData data) {
-        logger.warn("CreateOrderSaga: Compensation - cancelTicket for ticketId={}", data.getTicketId());
-        
         return send(new CancelTicketCommand(data.getTicketId()))
             .to(ChannelNames.KITCHEN_SERVICE_COMMAND_CHANNEL)
             .build();
     }
-    
-    // Step 4: Authorize card (PIVOT POINT)
-    
-    /**
-     * Sends command to Accounting Service to authorize credit card payment.
-     * 
-     * THIS IS THE PIVOT POINT:
-     * - First non-compensatable step
-     * - Once authorization succeeds, saga must complete forward
-     * - All subsequent steps are retriable
-     * 
-     * @param data the saga data
-     * @return command to send to Accounting Service
-     */
+
     private CommandWithDestination authorizeCard(CreateOrderSagaData data) {
-        logger.info("CreateOrderSaga: Step 4 (PIVOT) - authorizeCard for consumerId={}, amount={}",
-            data.getConsumerId(), data.getOrderTotal());
-        
-        // Use orderId as requestId for idempotency
-        String requestId = "order-" + data.getOrderId();
-        
         return send(new AuthorizeCardCommand(
-                data.getConsumerId(),
-                data.getOrderTotal(),
-                requestId
-            ))
+            data.getConsumerId(),
+            data.getOrderId(),
+            data.getOrderTotal(),
+            data.getPaymentToken(),
+            requestId(data, "authorize")
+        ))
             .to(ChannelNames.ACCOUNTING_SERVICE_COMMAND_CHANNEL)
             .build();
     }
-    
-    /**
-     * Handles the reply from Accounting Service after authorization.
-     * Stores the authorization ID in saga data.
-     * 
-     * @param data the saga data
-     * @param reply the authorize card reply
-     */
-    private void handleAuthorizeCardReply(CreateOrderSagaData data, CardAuthorized reply) {
-        logger.info("CreateOrderSaga: Received CardAuthorized with authorizationId={}",
-            reply.getAuthorizationId());
+
+    private void handleCardAuthorized(CreateOrderSagaData data, CardAuthorized reply) {
         data.setAuthorizationId(reply.getAuthorizationId());
     }
-    
-    // Step 5: Approve ticket (retriable)
-    
-    /**
-     * Sends command to Kitchen Service to approve the ticket.
-     * 
-     * This step is RETRIABLE (occurs after pivot point).
-     * If it fails, the saga will retry until success.
-     * 
-     * @param data the saga data
-     * @return command to send to Kitchen Service
-     */
+
+    private CommandWithDestination voidAuthorization(CreateOrderSagaData data) {
+        return send(new VoidAuthorizationCommand(
+            data.getOrderId(),
+            data.getAuthorizationId(),
+            compensationReason(data),
+            requestId(data, "void-create-compensation")
+        ))
+            .to(ChannelNames.ACCOUNTING_SERVICE_COMMAND_CHANNEL)
+            .build();
+    }
+
     private CommandWithDestination approveTicket(CreateOrderSagaData data) {
-        logger.info("CreateOrderSaga: Step 5 (retriable) - approveTicket for ticketId={}", 
-            data.getTicketId());
-        
-        return send(new ApproveTicketCommand(data.getTicketId()))
+        return send(new ApproveTicketCommand(
+            data.getTicketId(),
+            data.getAcceptanceDeadline()
+        ))
             .to(ChannelNames.KITCHEN_SERVICE_COMMAND_CHANNEL)
             .build();
     }
-    
-    // Step 6: Approve order (local, retriable)
-    
-    /**
-     * Approves the order (transitions to APPROVED state).
-     * Sends command to Order Service to approve the order.
-     * 
-     * This step is RETRIABLE (occurs after pivot point).
-     * If it fails, the saga will retry until success.
-     * 
-     * @param data the saga data
-     * @return command to send to Order Service
-     */
-    private CommandWithDestination approveOrderStep(CreateOrderSagaData data) {
-        logger.info("CreateOrderSaga: Step 6 (retriable) - approveOrder for orderId={}", 
-            data.getOrderId());
-        
-        return send(new CreateOrderSagaLocalSteps.ApproveOrderCommand(
-                data.getOrderId(),
-                data.getTicketId(),
-                data.getAuthorizationId()
+
+    private void awaitRestaurantAcceptance(CreateOrderSagaData data) {
+        requireLocalSteps().awaitRestaurantAcceptance(data);
+    }
+
+    private List<OrderMenuLineItem> requestedMenuItems(CreateOrderSagaData data) {
+        if (data.getRequestedMenuItems() != null && !data.getRequestedMenuItems().isEmpty()) {
+            return data.getRequestedMenuItems();
+        }
+        return data.getLineItems().stream()
+            .map(item -> new OrderMenuLineItem(
+                item.getMenuItemId(),
+                item.getName(),
+                item.getPrice(),
+                item.getQuantity()
             ))
-            .to(ChannelNames.ORDER_SERVICE_COMMAND_CHANNEL)
-            .build();
+            .toList();
+    }
+
+    private List<OrderMenuLineItem> authoritativeMenuItems(CreateOrderSagaData data) {
+        if (data.getAuthoritativeMenuItems() != null && !data.getAuthoritativeMenuItems().isEmpty()) {
+            return data.getAuthoritativeMenuItems();
+        }
+        return requestedMenuItems(data);
+    }
+
+    private String compensationReason(CreateOrderSagaData data) {
+        return data.getFailureCode() == null
+            ? "CREATE_ORDER_COMPENSATION"
+            : data.getFailureCode();
+    }
+
+    private String requestId(CreateOrderSagaData data, String operation) {
+        return "order-" + data.getOrderId() + "-" + operation;
+    }
+
+    private CreateOrderSagaLocalSteps requireLocalSteps() {
+        if (localSteps == null) {
+            throw new IllegalStateException(
+                "CreateOrderSagaLocalSteps is required to execute CreateOrderSaga"
+            );
+        }
+        return localSteps;
     }
 }

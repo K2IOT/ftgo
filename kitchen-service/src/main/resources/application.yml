@@ -34,6 +34,11 @@ eventuatelocal:
     reader:
       name: MySqlReader
 
+ftgo:
+  kitchen:
+    acceptance-timeout-scan-ms: 5000
+    acceptance-timeout-batch-size: 100
+
 server:
   port: 8084
 

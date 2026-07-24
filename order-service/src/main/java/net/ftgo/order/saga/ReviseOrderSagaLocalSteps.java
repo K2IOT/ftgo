@@ -6,6 +6,7 @@ import io.eventuate.tram.messaging.common.Message;
 import io.eventuate.tram.sagas.participant.SagaCommandHandlersBuilder;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
+import net.ftgo.common.channels.ChannelNames;
 import net.ftgo.common.orderflow.events.OrderCreated;
 import net.ftgo.common.orderflow.events.OrderRevised;
 import net.ftgo.order.domain.Order;
@@ -73,7 +74,7 @@ public class ReviseOrderSagaLocalSteps {
      */
     public CommandHandlers commandHandlers() {
         return SagaCommandHandlersBuilder
-            .fromChannel("orderService")
+            .fromChannel(ChannelNames.REVISE_ORDER_SAGA_COMMAND_CHANNEL)
             .onMessage(BeginReviseCommand.class, this::beginRevise)
             .onMessage(UndoReviseCommand.class, this::undoRevise)
             .onMessage(ConfirmReviseCommand.class, this::confirmRevise)

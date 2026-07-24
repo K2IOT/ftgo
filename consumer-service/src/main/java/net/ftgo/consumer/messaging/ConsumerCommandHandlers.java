@@ -4,83 +4,117 @@ import io.eventuate.tram.commands.consumer.CommandHandlers;
 import io.eventuate.tram.commands.consumer.CommandMessage;
 import io.eventuate.tram.messaging.common.Message;
 import io.eventuate.tram.sagas.participant.SagaCommandHandlersBuilder;
+import net.ftgo.common.channels.ChannelNames;
+import net.ftgo.common.orderflow.commands.CommitConsumerCreditCommand;
+import net.ftgo.common.orderflow.commands.ReleaseConsumerCreditCommand;
+import net.ftgo.common.orderflow.commands.ReserveConsumerCreditCommand;
 import net.ftgo.common.orderflow.commands.VerifyConsumerCommand;
+import net.ftgo.common.orderflow.replies.ConsumerCreditCommitted;
+import net.ftgo.common.orderflow.replies.ConsumerCreditReleased;
+import net.ftgo.common.orderflow.replies.ConsumerCreditReservationRejected;
+import net.ftgo.common.orderflow.replies.ConsumerCreditReserved;
 import net.ftgo.common.orderflow.replies.ConsumerVerified;
+import net.ftgo.consumer.domain.CreditReservation;
 import net.ftgo.consumer.service.ConsumerService;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import net.ftgo.consumer.service.CreditReservationException;
+import net.ftgo.consumer.service.CreditReservationService;
 import org.springframework.stereotype.Component;
 
 import static io.eventuate.tram.commands.consumer.CommandHandlerReplyBuilder.withFailure;
 import static io.eventuate.tram.commands.consumer.CommandHandlerReplyBuilder.withSuccess;
 
-/**
- * Command handlers for Consumer Service saga participation.
- * 
- * Handles commands from CreateOrderSaga:
- * - VerifyConsumerCommand: Validates consumer exists and has sufficient credit
- */
 @Component
 public class ConsumerCommandHandlers {
-    
-    private static final Logger logger = LoggerFactory.getLogger(ConsumerCommandHandlers.class);
-    
+
     private final ConsumerService consumerService;
-    
-    public ConsumerCommandHandlers(ConsumerService consumerService) {
+    private final CreditReservationService creditReservationService;
+
+    public ConsumerCommandHandlers(
+        ConsumerService consumerService,
+        CreditReservationService creditReservationService
+    ) {
         this.consumerService = consumerService;
+        this.creditReservationService = creditReservationService;
     }
-    
-    /**
-     * Builds command handlers for Consumer Service.
-     * 
-     * @return CommandHandlers configured for consumerService channel
-     */
+
     public CommandHandlers commandHandlers() {
         return SagaCommandHandlersBuilder
-                .fromChannel("consumerService")
-                .onMessage(VerifyConsumerCommand.class, this::handleVerifyConsumer)
-                .build();
+            .fromChannel(ChannelNames.CONSUMER_SERVICE_COMMAND_CHANNEL)
+            .onMessage(VerifyConsumerCommand.class, this::handleVerifyConsumer)
+            .onMessage(ReserveConsumerCreditCommand.class, this::handleReserveCredit)
+            .onMessage(CommitConsumerCreditCommand.class, this::handleCommitCredit)
+            .onMessage(ReleaseConsumerCreditCommand.class, this::handleReleaseCredit)
+            .build();
     }
-    
-    /**
-     * Handles VerifyConsumerCommand from CreateOrderSaga.
-     * 
-     * Validates:
-     * 1. Consumer exists
-     * 2. Order total does not exceed available credit limit
-     * 
-     * @param cm the command message
-     * @return success reply with ConsumerVerified or failure reply with error message
-     */
-    private Message handleVerifyConsumer(CommandMessage<VerifyConsumerCommand> cm) {
-        VerifyConsumerCommand command = cm.getCommand();
-        
-        logger.info("Verifying consumer {} for order total {}", 
-            command.getConsumerId(), command.getOrderTotal());
-        
+
+    private Message handleVerifyConsumer(CommandMessage<VerifyConsumerCommand> message) {
+        VerifyConsumerCommand command = message.getCommand();
         try {
-            boolean verified = consumerService.verifyConsumerCredit(
-                command.getConsumerId(), 
-                command.getOrderTotal()
-            );
-            
-            if (verified) {
-                logger.info("Consumer {} verified successfully", command.getConsumerId());
+            if (consumerService.verifyConsumerCredit(command.getConsumerId(), command.getOrderTotal())) {
                 return withSuccess(new ConsumerVerified(command.getConsumerId()));
-            } else {
-                logger.warn("Consumer {} verification failed: insufficient credit", 
-                    command.getConsumerId());
-                return withFailure("Insufficient credit limit");
             }
-        } catch (IllegalArgumentException e) {
-            logger.error("Consumer {} verification failed: {}", 
-                command.getConsumerId(), e.getMessage());
-            return withFailure(e.getMessage());
+            return withFailure("INSUFFICIENT_CREDIT:Insufficient credit limit");
         } catch (Exception e) {
-            logger.error("Unexpected error verifying consumer {}", 
-                command.getConsumerId(), e);
-            return withFailure("Internal error verifying consumer");
+            return withFailure("CONSUMER_VERIFICATION_FAILED:" + e.getMessage());
         }
+    }
+
+    private Message handleReserveCredit(CommandMessage<ReserveConsumerCreditCommand> message) {
+        ReserveConsumerCreditCommand command = message.getCommand();
+        try {
+            CreditReservation reservation = creditReservationService.reserve(
+                command.getConsumerId(),
+                command.getOrderId(),
+                command.getAmount()
+            );
+            return withSuccess(new ConsumerCreditReserved(
+                reservation.getId(),
+                reservation.getOrderId(),
+                reservation.getAmount()
+            ));
+        } catch (CreditReservationException e) {
+            return rejected(command.getOrderId(), e);
+        }
+    }
+
+    private Message handleCommitCredit(CommandMessage<CommitConsumerCreditCommand> message) {
+        CommitConsumerCreditCommand command = message.getCommand();
+        try {
+            CreditReservation reservation = creditReservationService.commit(
+                command.getConsumerId(),
+                command.getOrderId()
+            );
+            return withSuccess(new ConsumerCreditCommitted(
+                reservation.getId(),
+                reservation.getOrderId()
+            ));
+        } catch (CreditReservationException e) {
+            return rejected(command.getOrderId(), e);
+        }
+    }
+
+    private Message handleReleaseCredit(CommandMessage<ReleaseConsumerCreditCommand> message) {
+        ReleaseConsumerCreditCommand command = message.getCommand();
+        try {
+            CreditReservation reservation = creditReservationService.release(
+                command.getConsumerId(),
+                command.getOrderId(),
+                command.getReason()
+            );
+            return withSuccess(new ConsumerCreditReleased(
+                reservation.getId(),
+                reservation.getOrderId()
+            ));
+        } catch (CreditReservationException e) {
+            return rejected(command.getOrderId(), e);
+        }
+    }
+
+    private Message rejected(Long orderId, CreditReservationException e) {
+        return withFailure(new ConsumerCreditReservationRejected(
+            orderId,
+            e.getReasonCode(),
+            e.getMessage()
+        ));
     }
 }

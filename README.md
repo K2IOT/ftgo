@@ -1,182 +1,228 @@
 # FTGO Microservices Platform
 
-A production-grade microservices platform for online food ordering and delivery, implementing distributed transaction management using saga orchestration patterns.
+FTGO is a Java 21 microservices reference platform for online food ordering and delivery. It demonstrates saga orchestration, transactional outbox messaging, Kafka-based integration, per-service persistence, and restart-safe business workflows.
 
-## Overview
+## Current Status
 
-FTGO (Food To Go) is a comprehensive microservices system that demonstrates:
-- **Saga Orchestration** for distributed transactions
-- **Event-Driven Architecture** with Kafka
-- **Transactional Outbox Pattern** with Debezium CDC
-- **CQRS** for scalable read operations
-- **Service Mesh** with Istio for mTLS and resilience
-- **Property-Based Testing** for correctness validation
+Phase 02, **Core Order Flow**, is implemented on `agent/phase-02-core-order-flow` and tracked by PR #4.
+
+The final merge-readiness decision is based on all required workflows passing on the same branch SHA. Exact workflow run IDs and the final SHA are recorded in PR #4.
 
 ## Architecture
 
-### Microservices
+### Services
 
-| Service | Port | Database | Description |
-|---------|------|----------|-------------|
-| **API Gateway** | 8080 | Redis | Authentication, routing, rate limiting, API composition |
-| **Order Service** | 8081 | MySQL | Order lifecycle management, saga orchestration |
-| **Consumer Service** | 8082 | MySQL | Consumer account management, credit verification |
-| **Restaurant Service** | 8083 | MySQL | Restaurant profiles, menu management |
-| **Kitchen Service** | 8084 | MySQL | Kitchen ticket management, preparation tracking |
-| **Accounting Service** | 8085 | MySQL | Payment authorization, transaction management |
-| **Delivery Service** | 8086 | MySQL | Courier assignment, delivery tracking |
-| **Order History Service** | 8087 | ScyllaDB | CQRS read model for order queries |
+| Service | Port | Database | Responsibility |
+|---------|------|----------|----------------|
+| API Gateway | 8080 | Redis | Authentication, routing, rate limiting, API composition |
+| Order Service | 8081 | MySQL | Order lifecycle and saga orchestration |
+| Consumer Service | 8082 | MySQL | Consumer accounts and durable credit reservations |
+| Restaurant Service | 8083 | MySQL | Restaurant state and authoritative menu validation |
+| Kitchen Service | 8084 | MySQL | Ticket lifecycle and restaurant acceptance decisions |
+| Accounting Service | 8085 | MySQL | Payment authorization, capture, void, and refund |
+| Delivery Service | 8086 | MySQL | Delivery assignment and tracking |
+| Order History Service | 8087 | ScyllaDB | CQRS order-history projection |
 
 ### Technology Stack
 
-- **Language**: Java 21
-- **Framework**: Spring Boot 3.2
-- **Build System**: Gradle 8.5 (multi-project)
-- **Messaging**: Apache Kafka 3.x + Eventuate Tram
-- **Databases**: MySQL 8 (per service), ScyllaDB (CQRS)
-- **CDC**: Debezium for change data capture
-- **Container Runtime**: Docker
-- **Orchestration**: Kubernetes with Istio service mesh
-- **Observability**: OpenTelemetry, Jaeger, Prometheus, ELK Stack
+- Java 21 and Spring Boot 3.2
+- Gradle 8.5 multi-project build
+- Eventuate Tram commands, replies, and saga orchestration
+- Apache Kafka
+- MySQL 8 per transactional service
+- Debezium and Eventuate CDC
+- Flyway migrations
+- JUnit 5, jqwik, Testcontainers, and real-stack E2E tests
+- Docker Compose for local and CI verification
+
+## Phase 02 Core Order Flow
+
+Phase 02 turns checkout into an authoritative, restart-safe workflow with durable participant state and explicit compensation.
+
+### Create Order
+
+`CreateOrderSaga` performs the following operations:
+
+1. Validate the requested menu against the authoritative Restaurant Service snapshot.
+2. Reserve consumer credit using the order ID as the business idempotency key.
+3. Create a Kitchen ticket.
+4. Authorize payment using the payment token supplied by the REST request.
+5. Approve the ticket for restaurant review.
+6. Move the order to `AWAITING_RESTAURANT_ACCEPTANCE`.
+
+Every completed remote operation has an idempotent compensation. A failure before restaurant acceptance rejects the order and releases any acquired resources.
+
+### Restaurant Decision
+
+Kitchen Service serializes accept, reject, and timeout decisions under a row lock. Exactly one decision wins:
+
+- `ACCEPTED`
+- `REJECTED_BY_RESTAURANT`
+- `REJECTED_TIMEOUT`
+
+Decision events are written to the Kitchen outbox in the same transaction as the ticket state change. Debezium publishes them to `net.ftgo.kitchenservice.domain.Ticket`.
+
+Consumers accept both direct JSON events and Kafka Connect schema-wrapped payloads.
+
+### Confirm Order
+
+A valid acceptance atomically claims the order transition:
+
+```text
+AWAITING_RESTAURANT_ACCEPTANCE -> CONFIRMATION_PENDING
+```
+
+`ConfirmOrderSaga` then:
+
+1. Captures the payment authorization.
+2. Commits the consumer credit reservation.
+3. Approves the order.
+
+Payment capture is the pivot. Operations after the pivot are retriable and idempotent.
+
+### Reject Order
+
+A restaurant rejection or timeout atomically claims:
+
+```text
+AWAITING_RESTAURANT_ACCEPTANCE -> REJECTION_PENDING
+```
+
+`RejectOrderSaga` then:
+
+1. Voids the payment authorization.
+2. Releases the consumer credit reservation.
+3. Rejects the order with a stable failure code and message.
+
+Duplicate or stale decision events are acknowledged as no-ops.
+
+### Transaction and Messaging Guarantees
+
+- Business rejections produce typed failure replies without poisoning the surrounding Eventuate message transaction.
+- Order-local saga commands use one consolidated dispatcher with a complete handler set on `orderService`.
+- Credit and payment operations are idempotent by order-scoped or request-scoped business keys.
+- Aggregate mutation and outbox insertion share one local transaction.
+- Native MySQL enums are migration-tested against their complete Java lifecycle enums.
+- Order History projects explicit restaurant rejection and timeout states.
+
+### Feature Flag
+
+Phase 02 can be disabled without reverting the deployment:
+
+```bash
+FTGO_ORDER_PHASE2_ENABLED=false
+```
+
+When disabled, new Phase 02 order creation is rejected by the Order Service. Existing in-flight sagas must be drained or handled according to the rollout runbook before disabling participants.
+
+## Verification
+
+### Full Test Suite
+
+```bash
+./gradlew --no-daemon clean test --stacktrace
+```
+
+### Module Matrix
+
+```bash
+./gradlew :api-gateway:test \
+  :order-service:test \
+  :consumer-service:test \
+  :restaurant-service:test \
+  :kitchen-service:test \
+  :accounting-service:test \
+  :order-history-service:test
+```
+
+### Phase 02 Contracts
+
+```bash
+./gradlew :common:test \
+  --tests '*Phase02ContractGuardrailsTest' \
+  --tests '*Phase02OrderFlowContractsSerializationTest'
+```
+
+### Real Core Order Flow E2E
+
+The dedicated E2E harness starts real service processes, MySQL, Kafka, Eventuate CDC, Debezium Connect, and a Kitchen outbox connector.
+
+```bash
+bash scripts/smoke/verify-core-order-flow.sh --runs 2
+```
+
+Each clean-state cycle executes eight scenarios:
+
+1. Restaurant acceptance and successful confirmation.
+2. Stale menu snapshot rejection.
+3. Insufficient consumer credit.
+4. Payment-provider denial.
+5. Explicit restaurant rejection.
+6. Restaurant acceptance timeout.
+7. Acceptance-versus-timeout race.
+8. Duplicate decision delivery.
+
+The workflow must pass all eight scenarios in two independent clean-state cycles.
+
+### Fresh-Stack Smoke
+
+```bash
+bash scripts/smoke/verify-fresh-stack.sh --runs 2
+```
+
+CI also verifies the Docker Compose model, Flyway migrations, Spring contexts, shared contracts, and the checked-in Gradle wrapper.
 
 ## Quick Start
 
 ### Prerequisites
 
 - Java 21
-- Docker and Docker Compose
-- kubectl (for Kubernetes deployment)
-- k3s or kind (for local Kubernetes)
+- Docker with Docker Compose
+- Bash, curl, and jq for the verification scripts
 
-### 1. Build the Project
+### Build
 
 ```bash
 ./gradlew build
 ```
 
-### 2. Start Infrastructure
+### Start Shared Infrastructure
 
 ```bash
 cd deployment
-docker-compose -f docker-compose.infra.yml up -d
+docker compose -f docker-compose.infra.yml up -d
 ```
 
-This starts:
-- 3 Kafka brokers
-- 6 MySQL databases
-- ScyllaDB
-- Redis
-- Debezium Connect
-- HashiCorp Vault
-- Spring Cloud Config Server
-
-### 3. Configure Debezium CDC
+### Run a Service
 
 ```bash
-cd deployment
-./configure-debezium.sh
-```
-
-### 4. Initialize Vault
-
-```bash
-cd deployment
-./init-vault.sh
-```
-
-### 5. Run Services Locally
-
-```bash
-# Order Service
 ./gradlew :order-service:bootRun
-
-# Consumer Service
-./gradlew :consumer-service:bootRun
-
-# (Repeat for other services)
 ```
 
-### 6. Verify Setup
-
-```bash
-# Check Kafka topics
-docker exec ftgo-kafka-1 kafka-topics --list --bootstrap-server localhost:9092
-
-# Check Debezium connectors
-curl http://localhost:8083/connectors
-
-# Check service health
-curl http://localhost:8081/actuator/health
-```
+Repeat for the participant services required by the workflow.
 
 ## Project Structure
 
-```
+```text
 ftgo/
-├── api-gateway/              API Gateway service
-├── order-service/            Order Service (saga orchestrator)
-├── consumer-service/         Consumer Service
-├── restaurant-service/       Restaurant Service
-├── kitchen-service/          Kitchen Service
-├── accounting-service/       Accounting Service
-├── delivery-service/         Delivery Service
-├── order-history-service/    Order History Service (CQRS)
-├── common/                   Shared DTOs, value objects, channel names
-├── deployment/               Infrastructure and deployment configs
-│   ├── docker-compose.infra.yml     Infrastructure stack
-│   ├── configure-debezium.sh        Debezium setup
-│   ├── init-vault.sh                Vault initialization
-│   ├── config-repo/                 Spring Cloud Config files
-│   └── kubernetes/                  K8s manifests and Istio configs
-├── build.gradle              Root multi-project build
-├── settings.gradle           Project structure
-└── README.md                 This file
+├── api-gateway/
+├── order-service/
+├── consumer-service/
+├── restaurant-service/
+├── kitchen-service/
+├── accounting-service/
+├── delivery-service/
+├── order-history-service/
+├── common/
+├── e2e-tests/
+├── deployment/
+├── docs/
+├── scripts/
+├── build.gradle
+└── settings.gradle
 ```
 
-## Key Patterns
-
-### Saga Orchestration
-
-Order Service orchestrates distributed transactions using Eventuate Tram Sagas:
-
-- **CreateOrderSaga**: Verify consumer → Create ticket → Authorize payment → Approve order
-- **CancelOrderSaga**: Begin cancel → Reverse payment → Confirm cancel
-- **ReviseOrderSaga**: Begin revise → Revise payment → Confirm revise
-
-Each saga has:
-- **Compensatable steps**: Can be undone if saga fails
-- **Pivot point**: First non-compensatable step (payment authorization)
-- **Retriable steps**: Must eventually succeed after pivot
-
-### Transactional Outbox
-
-All services use the Transactional Outbox pattern:
-
-1. Service updates entity and inserts event into outbox table (single ACID transaction)
-2. Debezium CDC monitors MySQL binlog and detects outbox inserts
-3. Debezium publishes event to Kafka
-4. Consumers process events idempotently using processed_messages table
-
-### CQRS
-
-Order History Service maintains a denormalized read model in ScyllaDB:
-
-- Subscribes to events from all services
-- Updates read model for fast queries
-- Supports filtering, pagination, and full-text search
-- Eventually consistent with write model
-
-### Semantic Locking
-
-Order Service uses pending states to prevent concurrent modifications:
-
-- `APPROVAL_PENDING`: During CreateOrderSaga
-- `CANCEL_PENDING`: During CancelOrderSaga
-- `REVISION_PENDING`: During ReviseOrderSaga
-
-Concurrent requests return 409 Conflict during pending states.
-
-## Kafka Topics
+## Messaging Channels
 
 ### Domain Event Topics
 
@@ -191,6 +237,7 @@ Concurrent requests return 409 Conflict during pending states.
 
 - `orderService`
 - `consumerService`
+- `restaurantService`
 - `kitchenService`
 - `accountingService`
 - `deliveryService`
@@ -201,233 +248,57 @@ Concurrent requests return 409 Conflict during pending states.
 - `cancelOrderSagaReply`
 - `reviseOrderSagaReply`
 
-All topics use partition key: `aggregateType + "#" + aggregateId` for ordering guarantees.
+## Rollout and Rollback
 
-## Testing
+Use the Phase 02 operations runbook for migration ordering, compatibility checks, canary rollout, kill-switch operation, rollback constraints, and recovery procedures:
 
-### Unit Tests
+- [Phase 02 Core Order Flow Rollout and Rollback](docs/operations/phase-02-core-order-flow-rollout.md)
 
-```bash
-./gradlew test
-```
+Important rules:
 
-### Integration Tests (with Testcontainers)
-
-```bash
-./gradlew integrationTest
-```
-
-### Property-Based Tests (jqwik)
-
-```bash
-./gradlew test --tests "*Property*"
-```
-
-11 correctness properties validated:
-1. Order Creation Idempotency
-2. Order Total Invariant
-3. Consumer Credit Invariant
-4. Authorization Idempotency
-5. Delivery Temporal Ordering
-6. Event Processing Idempotency
-7. JWT Validation Correctness
-8. Saga Compensation Correctness
-9. Kafka Partition Key Consistency
-10. Configuration Round-Trip
-11. Event Schema Conformance
-
-## Kubernetes Deployment
-
-### Set up Local Cluster
-
-```bash
-cd deployment/kubernetes
-./setup-k8s.sh
-```
-
-This configures:
-- ftgo-production namespace with Istio injection
-- mTLS in STRICT mode
-- Circuit breaker (5 consecutive 5xx errors, 30s open state)
-- Retry policy (3 attempts, 500ms base delay)
-- Timeout (5s for all requests)
-- RBAC policies
-
-### Deploy Services
-
-```bash
-kubectl apply -f deployment/kubernetes/order-service/
-kubectl apply -f deployment/kubernetes/consumer-service/
-# (Repeat for other services)
-```
-
-### Check Status
-
-```bash
-kubectl get pods -n ftgo-production
-kubectl get services -n ftgo-production
-kubectl logs -f deployment/ftgo-order-service -n ftgo-production
-```
-
-## Observability
-
-### Health Checks
-
-All services expose `/actuator/health` with:
-- Database connectivity check
-- Kafka producer connectivity check
-- Returns 200 UP when healthy, 503 DOWN when unhealthy
-
-### Metrics
-
-All services expose `/actuator/prometheus` with:
-- Order placement counter
-- Saga duration histogram
-- Authorization outcome counter
-- Custom business metrics
-
-### Distributed Tracing
-
-OpenTelemetry instrumentation with Jaeger:
-- W3C Trace Context propagation
-- Trace context in Kafka message headers
-- Trace ID in logs (MDC)
-- End-to-end saga tracing
-
-### Structured Logging
-
-JSON structured logging to stdout:
-- Timestamp, level, service name, trace ID, message
-- Collected by Fluentd DaemonSet
-- Forwarded to Elasticsearch
-- Visualized in Kibana
-
-## Configuration Management
-
-### Spring Cloud Config Server
-
-Centralized configuration with Git backend:
-- `application.yml`: Common configuration
-- `application-dev.yml`: Development profile
-- `application-staging.yml`: Staging profile
-- `application-production.yml`: Production profile
-
-### HashiCorp Vault
-
-Secrets management:
-- Database passwords
-- API keys
-- Service-specific tokens
-- Never stored in Docker images or ConfigMaps
-
-## Security
-
-- **mTLS**: All service-to-service communication encrypted with TLS 1.3
-- **JWT**: API Gateway validates JWT signatures and expiration
-- **RBAC**: Kubernetes role-based access control
-- **Secrets**: Managed by Vault, not in source control
-- **Network Policies**: Istio authorization policies
-
-## Resilience
-
-- **Circuit Breaker**: Istio circuit breaker (5 consecutive 5xx → 30s open)
-- **Retry**: Istio retry policy (3 attempts, exponential backoff)
-- **Timeout**: 5s timeout for all service-to-service requests
-- **Connection Pooling**: HikariCP (max 20, min idle 5, timeout 30s)
-- **Saga Compensation**: Automatic rollback on failure before pivot
+- Apply backward-compatible migrations before deploying code that writes new states.
+- Keep mixed-version event and command compatibility during rolling deployment.
+- Do not roll back database enums while rows still contain Phase 02 values.
+- Use the feature flag to stop new Phase 02 orders before rolling back services.
 
 ## Documentation
 
+- [Phase 02 Design](docs/superpowers/specs/2026-07-23-phase-02-core-order-flow-design.md)
+- [Phase 02 Implementation Record](docs/superpowers/plans/2026-07-23-phase-02-core-order-flow.md)
+- [Phase 02 Operations Runbook](docs/operations/phase-02-core-order-flow-rollout.md)
 - [Infrastructure Setup](deployment/README.md)
 - [Kubernetes Deployment](deployment/kubernetes/README.md)
 - [Architecture Plan](ftgo_architecture_plan.md)
-- [Requirements](. kiro/specs/ftgo-microservices-platform/requirements.md)
-- [Design](. kiro/specs/ftgo-microservices-platform/design.md)
-- [Tasks](. kiro/specs/ftgo-microservices-platform/tasks.md)
-
-## Development
-
-### Build Specific Service
-
-```bash
-./gradlew :order-service:build
-```
-
-### Run Tests for Specific Service
-
-```bash
-./gradlew :order-service:test
-```
-
-### Build Docker Image
-
-```bash
-./gradlew :order-service:dockerBuild
-```
-
-### Clean Build
-
-```bash
-./gradlew clean build
-```
 
 ## Troubleshooting
 
-### Kafka not starting
+### Saga does not progress
 
-Check the KRaft broker logs:
+Check the service logs, command topics, and the order saga tables:
+
 ```bash
-docker logs ftgo-kafka-1
+docker exec ftgo-mysql-order mysql \
+  -uftgo_user -pftgo_password ftgo_order \
+  -e 'SELECT * FROM saga_instance ORDER BY last_updated DESC;'
 ```
 
-### Debezium connector fails
+For participant failures, inspect `message`, `received_messages`, and the participant business tables in the corresponding service schema.
 
-Check MySQL binlog is enabled:
-```bash
-docker exec ftgo-mysql-order mysql -uroot -prootpassword -e "SHOW VARIABLES LIKE 'log_bin'"
-```
+### Kitchen decision is not consumed
 
-Check connector status:
-```bash
-curl http://localhost:8083/connectors/order-connector/status
-```
+Verify the Debezium connector and inspect the event payload format. Consumers support both direct event JSON and schema envelopes with a top-level `payload` field.
 
-### Service can't connect to database
+### Migration fails on an enum column
 
-Check database is running:
-```bash
-docker ps | grep mysql
-```
-
-Check connection string in application.yml
-
-### Saga not completing
-
-Check Kafka topics exist:
-```bash
-docker exec ftgo-kafka-1 kafka-topics --list --bootstrap-server localhost:9092
-```
-
-Check saga instance table:
-```bash
-docker exec ftgo-mysql-order mysql -uftgo_user -pftgo_password ftgo_order -e "SELECT * FROM saga_instance"
-```
-
-## Contributing
-
-1. Create feature branch from main
-2. Implement changes with tests
-3. Run full test suite: `./gradlew test`
-4. Submit pull request
+Compare `information_schema.columns.column_type` with the complete Java enum. Phase 02 includes regression tests for authorization, ticket, and order state lifecycles.
 
 ## License
 
-This project is for educational purposes based on "Microservices Patterns" by Chris Richardson.
+This project is for educational purposes and is based on the patterns described in *Microservices Patterns* by Chris Richardson.
 
 ## References
 
 - [Microservices Patterns](https://microservices.io/patterns/index.html)
 - [Eventuate Tram Sagas](https://eventuate.io/docs/manual/eventuate-tram/latest/getting-started-eventuate-tram-sagas.html)
 - [Debezium](https://debezium.io/)
-- [Istio](https://istio.io/)
 - [Spring Boot](https://spring.io/projects/spring-boot)

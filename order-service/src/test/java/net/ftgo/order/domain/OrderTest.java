@@ -208,7 +208,7 @@ class OrderTest {
             order.confirmCancel();
         });
         
-        assertTrue(exception.getMessage().contains("Cannot confirm cancel in state APPROVED"));
+        assertTrue(exception.getMessage().contains("Cannot confirm cancel order in state APPROVED"));
         assertTrue(exception.getMessage().contains("Expected CANCEL_PENDING"));
     }
     
@@ -232,7 +232,7 @@ class OrderTest {
             order.undoCancel();
         });
         
-        assertTrue(exception.getMessage().contains("Cannot undo cancel in state APPROVED"));
+        assertTrue(exception.getMessage().contains("Cannot undo cancel order in state APPROVED"));
         assertTrue(exception.getMessage().contains("Expected CANCEL_PENDING"));
     }
     
@@ -331,7 +331,7 @@ class OrderTest {
             order.confirmRevise(revisedLineItems);
         });
         
-        assertTrue(exception.getMessage().contains("Cannot confirm revise in state APPROVED"));
+        assertTrue(exception.getMessage().contains("Cannot confirm revise order in state APPROVED"));
         assertTrue(exception.getMessage().contains("Expected REVISION_PENDING"));
     }
     
@@ -377,7 +377,7 @@ class OrderTest {
             order.undoRevise();
         });
         
-        assertTrue(exception.getMessage().contains("Cannot undo revise in state APPROVED"));
+        assertTrue(exception.getMessage().contains("Cannot undo revise order in state APPROVED"));
         assertTrue(exception.getMessage().contains("Expected REVISION_PENDING"));
     }
     
