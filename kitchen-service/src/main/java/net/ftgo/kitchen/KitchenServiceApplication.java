@@ -1,14 +1,15 @@
 package net.ftgo.kitchen;
 
+import net.ftgo.common.messaging.IdempotentCommandConfiguration;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.context.annotation.Import;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
-/**
- * Kitchen Service entry point.
- */
+/** Kitchen Service entry point. */
 @SpringBootApplication
 @EnableScheduling
+@Import(IdempotentCommandConfiguration.class)
 public class KitchenServiceApplication {
 
     public static void main(String[] args) {
