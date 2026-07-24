@@ -112,6 +112,7 @@ public class OrderMenuValidationService {
             command.getOrderId(),
             restaurant.getId() != null ? restaurant.getId() : command.getRestaurantId(),
             restaurant.getMenuVersion(),
+            restaurant.getAddress(),
             authoritativeItems,
             total
         );
