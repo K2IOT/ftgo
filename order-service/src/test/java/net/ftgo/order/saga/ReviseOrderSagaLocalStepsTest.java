@@ -186,8 +186,11 @@ class ReviseOrderSagaLocalStepsTest {
             var idField = Order.class.getDeclaredField("id");
             idField.setAccessible(true);
             idField.set(order, orderId);
+            var versionField = Order.class.getDeclaredField("version");
+            versionField.setAccessible(true);
+            versionField.set(order, 0);
         } catch (Exception e) {
-            throw new RuntimeException("Failed to set order ID", e);
+            throw new RuntimeException("Failed to set persisted Order identity", e);
         }
         return order;
     }
