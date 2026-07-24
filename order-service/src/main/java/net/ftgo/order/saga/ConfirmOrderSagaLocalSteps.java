@@ -8,9 +8,7 @@ import net.ftgo.order.repository.OrderRepository;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
-/**
- * Final local transaction for the post-acceptance confirmation saga.
- */
+/** Final local transaction for the post-acceptance confirmation saga. */
 @Component
 public class ConfirmOrderSagaLocalSteps {
 
@@ -39,18 +37,22 @@ public class ConfirmOrderSagaLocalSteps {
             );
         }
 
-        orderRepository.save(order);
-        eventPublisher.publishOrderEvent(order.getId(), new OrderApproved(
+        order = orderRepository.saveAndFlush(order);
+        eventPublisher.publishOrderEvent(
             order.getId(),
-            order.getConsumerId(),
-            order.getRestaurantId(),
-            order.getOrderTotal(),
-            order.getTicketId(),
-            order.getAuthorizationId(),
-            order.getPickupAddress(),
-            toAddress(order.getDeliveryInfo().getDeliveryAddress()),
-            order.getDeliveryInfo().getDeliveryTime()
-        ));
+            order.getVersion().longValue(),
+            new OrderApproved(
+                order.getId(),
+                order.getConsumerId(),
+                order.getRestaurantId(),
+                order.getOrderTotal(),
+                order.getTicketId(),
+                order.getAuthorizationId(),
+                order.getPickupAddress(),
+                toAddress(order.getDeliveryInfo().getDeliveryAddress()),
+                order.getDeliveryInfo().getDeliveryTime()
+            )
+        );
         return true;
     }
 
@@ -59,7 +61,6 @@ public class ConfirmOrderSagaLocalSteps {
         if (streetCityStateZip.length != 3) {
             return new Address(deliveryAddress, "Unknown", "NA", "00000");
         }
-
         String[] stateZip = streetCityStateZip[2].split(" ", 2);
         if (stateZip.length != 2) {
             return new Address(deliveryAddress, "Unknown", "NA", "00000");
