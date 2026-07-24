@@ -25,12 +25,7 @@ import java.util.function.Supplier;
 
 import static io.eventuate.tram.commands.consumer.CommandHandlerReplyBuilder.withSuccess;
 
-/**
- * Local aggregate transitions used by CreateOrderSaga.
- *
- * <p>The class is registered explicitly by CreateOrderSagaConfiguration to
- * avoid duplicate component and configuration beans.</p>
- */
+/** Local aggregate transitions used by CreateOrderSaga. */
 public class CreateOrderSagaLocalSteps {
 
     private static final Logger logger = LoggerFactory.getLogger(CreateOrderSagaLocalSteps.class);
@@ -42,9 +37,6 @@ public class CreateOrderSagaLocalSteps {
     private final Counter sagaFailuresCounter;
     private final TransactionTemplate transactionTemplate;
 
-    /**
-     * Constructor retained for focused unit tests that use mocked repositories.
-     */
     public CreateOrderSagaLocalSteps(
         OrderRepository orderRepository,
         DomainEventPublisher eventPublisher,
@@ -102,13 +94,6 @@ public class CreateOrderSagaLocalSteps {
         );
     }
 
-    /**
-     * Final successful CreateOrderSaga transition. The pickup snapshot and all
-     * remote resource identifiers are persisted in this existing Phase 02 step
-     * so rolling upgrades do not shift persisted Eventuate saga step indexes.
-     * Approval remains deferred until a TicketAcceptedEvent starts
-     * ConfirmOrderSaga.
-     */
     @Transactional
     public boolean awaitRestaurantAcceptance(CreateOrderSagaData data) {
         Order order = orderRepository.findByIdWithLock(data.getOrderId())
@@ -129,10 +114,6 @@ public class CreateOrderSagaLocalSteps {
         return snapshotChanged || stateChanged;
     }
 
-    /**
-     * CreateOrderSaga compensation. Duplicate compensation is a successful
-     * no-op and does not publish another rejection event.
-     */
     @Transactional
     public Message rejectOrder(CommandMessage<RejectOrderCommand> message) {
         Long orderId = message.getCommand().getOrderId();
@@ -149,23 +130,23 @@ public class CreateOrderSagaLocalSteps {
         }
 
         order.reject();
-        orderRepository.save(order);
-        eventPublisher.publishOrderEvent(order.getId(), new OrderRejected(
+        order = orderRepository.saveAndFlush(order);
+        eventPublisher.publishOrderEvent(
             order.getId(),
-            order.getConsumerId(),
-            order.getRestaurantId(),
-            "CREATE_ORDER_COMPENSATION:Order preparation failed"
-        ));
+            order.getVersion().longValue(),
+            new OrderRejected(
+                order.getId(),
+                order.getConsumerId(),
+                order.getRestaurantId(),
+                "CREATE_ORDER_COMPENSATION:Order preparation failed"
+            )
+        );
         ordersRejectedCounter.increment();
         sagaFailuresCounter.increment();
         logger.warn("CreateOrderSaga compensated order {}", orderId);
         return withSuccess();
     }
 
-    /**
-     * Legacy Phase 01 endpoint retained during rolling deployment. The new
-     * CreateOrderSaga never invokes this command.
-     */
     @Transactional
     public Message approveOrder(CommandMessage<ApproveOrderCommand> message) {
         ApproveOrderCommand command = message.getCommand();
@@ -181,18 +162,22 @@ public class CreateOrderSagaLocalSteps {
         order.setTicketId(command.getTicketId());
         order.setAuthorizationId(command.getAuthorizationId());
         order.approve();
-        orderRepository.save(order);
-        eventPublisher.publishOrderEvent(order.getId(), new OrderApproved(
+        order = orderRepository.saveAndFlush(order);
+        eventPublisher.publishOrderEvent(
             order.getId(),
-            order.getConsumerId(),
-            order.getRestaurantId(),
-            order.getOrderTotal(),
-            command.getTicketId(),
-            command.getAuthorizationId(),
-            order.getPickupAddress(),
-            toAddress(order.getDeliveryInfo().getDeliveryAddress()),
-            order.getDeliveryInfo().getDeliveryTime()
-        ));
+            order.getVersion().longValue(),
+            new OrderApproved(
+                order.getId(),
+                order.getConsumerId(),
+                order.getRestaurantId(),
+                order.getOrderTotal(),
+                command.getTicketId(),
+                command.getAuthorizationId(),
+                order.getPickupAddress(),
+                toAddress(order.getDeliveryInfo().getDeliveryAddress()),
+                order.getDeliveryInfo().getDeliveryTime()
+            )
+        );
         ordersApprovedCounter.increment();
         return withSuccess();
     }
@@ -202,7 +187,6 @@ public class CreateOrderSagaLocalSteps {
         if (streetCityStateZip.length != 3) {
             return new Address(deliveryAddress, "Unknown", "NA", "00000");
         }
-
         String[] stateZip = streetCityStateZip[2].split(" ", 2);
         if (stateZip.length != 2) {
             return new Address(deliveryAddress, "Unknown", "NA", "00000");
@@ -225,13 +209,8 @@ public class CreateOrderSagaLocalSteps {
             this.orderId = orderId;
         }
 
-        public Long getOrderId() {
-            return orderId;
-        }
-
-        public void setOrderId(Long orderId) {
-            this.orderId = orderId;
-        }
+        public Long getOrderId() { return orderId; }
+        public void setOrderId(Long orderId) { this.orderId = orderId; }
     }
 
     public static class ApproveOrderCommand implements io.eventuate.tram.commands.common.Command {
@@ -248,28 +227,11 @@ public class CreateOrderSagaLocalSteps {
             this.authorizationId = authorizationId;
         }
 
-        public Long getOrderId() {
-            return orderId;
-        }
-
-        public void setOrderId(Long orderId) {
-            this.orderId = orderId;
-        }
-
-        public Long getTicketId() {
-            return ticketId;
-        }
-
-        public void setTicketId(Long ticketId) {
-            this.ticketId = ticketId;
-        }
-
-        public Long getAuthorizationId() {
-            return authorizationId;
-        }
-
-        public void setAuthorizationId(Long authorizationId) {
-            this.authorizationId = authorizationId;
-        }
+        public Long getOrderId() { return orderId; }
+        public void setOrderId(Long orderId) { this.orderId = orderId; }
+        public Long getTicketId() { return ticketId; }
+        public void setTicketId(Long ticketId) { this.ticketId = ticketId; }
+        public Long getAuthorizationId() { return authorizationId; }
+        public void setAuthorizationId(Long authorizationId) { this.authorizationId = authorizationId; }
     }
 }
