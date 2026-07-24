@@ -1,6 +1,7 @@
 package net.ftgo.delivery.messaging;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import net.ftgo.common.messaging.OutboxEventPayloadReader;
 import net.ftgo.common.orderflow.events.OrderApproved;
 import net.ftgo.delivery.domain.Delivery;
 import net.ftgo.delivery.repository.DeliveryRepository;
@@ -11,12 +12,7 @@ import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
-/**
- * Consumer for Order domain events.
- *
- * Handles OrderApproved events to create delivery records.
- * Implements idempotent event processing using processed_messages table.
- */
+/** Consumer for Order domain events. */
 @Component
 public class OrderEventConsumer {
 
@@ -37,32 +33,29 @@ public class OrderEventConsumer {
         this.objectMapper = objectMapper;
     }
 
-    /**
-     * Handles OrderApproved event by creating a delivery record.
-     *
-     * @param record the Kafka consumer record
-     */
     @KafkaListener(topics = "net.ftgo.orderservice.domain.Order", groupId = "delivery-service")
     @Transactional
     public void handleOrderEvent(ConsumerRecord<String, String> record) {
         String messageId = record.key();
-        String payload = record.value();
         String eventType = eventType(record);
 
         logger.info("Received Order event, messageId: {}, eventType: {}", messageId, eventType);
-
         if (!ORDER_APPROVED_EVENT_TYPE.equals(eventType)) {
-            logger.info("Ignoring non-OrderApproved event, messageId: {}, eventType: {}", messageId, eventType);
+            logger.info("Ignoring non-OrderApproved event, messageId: {}, eventType: {}",
+                messageId, eventType);
             return;
         }
-
         if (processedMessageRepository.existsById(messageId)) {
             logger.info("Message {} already processed, skipping", messageId);
             return;
         }
 
         try {
-            OrderApproved orderApproved = objectMapper.readValue(payload, OrderApproved.class);
+            OrderApproved orderApproved = OutboxEventPayloadReader.read(
+                objectMapper,
+                record.value(),
+                OrderApproved.class
+            );
 
             if (deliveryRepository.findByOrderId(orderApproved.getOrderId()).isPresent()) {
                 logger.info("Delivery for order {} already exists, skipping", orderApproved.getOrderId());
@@ -81,10 +74,8 @@ public class OrderEventConsumer {
                 orderApproved.getDeliveryAddress(),
                 orderApproved.getDeliveryTime()
             );
-
             deliveryRepository.save(delivery);
             processedMessageRepository.save(new ProcessedMessage(messageId));
-
             logger.info("Created delivery {} for order {}", delivery.getId(), orderApproved.getOrderId());
         } catch (Exception e) {
             logger.error("Failed to handle Order event, messageId: {}", messageId, e);
