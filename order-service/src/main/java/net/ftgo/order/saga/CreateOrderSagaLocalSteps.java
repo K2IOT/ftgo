@@ -103,6 +103,23 @@ public class CreateOrderSagaLocalSteps {
     }
 
     /**
+     * Persists the authoritative Restaurant address as soon as menu validation
+     * succeeds, before any credit, ticket, or payment resource is acquired.
+     */
+    @Transactional
+    public boolean snapshotPickupAddress(CreateOrderSagaData data) {
+        Order order = orderRepository.findByIdWithLock(data.getOrderId())
+            .orElseThrow(() -> new IllegalArgumentException(
+                "Order not found: " + data.getOrderId()
+            ));
+        boolean changed = order.snapshotPickupAddress(data.getPickupAddress());
+        if (changed) {
+            orderRepository.save(order);
+        }
+        return changed;
+    }
+
+    /**
      * Final successful CreateOrderSaga transition. Approval is intentionally
      * deferred until a TicketAcceptedEvent starts ConfirmOrderSaga.
      */
@@ -185,6 +202,7 @@ public class CreateOrderSagaLocalSteps {
             order.getOrderTotal(),
             command.getTicketId(),
             command.getAuthorizationId(),
+            order.getPickupAddress(),
             toAddress(order.getDeliveryInfo().getDeliveryAddress()),
             order.getDeliveryInfo().getDeliveryTime()
         ));
