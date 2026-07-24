@@ -1,5 +1,6 @@
 package net.ftgo.common.messaging;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 import java.time.Instant;
@@ -19,7 +20,7 @@ public record DomainEventEnvelope<T>(
     String aggregateType,
     String aggregateId,
     long aggregateVersion,
-    Instant occurredAt,
+    @JsonFormat(shape = JsonFormat.Shape.STRING) Instant occurredAt,
     String correlationId,
     String causationId,
     TraceContext trace,
