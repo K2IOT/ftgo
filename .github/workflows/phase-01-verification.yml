@@ -41,6 +41,23 @@ jobs:
           name: debezium-connector-contract-diagnostics
           path: debezium-contract.log
 
+  phase02a-rollout-preflight-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - name: Run Phase 02A rollout preflight contract tests
+        shell: bash
+        run: |
+          python3 -m unittest deployment/tests/test_phase02a_rollout_preflight.py 2>&1 | tee phase02a-rollout-preflight.log
+      - name: Upload rollout preflight diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: phase02a-rollout-preflight-diagnostics
+          path: phase02a-rollout-preflight.log
+
   migration-red-green:
     name: migration-${{ matrix.module }}
     runs-on: ubuntu-latest
