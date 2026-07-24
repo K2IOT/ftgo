@@ -120,7 +120,7 @@ jobs:
           java-version: '21'
       - name: Verify Gradle 8.5 wrapper checksum
         run: bash scripts/ci/verify-gradle-wrapper.sh
-      - name: Run order context tests
+      - name: Run order context and saga topology tests
         id: gradle
         shell: bash
         run: |
@@ -129,6 +129,7 @@ jobs:
           timeout 10m ./gradlew --no-daemon :order-service:test \
             --tests 'net.ftgo.order.config.OrderProductionSchemaContextTest' \
             --tests 'net.ftgo.order.config.SagaBeanUniquenessTest' \
+            --tests 'net.ftgo.order.saga.CreateOrderSagaRollingUpgradeTest' \
             --stacktrace --info 2>&1 | tee gradle-output.log
           status=${PIPESTATUS[0]}
           echo "status=${status}" >> "$GITHUB_OUTPUT"
