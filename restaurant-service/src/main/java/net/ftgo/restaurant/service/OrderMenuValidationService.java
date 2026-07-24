@@ -32,7 +32,13 @@ public class OrderMenuValidationService {
         this.menuItemRepository = menuItemRepository;
     }
 
-    @Transactional(readOnly = true)
+    /**
+     * Expected menu rejections are converted by the command handler into typed
+     * saga failure replies. They must not mark Eventuate's surrounding message
+     * transaction rollback-only, otherwise the rejection reply is lost and the
+     * consumer terminates with an UnexpectedRollbackException.
+     */
+    @Transactional(readOnly = true, noRollbackFor = OrderMenuValidationException.class)
     public OrderMenuValidated validate(ValidateOrderMenuCommand command) {
         Restaurant restaurant = restaurantRepository.findById(command.getRestaurantId())
             .orElseThrow(() -> rejected(
