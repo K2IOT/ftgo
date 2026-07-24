@@ -13,11 +13,10 @@ import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
 import java.util.Collection;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -25,30 +24,30 @@ import static org.mockito.Mockito.mock;
 class OrderSagaCommandChannelIsolationTest {
 
     @Test
-    void localSagaDispatchersSubscribeToDisjointChannels() {
+    void allLocalSagaCommandsShareOneCompleteDispatcherHandlerSet() {
         OrderRepository orderRepository = mock(OrderRepository.class);
         DomainEventPublisher eventPublisher = mock(DomainEventPublisher.class);
         SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
 
-        Set<String> createChannels = handlerChannels(new CreateOrderSagaLocalSteps(
-            orderRepository, eventPublisher, meterRegistry).commandHandlers());
-        Set<String> cancelChannels = handlerChannels(new CancelOrderSagaLocalSteps(
-            orderRepository, eventPublisher, meterRegistry).commandHandlers());
-        Set<String> reviseChannels = handlerChannels(new ReviseOrderSagaLocalSteps(
-            orderRepository, eventPublisher, meterRegistry).commandHandlers());
+        CreateOrderSagaLocalSteps createSteps = new CreateOrderSagaLocalSteps(
+            orderRepository, eventPublisher, meterRegistry);
+        CancelOrderSagaLocalSteps cancelSteps = new CancelOrderSagaLocalSteps(
+            orderRepository, eventPublisher, meterRegistry);
+        ReviseOrderSagaLocalSteps reviseSteps = new ReviseOrderSagaLocalSteps(
+            orderRepository, eventPublisher, meterRegistry);
 
-        assertThat(createChannels).containsExactly(ChannelNames.CREATE_ORDER_SAGA_COMMAND_CHANNEL);
-        assertThat(cancelChannels).containsExactly(ChannelNames.CANCEL_ORDER_SAGA_COMMAND_CHANNEL);
-        assertThat(reviseChannels).containsExactly(ChannelNames.REVISE_ORDER_SAGA_COMMAND_CHANNEL);
-        assertThat(Set.of(
-            ChannelNames.CREATE_ORDER_SAGA_COMMAND_CHANNEL,
-            ChannelNames.CANCEL_ORDER_SAGA_COMMAND_CHANNEL,
-            ChannelNames.REVISE_ORDER_SAGA_COMMAND_CHANNEL
-        )).hasSize(3);
+        CommandHandlers commandHandlers = new OrderSagaCommandHandlers(
+            createSteps, cancelSteps, reviseSteps).commandHandlers();
+        List<CommandHandler> handlers = extractHandlers(commandHandlers);
+
+        assertThat(handlers).hasSize(8);
+        assertThat(handlers)
+            .extracting(CommandHandler::getChannel)
+            .containsOnly(ChannelNames.ORDER_SERVICE_COMMAND_CHANNEL);
     }
 
     @Test
-    void orchestratorsSendLocalParticipantCommandsToTheirDedicatedChannels() {
+    void orchestratorsSendLocalParticipantCommandsToTheConsolidatedChannel() {
         CreateOrderSagaData createData = new CreateOrderSagaData(
             101L, 301L, 202L,
             List.of(new OrderLineItem(11L, "Burger", new Money("25.00"), 1)),
@@ -62,40 +61,40 @@ class OrderSagaCommandChannelIsolationTest {
         );
 
         assertThat(invokeCommand(new CreateOrderSaga(), "rejectOrder", CreateOrderSagaData.class, createData)
-            .getDestinationChannel()).isEqualTo(ChannelNames.CREATE_ORDER_SAGA_COMMAND_CHANNEL);
+            .getDestinationChannel()).isEqualTo(ChannelNames.ORDER_SERVICE_COMMAND_CHANNEL);
         assertThat(invokeCommand(new CancelOrderSaga(), "confirmCancelStep", CancelOrderSagaData.class, cancelData)
-            .getDestinationChannel()).isEqualTo(ChannelNames.CANCEL_ORDER_SAGA_COMMAND_CHANNEL);
+            .getDestinationChannel()).isEqualTo(ChannelNames.ORDER_SERVICE_COMMAND_CHANNEL);
         assertThat(invokeCommand(new ReviseOrderSaga(), "confirmReviseStep", ReviseOrderSagaData.class, reviseData)
-            .getDestinationChannel()).isEqualTo(ChannelNames.REVISE_ORDER_SAGA_COMMAND_CHANNEL);
+            .getDestinationChannel()).isEqualTo(ChannelNames.ORDER_SERVICE_COMMAND_CHANNEL);
     }
 
-    private Set<String> handlerChannels(CommandHandlers handlers) {
-        Set<String> channels = new HashSet<>();
+    private List<CommandHandler> extractHandlers(CommandHandlers handlers) {
+        List<CommandHandler> result = new ArrayList<>();
         Class<?> type = handlers.getClass();
         while (type != null) {
             for (Field field : type.getDeclaredFields()) {
                 field.setAccessible(true);
                 try {
-                    collectChannels(field.get(handlers), channels);
+                    collectHandlers(field.get(handlers), result);
                 } catch (IllegalAccessException e) {
                     throw new AssertionError("Unable to inspect Eventuate command handlers", e);
                 }
             }
             type = type.getSuperclass();
         }
-        return channels;
+        return result;
     }
 
-    private void collectChannels(Object value, Set<String> channels) {
+    private void collectHandlers(Object value, List<CommandHandler> handlers) {
         if (value instanceof CommandHandler handler) {
-            channels.add(handler.getChannel());
+            handlers.add(handler);
         } else if (value instanceof Collection<?> collection) {
-            collection.forEach(element -> collectChannels(element, channels));
+            collection.forEach(element -> collectHandlers(element, handlers));
         } else if (value instanceof Map<?, ?> map) {
-            map.values().forEach(element -> collectChannels(element, channels));
+            map.values().forEach(element -> collectHandlers(element, handlers));
         } else if (value instanceof Object[] array) {
             for (Object element : array) {
-                collectChannels(element, channels);
+                collectHandlers(element, handlers);
             }
         }
     }
