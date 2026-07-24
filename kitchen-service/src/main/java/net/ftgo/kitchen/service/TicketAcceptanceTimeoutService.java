@@ -51,7 +51,7 @@ public class TicketAcceptanceTimeoutService {
                 return false;
             }
 
-            ticket = ticketRepository.saveAndFlush(ticket);
+            ticketRepository.saveAndFlush(ticket);
             eventPublisher.publishTicketEvent(
                 ticket.getId(),
                 ticket.getVersion(),
