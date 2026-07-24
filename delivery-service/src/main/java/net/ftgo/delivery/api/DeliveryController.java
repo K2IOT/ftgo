@@ -55,7 +55,7 @@ public class DeliveryController {
         Delivery delivery = requireDelivery(deliveryId);
         try {
             delivery.assignCourier(request.getCourierId());
-            delivery = deliveryRepository.saveAndFlush(delivery);
+            deliveryRepository.saveAndFlush(delivery);
             domainEventPublisher.publishDeliveryEvent(
                 delivery.getId(),
                 delivery.getVersion(),
@@ -79,7 +79,7 @@ public class DeliveryController {
         Delivery delivery = requireDelivery(deliveryId);
         try {
             delivery.pickup();
-            delivery = deliveryRepository.saveAndFlush(delivery);
+            deliveryRepository.saveAndFlush(delivery);
             domainEventPublisher.publishDeliveryEvent(
                 delivery.getId(),
                 delivery.getVersion(),
@@ -104,7 +104,7 @@ public class DeliveryController {
         Delivery delivery = requireDelivery(deliveryId);
         try {
             delivery.deliver();
-            delivery = deliveryRepository.saveAndFlush(delivery);
+            deliveryRepository.saveAndFlush(delivery);
             domainEventPublisher.publishDeliveryEvent(
                 delivery.getId(),
                 delivery.getVersion(),
