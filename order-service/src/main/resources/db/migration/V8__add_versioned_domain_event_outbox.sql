@@ -2,7 +2,7 @@
 -- event_id remains nullable during the rolling-upgrade window so the previous
 -- producer can continue writing until all instances have been replaced.
 ALTER TABLE outbox
-    ADD COLUMN event_id CHAR(36) NULL AFTER id,
+    ADD COLUMN event_id VARCHAR(36) NULL AFTER id,
     ADD COLUMN schema_version INT NOT NULL DEFAULT 1 AFTER event_id,
     ADD COLUMN aggregate_version BIGINT NOT NULL DEFAULT 0 AFTER schema_version;
 
