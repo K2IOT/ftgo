@@ -48,7 +48,7 @@ public class RestaurantService {
     public MenuItem createMenuItem(Long restaurantId, MenuItem menuItem) {
         Restaurant restaurant = findRestaurant(restaurantId);
         MenuItem saved = menuItemRepository.save(menuItem);
-        restaurant = advanceMenuVersion(restaurant);
+        advanceMenuVersion(restaurant);
         publishMenuChangedEvent(restaurantId, restaurant);
         return saved;
     }
@@ -74,7 +74,7 @@ public class RestaurantService {
         }
 
         MenuItem updated = menuItemRepository.save(menuItem);
-        restaurant = advanceMenuVersion(restaurant);
+        advanceMenuVersion(restaurant);
         publishMenuChangedEvent(restaurantId, restaurant);
         return updated;
     }
@@ -85,7 +85,7 @@ public class RestaurantService {
         MenuItem menuItem = menuItemRepository.findByRestaurantIdAndId(restaurantId, menuItemId)
             .orElseThrow(() -> new MenuItemNotFoundException(restaurantId, menuItemId));
         menuItemRepository.delete(menuItem);
-        restaurant = advanceMenuVersion(restaurant);
+        advanceMenuVersion(restaurant);
         publishMenuChangedEvent(restaurantId, restaurant);
     }
 
@@ -104,9 +104,9 @@ public class RestaurantService {
         return true;
     }
 
-    private Restaurant advanceMenuVersion(Restaurant restaurant) {
+    private void advanceMenuVersion(Restaurant restaurant) {
         restaurant.incrementMenuVersion();
-        return restaurantRepository.saveAndFlush(restaurant);
+        restaurantRepository.saveAndFlush(restaurant);
     }
 
     private void publishMenuChangedEvent(Long restaurantId, Restaurant restaurant) {
