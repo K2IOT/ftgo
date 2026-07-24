@@ -55,22 +55,23 @@ jobs:
         shell: bash
         run: exit '${{ steps.gradle.outputs.status }}'
 
-  outbox-router-contracts:
+  outbox-contracts:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
-      - name: Run Debezium and Phase 03 identity contracts
+      - name: Run Debezium, identity and producer contracts
         shell: bash
         run: |
           python3 -m unittest \
             deployment/tests/test_debezium_connectors.py \
             deployment/tests/test_phase03_event_router_identity.py \
-            2>&1 | tee phase03-outbox-router-contracts.log
-      - name: Upload router diagnostics
+            deployment/tests/test_phase03_versioned_outbox_producers.py \
+            2>&1 | tee phase03-outbox-contracts.log
+      - name: Upload outbox diagnostics
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: phase03-outbox-router-contracts-attempt-${{ github.run_attempt }}
-          path: phase03-outbox-router-contracts.log
+          name: phase03-outbox-contracts-attempt-${{ github.run_attempt }}
+          path: phase03-outbox-contracts.log
