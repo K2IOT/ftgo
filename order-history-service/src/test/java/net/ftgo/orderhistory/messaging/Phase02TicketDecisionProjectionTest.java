@@ -1,5 +1,6 @@
 package net.ftgo.orderhistory.messaging;
 
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import net.ftgo.common.orderflow.events.TicketAcceptanceTimedOutEvent;
 import net.ftgo.common.orderflow.events.TicketRejectedEvent;
@@ -14,6 +15,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDateTime;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -36,7 +38,9 @@ class Phase02TicketDecisionProjectionTest {
 
     @BeforeEach
     void setUp() {
-        objectMapper = new ObjectMapper().findAndRegisterModules();
+        objectMapper = new ObjectMapper()
+            .findAndRegisterModules()
+            .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
         handler = new Phase02TicketDecisionEventHandler(
             orderHistoryRepository,
             processedMessageRepository,
@@ -59,6 +63,36 @@ class Phase02TicketDecisionProjectionTest {
 
         handler.handleTicketDecision(
             objectMapper.writeValueAsString(event),
+            "Ticket#202",
+            "TicketRejectedEvent"
+        );
+
+        ArgumentCaptor<OrderHistoryRecord> saved =
+            ArgumentCaptor.forClass(OrderHistoryRecord.class);
+        verify(orderHistoryRepository).save(saved.capture());
+        assertThat(saved.getValue().getTicketStatus())
+            .isEqualTo("REJECTED_BY_RESTAURANT");
+        verify(processedMessageRepository).save(any());
+    }
+
+    @Test
+    void projectsSchemaWrappedRestaurantRejection() throws Exception {
+        OrderHistoryRecord existing = new OrderHistoryRecord("101");
+        when(orderHistoryRepository.findById("101")).thenReturn(Optional.of(existing));
+        TicketRejectedEvent event = new TicketRejectedEvent(
+            "decision-reject",
+            202L,
+            101L,
+            "RESTAURANT_CAPACITY",
+            LocalDateTime.now()
+        );
+        String payload = objectMapper.writeValueAsString(Map.of(
+            "schema", Map.of("type", "struct"),
+            "payload", event
+        ));
+
+        handler.handleTicketDecision(
+            payload,
             "Ticket#202",
             "TicketRejectedEvent"
         );
