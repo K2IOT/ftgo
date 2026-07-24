@@ -47,6 +47,8 @@ public class CreateOrderSaga implements SimpleSaga<CreateOrderSagaData> {
             .invokeParticipant(this::validateMenu)
             .onReply(OrderMenuValidated.class, this::handleMenuValidated)
         .step()
+            .invokeLocal(this::snapshotPickupAddress)
+        .step()
             .invokeParticipant(this::reserveCredit)
             .onReply(ConsumerCreditReserved.class, this::handleCreditReserved)
             .withCompensation(this::releaseCredit)
@@ -88,8 +90,13 @@ public class CreateOrderSaga implements SimpleSaga<CreateOrderSagaData> {
     }
 
     private void handleMenuValidated(CreateOrderSagaData data, OrderMenuValidated reply) {
+        data.setPickupAddress(reply.getPickupAddress());
         data.setAuthoritativeMenuItems(reply.getAuthoritativeLineItems());
         data.setAuthoritativeTotal(reply.getAuthoritativeTotal());
+    }
+
+    private void snapshotPickupAddress(CreateOrderSagaData data) {
+        requireLocalSteps().snapshotPickupAddress(data);
     }
 
     private CommandWithDestination reserveCredit(CreateOrderSagaData data) {
