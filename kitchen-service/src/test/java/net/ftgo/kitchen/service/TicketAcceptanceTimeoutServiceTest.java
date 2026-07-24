@@ -22,8 +22,10 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -59,7 +61,7 @@ class TicketAcceptanceTimeoutServiceTest {
     }
 
     @Test
-    void expiredWaitingTicketPublishesOneTimeoutEvent() {
+    void expiredWaitingTicketPublishesOneVersionedTimeoutEvent() {
         LocalDateTime deadline = LocalDateTime.of(2026, 7, 23, 12, 0);
         Ticket ticket = awaitingTicket(901L, deadline);
         when(ticketRepository.findByIdForUpdate(901L)).thenReturn(Optional.of(ticket));
@@ -67,9 +69,14 @@ class TicketAcceptanceTimeoutServiceTest {
         boolean changed = service.expireOne(901L, deadline.plusSeconds(1));
 
         assertThat(changed).isTrue();
+        verify(ticketRepository).saveAndFlush(ticket);
         ArgumentCaptor<TicketAcceptanceTimedOutEvent> event =
             ArgumentCaptor.forClass(TicketAcceptanceTimedOutEvent.class);
-        verify(eventPublisher).publishTicketEvent(org.mockito.ArgumentMatchers.eq(901L), event.capture());
+        verify(eventPublisher).publishTicketEvent(
+            eq(901L),
+            eq(ticket.getVersion()),
+            event.capture()
+        );
         assertThat(event.getValue().getTicketId()).isEqualTo(901L);
         assertThat(event.getValue().getOrderId()).isEqualTo(101L);
         assertThat(event.getValue().getAcceptanceDeadline()).isEqualTo(deadline);
@@ -85,8 +92,8 @@ class TicketAcceptanceTimeoutServiceTest {
         boolean changed = service.expireOne(901L, deadline.plusSeconds(1));
 
         assertThat(changed).isFalse();
-        verify(ticketRepository, never()).save(ticket);
-        verify(eventPublisher, never()).publishTicketEvent(any(), any());
+        verify(ticketRepository, never()).saveAndFlush(ticket);
+        verifyNoInteractions(eventPublisher);
     }
 
     private Ticket awaitingTicket(Long ticketId, LocalDateTime deadline) {
