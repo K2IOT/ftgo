@@ -98,7 +98,7 @@ public class ReviseOrderSagaLocalSteps {
         if (command.getAuthorizationId() != null) {
             order.setAuthorizationId(command.getAuthorizationId());
         }
-        order = orderRepository.saveAndFlush(order);
+        orderRepository.saveAndFlush(order);
 
         eventPublisher.publishOrderEvent(
             order.getId(),
