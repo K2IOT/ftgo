@@ -1,212 +1,214 @@
 # FTGO Phase 02A Pickup Address Snapshot Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **Execution mode:** Implemented with `superpowers:executing-plans`, strict RED/GREEN checkpoints, systematic CI debugging, and final-SHA verification.
 
-**Goal:** Snapshot restaurant pickup address during order pricing and đưa snapshot vào `OrderApproved`, sau đó loại synchronous Restaurant dependency khỏi Delivery consumer.
+**Status:** Implementation complete and verified on `af400dd029d184ade908e7c1dedb1fd5bc55cdb0`. Evidence is recorded in PR #14.
 
-**Architecture:** Restaurant menu-snapshot response bao gồm pickup address cùng menu version. Order lưu address snapshot; `OrderApproved` mang pickup/delivery addresses. Delivery chỉ consume event và không gọi Restaurant trong event transaction.
+**Goal:** Capture the Restaurant pickup address during authoritative order-menu validation, persist it as an immutable Order snapshot, publish it in `OrderApproved`, and remove Delivery Service's synchronous Restaurant dependency.
 
-**Tech Stack:** Java 21, Spring MVC/WebClient, JPA, Flyway, Kafka, Debezium, Testcontainers.
+## Architecture Adaptation
+
+The original plan was written before Phase 02 replaced the proposed HTTP `MenuSnapshotResponse` flow with Eventuate command/reply validation:
+
+```text
+ValidateOrderMenuCommand
+        ↓
+Restaurant OrderMenuValidationService
+        ↓
+OrderMenuValidated
+```
+
+Phase 02A preserves the approved business behavior while integrating the pickup address into the architecture that is now present on `dev`:
+
+```text
+Restaurant aggregate address
+        ↓
+OrderMenuValidated.pickupAddress
+        ↓
+CreateOrderSagaData.pickupAddress
+        ↓
+existing final CreateOrderSaga local step
+        ↓
+Order.pickupAddress immutable snapshot
+        ↓
+OrderApproved.pickupAddress
+        ↓
+Delivery created only from the event payload
+```
+
+No service boundary was changed. The Phase 02 `CreateOrderSaga` remains at seven steps; Phase 02A does not insert a new step or shift persisted Eventuate step indexes.
 
 ## Global Constraints
 
-- Plan này chạy sau Task 1-2 của Phase 02 và trước business-flow E2E gate.
-- Pickup address là immutable snapshot của order; thay đổi restaurant address sau đó không sửa order/delivery cũ.
-- Event contract thay đổi phải có serialization compatibility test.
-- Sau completion phải xóa bridge từ Phase 01A.
+- [x] Pickup address is an immutable snapshot of the order.
+- [x] Restaurant address changes cannot mutate an existing Order or Delivery.
+- [x] Current and previous event/reply payloads have explicit serialization compatibility tests.
+- [x] No raw payment token or payment data handling was changed.
+- [x] Migration does not invent pickup addresses for existing rows.
+- [x] Phase 01A bridge code, endpoint, configuration, tests, and smoke wiring are removed.
+- [x] The Phase 02 saga step topology is preserved for rolling upgrades.
+- [x] Unsafe rollout conditions are detected by an executable fail-closed preflight.
 
 ---
 
-### Task 1: Extend Menu Snapshot with Pickup Address
+## Task 1: Return Pickup Address with Authoritative Menu Validation
 
-**Files:**
-- Modify: `common/src/main/java/net/ftgo/common/menu/MenuSnapshotResponse.java`
-- Modify: `restaurant-service/src/main/java/net/ftgo/restaurant/service/MenuSnapshotService.java`
-- Modify: `restaurant-service/src/test/java/net/ftgo/restaurant/service/MenuSnapshotServiceTest.java`
-- Modify: `restaurant-service/src/test/java/net/ftgo/restaurant/api/MenuSnapshotControllerTest.java`
+### Actual files
 
-**Interfaces:**
+- Modify: `common/src/main/java/net/ftgo/common/orderflow/replies/OrderMenuValidated.java`
+- Modify: `restaurant-service/src/main/java/net/ftgo/restaurant/service/OrderMenuValidationService.java`
+- Modify: `restaurant-service/src/test/java/net/ftgo/restaurant/service/OrderMenuValidationServiceTest.java`
+- Create: `common/src/test/java/net/ftgo/common/orderflow/OrderMenuValidatedPickupAddressContractTest.java`
 
-```java
-public record MenuSnapshotResponse(
-    Long restaurantId,
-    long menuVersion,
-    Address pickupAddress,
-    List<MenuItemSnapshot> items
-) {}
-```
+### Completed work
 
-- [ ] **Step 1: Write failing snapshot test**
-
-Assert response address equals Restaurant aggregate address and survives JSON round-trip.
-
-- [ ] **Step 2: Populate address in same read transaction**
-
-`MenuSnapshotService` loads Restaurant and menu items, then returns restaurant address plus authoritative item data. Missing address is invariant violation and fails request.
-
-- [ ] **Step 3: Run tests**
-
-```bash
-./gradlew :restaurant-service:test --tests '*MenuSnapshot*'
-```
-
-Expected: response contains exact pickup address.
-
-- [ ] **Step 4: Commit**
-
-```bash
-git add common restaurant-service
-git commit -m "feat: include pickup address in menu snapshot"
-```
+- [x] Added failing test requiring the authoritative pickup address.
+- [x] Added `pickupAddress` to `OrderMenuValidated`.
+- [x] Preserved the previous constructor and payload compatibility.
+- [x] Returned `Restaurant.address` in the same read transaction as menu validation.
+- [x] Added JSON round-trip and old-payload compatibility coverage.
+- [x] Verified Restaurant validation and common contract tests.
 
 ---
 
-### Task 2: Persist Pickup Address on Order
+## Task 2: Persist Immutable Pickup Address on Order
 
-**Files:**
+### Actual files
+
 - Modify: `order-service/src/main/java/net/ftgo/order/domain/Order.java`
-- Modify: `order-service/src/main/java/net/ftgo/order/service/OrderService.java`
-- Modify: `order-service/src/main/java/net/ftgo/order/menu/RestaurantMenuSnapshotClient.java`
+- Modify: `order-service/src/main/java/net/ftgo/order/saga/CreateOrderSaga.java`
+- Modify: `order-service/src/main/java/net/ftgo/order/saga/CreateOrderSagaData.java`
+- Modify: `order-service/src/main/java/net/ftgo/order/saga/CreateOrderSagaLocalSteps.java`
 - Create: `order-service/src/main/resources/db/migration/V7__add_order_pickup_address.sql`
-- Create: `order-service/src/test/java/net/ftgo/order/domain/OrderPickupAddressPersistenceTest.java`
+- Create: `order-service/src/test/java/net/ftgo/order/saga/OrderPickupAddressPersistenceTest.java`
+- Create: `order-service/src/test/java/net/ftgo/order/saga/CreateOrderSagaRollingUpgradeTest.java`
 
-**Interfaces:**
-- `Order` stores embedded `pickupAddress` separately from delivery address.
-- Create Order construction requires pickup address from `MenuSnapshotResponse`.
+### Completed work
 
-- [ ] **Step 1: Write failing persistence round-trip test**
-
-Persist order with different pickup and delivery addresses, clear EntityManager, reload and assert both remain distinct and equal to inputs.
-
-- [ ] **Step 2: Add embedded address columns**
-
-Migration adds non-null columns:
-
-```text
-pickup_address_street
-pickup_address_city
-pickup_address_state
-pickup_address_zip_code
-```
-
-For existing development rows, migration uses a documented sentinel only in non-production profile or requires explicit data backfill script before NOT NULL. Production migration must not silently invent real pickup addresses.
-
-- [ ] **Step 3: Construct Order from snapshot**
-
-Order Service passes `snapshot.pickupAddress()` into aggregate and saga data. No direct Restaurant lookup occurs later in approval.
-
-- [ ] **Step 4: Run tests**
-
-```bash
-./gradlew :order-service:test --tests '*OrderPickupAddressPersistenceTest' --tests '*RestaurantMenuSnapshotClientTest'
-```
-
-Expected: address persists and client mapping is exact.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add order-service
-git commit -m "feat: persist order pickup address snapshot"
-```
+- [x] Added failing persistence and immutability test.
+- [x] Added embedded pickup-address columns to `Order`.
+- [x] Added a rolling-compatible migration with nullable legacy rows and an all-null/all-present check constraint.
+- [x] Did not use a sentinel or fabricate production address data.
+- [x] Added idempotent `snapshotPickupAddress`: the same address is a no-op and a different address is rejected.
+- [x] Carried the validation reply through saga data.
+- [x] Preserved the Phase 02 seven-step saga definition.
+- [x] Persisted the pickup snapshot and remote resource identifiers atomically in the existing final local step.
+- [x] Added a source-level topology guard that locks both step count and participant order.
+- [x] Verified migration, Spring context, topology, and persistence round trip.
 
 ---
 
-### Task 3: Publish Pickup Address in OrderApproved
+## Task 3: Publish Pickup Address in `OrderApproved`
 
-**Files:**
+### Actual files
+
 - Modify: `common/src/main/java/net/ftgo/common/orderflow/events/OrderApproved.java`
 - Modify: `order-service/src/main/java/net/ftgo/order/saga/CreateOrderSagaLocalSteps.java`
-- Modify: `common/src/test/java/net/ftgo/common/orderflow/events/OrderApprovedContractTest.java`
-- Modify: `contract-tests/src/test/java/net/ftgo/contracts/DomainEventContractTest.java`
+- Modify: `order-service/src/main/java/net/ftgo/order/saga/ConfirmOrderSagaLocalSteps.java`
+- Create: `common/src/test/java/net/ftgo/common/orderflow/events/OrderApprovedContractTest.java`
+- Modify: `common/src/test/java/net/ftgo/common/orderflow/events/OrderApprovedContractSerializationTest.java`
+- Modify: `order-service/src/test/java/net/ftgo/order/messaging/DomainEventPublisherContractTest.java`
 
-**Interfaces:**
-- `OrderApproved` includes `pickupAddress`, `deliveryAddress` and `deliveryTime`.
+### Completed work
 
-- [ ] **Step 1: Write failing event contract test**
-
-Serialize event and assert both addresses plus delivery time are present. Deserialize the previous release fixture through a compatibility constructor/default policy only during the compatibility window.
-
-- [ ] **Step 2: Populate event from Order aggregate**
-
-Approval handler reads persisted snapshot; it does not call Restaurant Service.
-
-- [ ] **Step 3: Run contract tests**
-
-```bash
-./gradlew :common:test --tests '*OrderApprovedContractTest'
-./gradlew :contract-tests:test --tests '*DomainEventContractTest'
-```
-
-Expected: current contract passes and prior fixture compatibility behavior is explicit.
-
-- [ ] **Step 4: Commit**
-
-```bash
-git add common order-service contract-tests
-git commit -m "feat: publish delivery addresses with order approval"
-```
+- [x] Added failing canonical event-contract test.
+- [x] Added `pickupAddress` alongside `deliveryAddress` and `deliveryTime`.
+- [x] Preserved constructors used by the previous release.
+- [x] Verified previous payloads without pickup address remain deserializable during the compatibility window.
+- [x] Published the persisted aggregate snapshot from confirmation and legacy approval paths.
+- [x] Prevented final confirmation of a new order that has no pickup snapshot.
+- [x] Verified outbox payload contains both address snapshots.
 
 ---
 
-### Task 4: Remove Delivery's Synchronous Restaurant Dependency
+## Task 4: Remove Delivery's Synchronous Restaurant Dependency
 
-**Files:**
+### Modified files
+
 - Modify: `delivery-service/src/main/java/net/ftgo/delivery/messaging/OrderEventConsumer.java`
-- Delete: `delivery-service/src/main/java/net/ftgo/delivery/messaging/RestaurantPickupAddressResolver.java`
-- Delete: `delivery-service/src/main/java/net/ftgo/delivery/messaging/HttpRestaurantPickupAddressResolver.java`
-- Delete: `delivery-service/src/main/java/net/ftgo/delivery/config/RestaurantClientConfiguration.java`
 - Modify: `delivery-service/src/main/resources/application.yml`
-- Modify: `delivery-service/src/test/java/net/ftgo/delivery/DeliveryServiceIntegrationTest.java`
-- Delete: `delivery-service/src/test/java/net/ftgo/delivery/messaging/HttpRestaurantPickupAddressResolverTest.java`
+- Modify: `delivery-service/src/test/java/net/ftgo/delivery/messaging/OrderEventConsumerTest.java`
+- Modify: `delivery-service/src/test/java/net/ftgo/delivery/messaging/DeliveryPickupAddressIntegrationTest.java`
+- Modify: `delivery-service/src/test/java/net/ftgo/delivery/config/DeliveryPickupResolverContextTest.java`
+- Modify: `scripts/smoke/fresh-stack.sh`
+- Modify: `deployment/tests/test_fresh_stack_contract.py`
 
-**Interfaces:**
-- Delivery consumer constructs Delivery solely from `OrderApproved` payload.
+### Removed bridge files
 
-- [ ] **Step 1: Write no-network event test**
+- `delivery-service/src/main/java/net/ftgo/delivery/messaging/RestaurantPickupAddressResolver.java`
+- `delivery-service/src/main/java/net/ftgo/delivery/messaging/HttpRestaurantPickupAddressResolver.java`
+- `delivery-service/src/main/java/net/ftgo/delivery/config/RestaurantClientConfiguration.java`
+- Restaurant-client-specific exceptions and unit tests
+- `restaurant-service/src/main/java/net/ftgo/restaurant/api/internal/RestaurantLocationController.java`
+- Its controller test
+- `scripts/smoke/assert-delivery-pickup-bridge.sh`
 
-Start Delivery without Restaurant URL/WireMock, consume `OrderApproved`, and assert Delivery is created with event pickup address.
+### Completed work
 
-- [ ] **Step 2: Replace construction**
+- [x] Added no-network Delivery integration test.
+- [x] Constructed Delivery solely from `OrderApproved` snapshots.
+- [x] Removed resolver injection and all Restaurant REST calls from event processing.
+- [x] Removed Restaurant client URL, retry, and timeout configuration from Delivery.
+- [x] Removed the obsolete Restaurant internal pickup endpoint.
+- [x] Removed bridge smoke wiring and replaced it with a no-bridge fresh-stack contract.
+- [x] Confirmed repository search returns no `RestaurantPickupAddressResolver` or `services.restaurant-service.url` references.
 
-```java
-Delivery delivery = new Delivery(
-    event.getOrderId(),
-    event.getPickupAddress(),
-    event.getDeliveryAddress(),
-    event.getDeliveryTime()
-);
-```
+---
 
-- [ ] **Step 3: Remove bridge code and configuration**
+## Task 5: Make Rolling Deployment Safety Executable
 
-Search must return no references:
+### Actual files
+
+- Create: `scripts/operations/phase-02a-rollout-preflight.sh`
+- Create: `deployment/tests/test_phase02a_rollout_preflight.py`
+- Modify: `.github/workflows/phase-01-verification.yml`
+
+### Completed work
+
+- [x] Added RED tests for a clean rollout, legacy in-flight orders, positive Delivery lag, and unverifiable broker output.
+- [x] Added a fail-closed MySQL check for incomplete pickup snapshots in `APPROVAL_PENDING`, `AWAITING_RESTAURANT_ACCEPTANCE`, and `CONFIRMATION_PENDING` orders.
+- [x] Added a fail-closed Kafka consumer-group check for `delivery-service`.
+- [x] Required two zero-lag samples separated by a configurable stability interval.
+- [x] Kept historical data correction explicit; the script never copies the current Restaurant address into an old Order.
+- [x] Added the preflight contract to required CI verification.
+
+### Required rollout sequence
+
+1. Apply additive migration `V7`.
+2. Deploy the Restaurant and Order producer path while the existing Delivery consumer remains available.
+3. Drain, cancel, or explicitly backfill any legacy in-flight orders reported by the preflight. Backfill must use an audited historical source, not the Restaurant's current address.
+4. Run:
 
 ```bash
-git grep -n 'RestaurantPickupAddressResolver\|services.restaurant-service.url' delivery-service
+bash scripts/operations/phase-02a-rollout-preflight.sh
 ```
 
-Expected: no output.
+5. Deploy the new Delivery consumer only after the command exits successfully.
 
-- [ ] **Step 4: Run tests**
+The preflight blocks rollout when any potentially emitting legacy order lacks one or more pickup-address fields, when Delivery has positive Kafka lag, or when either check cannot be verified.
 
-```bash
-./gradlew :delivery-service:test --tests '*DeliveryServiceIntegrationTest' --tests '*OrderEventConsumer*'
-```
+---
 
-Expected: Delivery context/event flow succeeds with no Restaurant dependency.
+## Final Verification
 
-- [ ] **Step 5: Commit**
+All required workflows passed on `af400dd029d184ade908e7c1dedb1fd5bc55cdb0`:
 
-```bash
-git add -A delivery-service
-git commit -m "refactor: create deliveries from order snapshots"
-```
+- [x] Phase 01 Verification run #443
+- [x] Phase 01 Module Diagnostics run #285 — seven of seven modules passed
+- [x] Phase 01 Full Gradle Verification run #293
+- [x] Phase 02 Core Order Flow run #301
+- [x] Phase 01 Fresh Stack Smoke run #203 — two clean-volume cycles passed
+- [x] Phase 02 Core Order Flow E2E run #121 — two clean-state cycles passed
 
 ## Completion Checklist
 
-- [ ] Restaurant snapshot includes pickup address.
-- [ ] Order persists immutable pickup address.
-- [ ] OrderApproved carries pickup/delivery address snapshots.
-- [ ] Delivery consumer performs no synchronous Restaurant call.
-- [ ] Phase 01A bridge files/configuration are removed.
+- [x] Restaurant validation reply includes pickup address.
+- [x] Order persists an immutable pickup-address snapshot.
+- [x] `OrderApproved` carries pickup and delivery snapshots.
+- [x] Delivery performs no synchronous Restaurant call.
+- [x] Phase 01A bridge files and configuration are removed.
+- [x] Current and legacy serialization behavior is explicit.
+- [x] Migration is forward-only and rolling-deployment compatible.
+- [x] CreateOrderSaga step indexes remain compatible with Phase 02.
+- [x] Rollout safety is enforced by an executable preflight.
+- [x] Full repository verification is green on the final implementation SHA.

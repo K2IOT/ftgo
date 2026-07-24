@@ -1,13 +1,13 @@
 package net.ftgo.delivery.config;
 
-import net.ftgo.delivery.messaging.HttpRestaurantPickupAddressResolver;
 import net.ftgo.delivery.messaging.OrderEventConsumer;
-import net.ftgo.delivery.messaging.RestaurantPickupAddressResolver;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationContext;
 import org.springframework.test.context.ActiveProfiles;
+
+import java.util.Arrays;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -19,10 +19,10 @@ class DeliveryPickupResolverContextTest {
     private ApplicationContext context;
 
     @Test
-    void registersOneResolverAndOrderEventConsumer() {
-        assertThat(context.getBeansOfType(RestaurantPickupAddressResolver.class))
-                .hasSize(1)
-                .containsValue(context.getBean(HttpRestaurantPickupAddressResolver.class));
+    void registersEventConsumerWithoutRestaurantClientBridge() {
         assertThat(context.getBeansOfType(OrderEventConsumer.class)).hasSize(1);
+        assertThat(Arrays.asList(context.getBeanDefinitionNames()))
+            .noneMatch(name -> name.toLowerCase().contains("restaurantrestclient"))
+            .noneMatch(name -> name.toLowerCase().contains("pickupaddressresolver"));
     }
 }

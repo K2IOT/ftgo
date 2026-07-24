@@ -6,6 +6,7 @@ import io.eventuate.tram.commands.consumer.CommandMessage;
 import io.eventuate.tram.messaging.common.Message;
 import io.eventuate.tram.sagas.participant.SagaCommandDispatcherFactory;
 import io.eventuate.tram.sagas.participant.SagaCommandHandlersBuilder;
+import net.ftgo.common.Address;
 import net.ftgo.common.Money;
 import net.ftgo.common.channels.ChannelNames;
 import net.ftgo.common.orderflow.commands.ApproveTicketCommand;
@@ -133,6 +134,7 @@ public class TestParticipantConfiguration {
             command.getOrderId(),
             command.getRestaurantId(),
             command.getExpectedMenuVersion(),
+            new Address("1 Test Kitchen", "Hanoi", "HN", "10000"),
             command.getLineItems(),
             total
         ));

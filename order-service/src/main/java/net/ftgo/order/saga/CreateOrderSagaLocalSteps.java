@@ -103,8 +103,11 @@ public class CreateOrderSagaLocalSteps {
     }
 
     /**
-     * Final successful CreateOrderSaga transition. Approval is intentionally
-     * deferred until a TicketAcceptedEvent starts ConfirmOrderSaga.
+     * Final successful CreateOrderSaga transition. The pickup snapshot and all
+     * remote resource identifiers are persisted in this existing Phase 02 step
+     * so rolling upgrades do not shift persisted Eventuate saga step indexes.
+     * Approval remains deferred until a TicketAcceptedEvent starts
+     * ConfirmOrderSaga.
      */
     @Transactional
     public boolean awaitRestaurantAcceptance(CreateOrderSagaData data) {
@@ -113,16 +116,17 @@ public class CreateOrderSagaLocalSteps {
                 "Order not found: " + data.getOrderId()
             ));
 
-        boolean changed = order.awaitRestaurantAcceptance(
+        boolean snapshotChanged = order.snapshotPickupAddress(data.getPickupAddress());
+        boolean stateChanged = order.awaitRestaurantAcceptance(
             data.getTicketId(),
             data.getAuthorizationId(),
             data.getCreditReservationId(),
             data.getAcceptanceDeadline()
         );
-        if (changed) {
+        if (snapshotChanged || stateChanged) {
             orderRepository.save(order);
         }
-        return changed;
+        return snapshotChanged || stateChanged;
     }
 
     /**
@@ -185,6 +189,7 @@ public class CreateOrderSagaLocalSteps {
             order.getOrderTotal(),
             command.getTicketId(),
             command.getAuthorizationId(),
+            order.getPickupAddress(),
             toAddress(order.getDeliveryInfo().getDeliveryAddress()),
             order.getDeliveryInfo().getDeliveryTime()
         ));

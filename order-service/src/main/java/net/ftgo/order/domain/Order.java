@@ -19,6 +19,7 @@ import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import jakarta.validation.constraints.NotNull;
+import net.ftgo.common.Address;
 import net.ftgo.common.Money;
 
 import java.time.LocalDateTime;
@@ -58,6 +59,20 @@ public class Order {
     @NotNull(message = "Restaurant ID is required")
     @Column(name = "restaurant_id", nullable = false)
     private Long restaurantId;
+
+    /**
+     * Immutable Restaurant address captured by the authoritative menu
+     * validation reply. Columns stay nullable during the rolling-deployment
+     * compatibility window so existing rows are not assigned invented data.
+     */
+    @Embedded
+    @AttributeOverrides({
+        @AttributeOverride(name = "street", column = @Column(name = "pickup_address_street")),
+        @AttributeOverride(name = "city", column = @Column(name = "pickup_address_city")),
+        @AttributeOverride(name = "state", column = @Column(name = "pickup_address_state")),
+        @AttributeOverride(name = "zipCode", column = @Column(name = "pickup_address_zip_code"))
+    })
+    private Address pickupAddress;
 
     @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
     @JoinColumn(name = "order_id", nullable = false)
@@ -172,6 +187,25 @@ public class Order {
         return lineItems.stream()
             .map(OrderLineItem::getTotal)
             .reduce(Money.ZERO, Money::add);
+    }
+
+    /**
+     * Captures the authoritative pickup address once. Replaying the same menu
+     * validation reply is idempotent; trying to replace the snapshot is rejected.
+     */
+    public boolean snapshotPickupAddress(Address address) {
+        if (address == null) {
+            throw new IllegalArgumentException("Pickup address snapshot is required");
+        }
+        if (pickupAddress == null) {
+            pickupAddress = address;
+            touch();
+            return true;
+        }
+        if (pickupAddress.equals(address)) {
+            return false;
+        }
+        throw new IllegalStateException("Pickup address snapshot is immutable");
     }
 
     /**
@@ -388,6 +422,10 @@ public class Order {
 
     public Long getRestaurantId() {
         return restaurantId;
+    }
+
+    public Address getPickupAddress() {
+        return pickupAddress;
     }
 
     public List<OrderLineItem> getLineItems() {

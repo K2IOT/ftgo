@@ -88,6 +88,7 @@ public class CreateOrderSaga implements SimpleSaga<CreateOrderSagaData> {
     }
 
     private void handleMenuValidated(CreateOrderSagaData data, OrderMenuValidated reply) {
+        data.setPickupAddress(reply.getPickupAddress());
         data.setAuthoritativeMenuItems(reply.getAuthoritativeLineItems());
         data.setAuthoritativeTotal(reply.getAuthoritativeTotal());
     }

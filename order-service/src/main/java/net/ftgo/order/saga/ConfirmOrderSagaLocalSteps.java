@@ -33,6 +33,11 @@ public class ConfirmOrderSagaLocalSteps {
         if (!order.confirmRestaurantAcceptance()) {
             return false;
         }
+        if (order.getPickupAddress() == null) {
+            throw new IllegalStateException(
+                "Order " + orderId + " cannot be approved without a pickup address snapshot"
+            );
+        }
 
         orderRepository.save(order);
         eventPublisher.publishOrderEvent(order.getId(), new OrderApproved(
@@ -42,6 +47,7 @@ public class ConfirmOrderSagaLocalSteps {
             order.getOrderTotal(),
             order.getTicketId(),
             order.getAuthorizationId(),
+            order.getPickupAddress(),
             toAddress(order.getDeliveryInfo().getDeliveryAddress()),
             order.getDeliveryInfo().getDeliveryTime()
         ));

@@ -2,6 +2,7 @@ package net.ftgo.order.saga;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import net.ftgo.common.Address;
 import net.ftgo.common.Money;
 import net.ftgo.common.orderflow.menu.OrderMenuLineItem;
 import net.ftgo.order.domain.OrderLineItem;
@@ -23,6 +24,7 @@ public class CreateOrderSagaData {
     private String paymentToken;
 
     private Long expectedMenuVersion = 0L;
+    private Address pickupAddress;
     private List<OrderMenuLineItem> requestedMenuItems;
     private List<OrderMenuLineItem> authoritativeMenuItems;
     private Money authoritativeTotal;
@@ -113,6 +115,8 @@ public class CreateOrderSagaData {
     public void setPaymentToken(String paymentToken) { this.paymentToken = paymentToken; }
     public Long getExpectedMenuVersion() { return expectedMenuVersion; }
     public void setExpectedMenuVersion(Long expectedMenuVersion) { this.expectedMenuVersion = expectedMenuVersion; }
+    public Address getPickupAddress() { return pickupAddress; }
+    public void setPickupAddress(Address pickupAddress) { this.pickupAddress = pickupAddress; }
     public List<OrderMenuLineItem> getRequestedMenuItems() { return requestedMenuItems; }
     public void setRequestedMenuItems(List<OrderMenuLineItem> requestedMenuItems) {
         this.requestedMenuItems = requestedMenuItems == null

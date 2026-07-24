@@ -40,17 +40,14 @@ class FreshStackContractTest(unittest.TestCase):
         self.assertIn('FRESH_STACK_RUNS:-2', content)
         self.assertIn('assert-order-event.sh', content)
 
-    def test_smoke_verifies_delivery_pickup_bridge_with_real_restaurant_service(self):
-        self.assertTrue(DELIVERY_PICKUP_BRIDGE.is_file())
+    def test_delivery_starts_without_restaurant_bridge_configuration(self):
         smoke = SMOKE.read_text()
-        bridge = DELIVERY_PICKUP_BRIDGE.read_text()
 
-        self.assertIn('run_delivery_pickup_bridge_smoke', smoke)
-        self.assertIn('assert-delivery-pickup-bridge.sh', smoke)
-        self.assertIn('RESTAURANT_SERVICE_URL="http://localhost:8083"', smoke)
-        self.assertIn('/internal/restaurants', bridge)
-        self.assertIn('application/problem+json', bridge)
-        self.assertIn('RESTAURANT_NOT_FOUND', bridge)
+        self.assertFalse(DELIVERY_PICKUP_BRIDGE.exists())
+        self.assertNotIn('run_delivery_pickup_bridge_smoke', smoke)
+        self.assertNotIn('assert-delivery-pickup-bridge.sh', smoke)
+        self.assertNotIn('RESTAURANT_SERVICE_URL=', smoke)
+        self.assertIn('boot_and_assert "${run_number}" delivery-service 8086', smoke)
 
     def test_gradle_bootstrap_is_distribution_checksum_pinned(self):
         self.assertFalse((ROOT / "gradle/wrapper/gradle-wrapper.jar").exists())

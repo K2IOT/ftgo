@@ -35,9 +35,6 @@ class OrderEventConsumerTest {
     @Mock
     private ProcessedMessageRepository processedMessageRepository;
 
-    @Mock
-    private RestaurantPickupAddressResolver pickupAddressResolver;
-
     private ObjectMapper objectMapper;
     private OrderEventConsumer consumer;
 
@@ -48,26 +45,16 @@ class OrderEventConsumerTest {
         consumer = new OrderEventConsumer(
             deliveryRepository,
             processedMessageRepository,
-            pickupAddressResolver,
             objectMapper
         );
     }
 
     @Test
-    void createsDeliveryFromSharedOrderApproved() throws Exception {
+    void createsDeliveryFromSharedOrderApprovedSnapshots() throws Exception {
         LocalDateTime deliveryTime = LocalDateTime.now().plusHours(1);
         Address pickupAddress = new Address("123 Restaurant St", "San Francisco", "CA", "94102");
         Address deliveryAddress = new Address("456 Consumer Ave", "San Francisco", "CA", "94103");
-        OrderApproved event = new OrderApproved(
-            101L,
-            202L,
-            303L,
-            new Money("30.97"),
-            404L,
-            505L,
-            deliveryAddress,
-            deliveryTime
-        );
+        OrderApproved event = event(pickupAddress, deliveryAddress, deliveryTime);
         ConsumerRecord<String, String> record = orderRecord(
             "message-1",
             objectMapper.writeValueAsString(event),
@@ -76,7 +63,6 @@ class OrderEventConsumerTest {
 
         when(processedMessageRepository.existsById("message-1")).thenReturn(false);
         when(deliveryRepository.findByOrderId(101L)).thenReturn(Optional.empty());
-        when(pickupAddressResolver.resolvePickupAddress(303L)).thenReturn(pickupAddress);
 
         consumer.handleOrderEvent(record);
 
@@ -92,7 +78,7 @@ class OrderEventConsumerTest {
     }
 
     @Test
-    void ignoresOrderEventsThatAreNotOrderApproved() throws Exception {
+    void ignoresOrderEventsThatAreNotOrderApproved() {
         ConsumerRecord<String, String> record = orderRecord(
             "message-2",
             "{}",
@@ -103,7 +89,6 @@ class OrderEventConsumerTest {
 
         verify(deliveryRepository, never()).save(any(Delivery.class));
         verify(processedMessageRepository, never()).save(any(ProcessedMessage.class));
-        verify(pickupAddressResolver, never()).resolvePickupAddress(any());
     }
 
     @Test
@@ -111,16 +96,7 @@ class OrderEventConsumerTest {
         LocalDateTime deliveryTime = LocalDateTime.now().plusHours(1);
         Address pickupAddress = new Address("123 Restaurant St", "San Francisco", "CA", "94102");
         Address deliveryAddress = new Address("456 Consumer Ave", "San Francisco", "CA", "94103");
-        OrderApproved event = new OrderApproved(
-            101L,
-            202L,
-            303L,
-            new Money("30.97"),
-            404L,
-            505L,
-            deliveryAddress,
-            deliveryTime
-        );
+        OrderApproved event = event(pickupAddress, deliveryAddress, deliveryTime);
         String payload = objectMapper.writeValueAsString(event);
         ConsumerRecord<String, String> firstMessage = orderRecord("message-3", payload, "OrderApproved");
         ConsumerRecord<String, String> retriedAsNewMessage = orderRecord("message-4", payload, "OrderApproved");
@@ -129,13 +105,30 @@ class OrderEventConsumerTest {
         when(processedMessageRepository.existsById("message-3")).thenReturn(false);
         when(processedMessageRepository.existsById("message-4")).thenReturn(false);
         when(deliveryRepository.findByOrderId(101L)).thenReturn(Optional.empty(), Optional.of(existingDelivery));
-        when(pickupAddressResolver.resolvePickupAddress(303L)).thenReturn(pickupAddress);
 
         consumer.handleOrderEvent(firstMessage);
         consumer.handleOrderEvent(retriedAsNewMessage);
 
         verify(deliveryRepository).save(any(Delivery.class));
         verify(processedMessageRepository, times(2)).save(any(ProcessedMessage.class));
+    }
+
+    private OrderApproved event(
+        Address pickupAddress,
+        Address deliveryAddress,
+        LocalDateTime deliveryTime
+    ) {
+        return new OrderApproved(
+            101L,
+            202L,
+            303L,
+            new Money("30.97"),
+            404L,
+            505L,
+            pickupAddress,
+            deliveryAddress,
+            deliveryTime
+        );
     }
 
     private ConsumerRecord<String, String> orderRecord(String key, String payload, String eventType) {
