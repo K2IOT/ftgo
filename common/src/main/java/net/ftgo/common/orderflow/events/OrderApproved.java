@@ -13,6 +13,7 @@ public class OrderApproved {
     private Money orderTotal;
     private Long ticketId;
     private Long authorizationId;
+    private Address pickupAddress;
     private Address deliveryAddress;
     private LocalDateTime deliveryTime;
 
@@ -27,9 +28,14 @@ public class OrderApproved {
         Long ticketId,
         Long authorizationId
     ) {
-        this(orderId, consumerId, restaurantId, orderTotal, ticketId, authorizationId, null, null);
+        this(orderId, consumerId, restaurantId, orderTotal, ticketId, authorizationId,
+            null, null, null);
     }
 
+    /**
+     * Compatibility constructor for the Phase 01/02 event shape that did not
+     * yet carry an immutable pickup-address snapshot.
+     */
     public OrderApproved(
         Long orderId,
         Long consumerId,
@@ -40,12 +46,28 @@ public class OrderApproved {
         Address deliveryAddress,
         LocalDateTime deliveryTime
     ) {
+        this(orderId, consumerId, restaurantId, orderTotal, ticketId, authorizationId,
+            null, deliveryAddress, deliveryTime);
+    }
+
+    public OrderApproved(
+        Long orderId,
+        Long consumerId,
+        Long restaurantId,
+        Money orderTotal,
+        Long ticketId,
+        Long authorizationId,
+        Address pickupAddress,
+        Address deliveryAddress,
+        LocalDateTime deliveryTime
+    ) {
         this.orderId = orderId;
         this.consumerId = consumerId;
         this.restaurantId = restaurantId;
         this.orderTotal = orderTotal;
         this.ticketId = ticketId;
         this.authorizationId = authorizationId;
+        this.pickupAddress = pickupAddress;
         this.deliveryAddress = deliveryAddress;
         this.deliveryTime = deliveryTime;
     }
@@ -96,6 +118,14 @@ public class OrderApproved {
 
     public void setAuthorizationId(Long authorizationId) {
         this.authorizationId = authorizationId;
+    }
+
+    public Address getPickupAddress() {
+        return pickupAddress;
+    }
+
+    public void setPickupAddress(Address pickupAddress) {
+        this.pickupAddress = pickupAddress;
     }
 
     public Address getDeliveryAddress() {
