@@ -49,7 +49,7 @@ public class ConsumerService {
             .orElseThrow(() -> new IllegalArgumentException("Consumer not found: " + consumerId));
 
         consumer.updateProfile(name, email);
-        consumer = consumerRepository.saveAndFlush(consumer);
+        consumerRepository.saveAndFlush(consumer);
 
         ConsumerUpdated event = new ConsumerUpdated(
             consumer.getId(),
