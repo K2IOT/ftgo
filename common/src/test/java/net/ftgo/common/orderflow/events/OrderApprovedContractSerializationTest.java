@@ -18,7 +18,8 @@ class OrderApprovedContractSerializationTest {
     private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
 
     @Test
-    void serializesAndDeserializesCanonicalOrderApprovedWithDeliveryDetailsOnly() throws Exception {
+    void serializesAndDeserializesCanonicalOrderApprovedWithAddressSnapshots() throws Exception {
+        Address pickupAddress = new Address("123 Restaurant St", "San Francisco", "CA", "94102");
         Address deliveryAddress = new Address("456 Consumer Ave", "San Francisco", "CA", "94103");
         LocalDateTime deliveryTime = LocalDateTime.of(2026, 5, 18, 10, 30);
         OrderApproved event = new OrderApproved(
@@ -28,6 +29,7 @@ class OrderApprovedContractSerializationTest {
             new Money("30.97"),
             404L,
             505L,
+            pickupAddress,
             deliveryAddress,
             deliveryTime
         );
@@ -35,9 +37,9 @@ class OrderApprovedContractSerializationTest {
         String json = objectMapper.writeValueAsString(event);
         JsonNode node = objectMapper.readTree(json);
 
+        assertNotNull(node.get("pickupAddress"));
         assertNotNull(node.get("deliveryAddress"));
         assertNotNull(node.get("deliveryTime"));
-        assertFalse(node.has("pickupAddress"));
         assertFalse(node.has("pickupLocation"));
         assertFalse(node.has("restaurantPickupAddress"));
 
@@ -48,12 +50,13 @@ class OrderApprovedContractSerializationTest {
         assertEquals(new Money("30.97"), roundTrip.getOrderTotal());
         assertEquals(404L, roundTrip.getTicketId());
         assertEquals(505L, roundTrip.getAuthorizationId());
+        assertEquals(pickupAddress, roundTrip.getPickupAddress());
         assertEquals(deliveryAddress, roundTrip.getDeliveryAddress());
         assertEquals(deliveryTime, roundTrip.getDeliveryTime());
     }
 
     @Test
-    void supportsBackwardCompatibilityWhenLegacyPayloadOmitsDeliveryFields() throws Exception {
+    void supportsBackwardCompatibilityWhenLegacyPayloadOmitsAddressFields() throws Exception {
         String legacyJson = """
             {
               "orderId": 101,
@@ -68,6 +71,7 @@ class OrderApprovedContractSerializationTest {
         OrderApproved parsed = objectMapper.readValue(legacyJson, OrderApproved.class);
 
         assertEquals(101L, parsed.getOrderId());
+        assertNull(parsed.getPickupAddress());
         assertNull(parsed.getDeliveryAddress());
         assertNull(parsed.getDeliveryTime());
     }
