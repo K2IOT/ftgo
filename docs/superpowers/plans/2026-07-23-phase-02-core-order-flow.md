@@ -1,331 +1,192 @@
-# Phase 02 Core Order Flow Implementation Plan
+# Phase 02 Core Order Flow Implementation Record
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **Status:** Implementation complete. PR #4 is the authoritative evidence register for the final branch SHA and workflow run URLs.
 
-**Goal:** Expand checkout into an authoritative, restart-safe order flow that reserves credit, authorizes then captures payment after restaurant acceptance, and compensates rejection or timeout exactly once.
+## Goal
 
-**Architecture:** Keep Eventuate Tram command/reply for synchronous participants and use versioned domain events for the restaurant-decision boundary. Split the workflow into `CreateOrderSaga`, `ConfirmOrderSaga`, and `RejectOrderSaga`; every participant operation uses an order-scoped idempotency key and persists its result before replying.
+Expand checkout into an authoritative, restart-safe order flow that:
 
-**Tech Stack:** Java 21, Spring Boot 3.2, Gradle 8.5, Eventuate Tram Sagas, JPA, Flyway, MySQL 8, Kafka, Debezium outbox, JUnit 5, Testcontainers.
+- validates the restaurant menu before reserving resources;
+- durably reserves consumer credit;
+- authorizes payment before restaurant review;
+- captures payment only after restaurant acceptance;
+- compensates rejection, timeout, and pre-pivot failures exactly once;
+- survives duplicate delivery, retries, service restarts, and clean-stack recreation.
 
-## Global Constraints
+## Final Architecture
 
-- Work only on `agent/phase-02-core-order-flow`, based directly on `dev`.
-- Follow red-green-refactor: commit tests before production behavior when practical.
-- Shared wire contracts live under `common/src/main/java/net/ftgo/common/orderflow`.
-- Database migrations precede code that emits or consumes new enum values or columns.
-- No raw card number/CVV or sensitive provider token is persisted or logged.
-- Every command/event handler is idempotent by business key, not only message ID.
-- Aggregate mutation and outbox insertion occur in the same local transaction.
-- Each task must leave affected module tests green; final verification is `./gradlew clean test` plus real fresh-stack checks.
+Eventuate Tram command/reply is used for synchronous saga participants. The restaurant decision boundary uses Kitchen outbox events published through Debezium.
 
----
+The workflow is split into three orchestrations:
 
-### Task 0: Add Phase 02 CI Gate
+- `CreateOrderSaga`: validate menu, reserve credit, create ticket, authorize payment, approve ticket, and wait for the restaurant decision.
+- `ConfirmOrderSaga`: capture payment, commit credit, and approve the order after acceptance.
+- `RejectOrderSaga`: void authorization, release credit, and reject the order after explicit rejection or timeout.
 
-**Files:**
-- Create: `.github/workflows/phase-02-core-order-flow.yml`
+The first valid Kitchen decision wins an order-row compare-and-set transition. Duplicate, stale, and losing race events are successful no-ops.
 
-**Interfaces:**
-- Trigger: pushes to `agent/phase-02-core-order-flow` and pull requests targeting `dev`.
-- Produces: wrapper verification, `clean test`, test reports and logs.
+## Completed Tasks
 
-- [ ] **Step 1: Add branch-specific workflow**
+### Task 0: Phase 02 CI Gates
 
-Use Java 21 and the checked-in Gradle wrapper:
+- [x] Add branch and pull-request workflow for Phase 02 contracts and the full test suite.
+- [x] Add a dedicated real-stack E2E workflow.
+- [x] Preserve diagnostics for module, migration, context, smoke, and E2E failures.
+- [x] Verify the checked-in Gradle wrapper before every build.
 
-```yaml
-name: Phase 02 Core Order Flow
-on:
-  push:
-    branches: [agent/phase-02-core-order-flow]
-  pull_request:
-    branches: [dev]
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
-      - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95
-        with:
-          distribution: temurin
-          java-version: '21'
-      - run: bash scripts/ci/verify-gradle-wrapper.sh
-      - run: chmod +x gradlew && ./gradlew --no-daemon clean test --stacktrace
-```
+### Task 1: Shared Order-Flow Contracts
 
-- [ ] **Step 2: Verify workflow starts on the branch**
+- [x] Add menu-validation commands and typed replies.
+- [x] Add durable credit reserve, commit, and release contracts.
+- [x] Add payment authorize, capture, void, and refund contracts.
+- [x] Add accepted, rejected, and timeout ticket-decision events.
+- [x] Add serialization and duplicate-contract guardrails.
+- [x] Propagate the payment token from REST through saga data to Accounting.
 
-Expected: a workflow run is associated with the workflow commit.
+### Task 2: Authoritative Restaurant Menu Validation
 
-- [ ] **Step 3: Commit**
+- [x] Add restaurant availability and menu-version migrations.
+- [x] Validate restaurant state, menu version, item identity, name, price, availability, quantity, and duplicates.
+- [x] Return stable typed business rejection codes.
+- [x] Prevent expected business rejections from marking the Eventuate message transaction rollback-only.
+- [x] Add transaction-level regression coverage for failure replies.
+
+### Task 3: Durable Consumer Credit Reservations
+
+- [x] Persist reservations under a unique order business key.
+- [x] Implement idempotent reserve, commit, and release transitions.
+- [x] Preserve concurrency and credit-limit invariants.
+- [x] Prevent typed credit rejections from poisoning the surrounding message transaction.
+
+### Task 4: Accounting Authorization Lifecycle
+
+- [x] Implement configurable payment-provider authorization decisions and a deny list.
+- [x] Persist authorization lifecycle and deterministic operation request IDs.
+- [x] Implement idempotent authorize, capture, void, and refund operations.
+- [x] Align the native MySQL authorization-status enum with the complete Java lifecycle.
+- [x] Add migration regression coverage for enum drift.
+
+### Task 5: Kitchen Accept, Reject, and Timeout Decisions
+
+- [x] Add state-guarded accept and reject APIs.
+- [x] Add atomic timeout claiming for multiple service instances.
+- [x] Publish exactly one typed outbox decision event.
+- [x] Align both Kitchen ticket state columns with the complete `TicketState` lifecycle.
+- [x] Add race, duplicate, timeout, and migration regression tests.
+
+### Task 6: Create, Confirm, and Reject Order Sagas
+
+- [x] Split the order workflow into Create, Confirm, and Reject sagas.
+- [x] Add order decision states and row-lock claim transitions.
+- [x] Consolidate all local Order saga command handlers into one complete dispatcher on `orderService`.
+- [x] Align the native MySQL order-state enum with the complete `OrderState` lifecycle.
+- [x] Decode both direct JSON and Kafka Connect schema-wrapped decision events.
+- [x] Project explicit rejection and timeout outcomes into Order History.
+- [x] Add stale, duplicate, and accept-timeout race handling.
+
+### Task 7: Real Cross-Service Verification
+
+- [x] Start real Order, Consumer, Restaurant, Kitchen, and Accounting processes.
+- [x] Start MySQL, Kafka, ZooKeeper, Eventuate CDC, Debezium Connect, and the Kitchen outbox connector.
+- [x] Execute restaurant acceptance.
+- [x] Execute stale-menu rejection.
+- [x] Execute insufficient-credit rejection.
+- [x] Execute payment-provider denial.
+- [x] Execute explicit restaurant rejection.
+- [x] Execute restaurant acceptance timeout.
+- [x] Execute the acceptance-versus-timeout race.
+- [x] Execute duplicate decision delivery.
+- [x] Repeat the complete suite through two independent clean-state cycles.
+
+### Task 8: Documentation and Review Gates
+
+- [x] Document the Phase 02 architecture and verification commands in the repository README.
+- [x] Document migration ordering, rollout, kill-switch operation, rollback, and recovery.
+- [x] Keep exact final workflow run URLs and the final SHA in PR #4.
+- [x] Require all gates to pass on one final SHA before marking the PR ready.
+
+## Defects Found by Real E2E and Resolved
+
+The real workflow exposed issues that unit tests alone did not detect:
+
+1. **Consumer and Restaurant rollback-only failure replies**
+   - Expected typed business exceptions were caught by handlers, but Spring had already marked the joined Eventuate transaction rollback-only.
+   - The reply was lost and the Kafka consumer terminated with `UnexpectedRollbackException`.
+   - Expected business exceptions are now explicitly excluded from rollback.
+
+2. **Partial Order command dispatchers sharing one channel**
+   - Independent dispatcher groups subscribed to `orderService` with incomplete handler sets.
+   - Commands were delivered to consumers that had no matching method.
+   - One consolidated dispatcher now owns the complete local saga handler set.
+
+3. **Native MySQL enum drift**
+   - Accounting, Kitchen, and Order Java state machines had evolved beyond their native MySQL enum definitions.
+   - Runtime writes failed with `Data truncated for column` and aborted message processing.
+   - Forward migrations and `information_schema` regression tests now keep schema and domain lifecycles aligned.
+
+4. **Kafka Connect schema envelope mismatch**
+   - Debezium delivered events as a top-level schema envelope with the event under `payload`.
+   - Direct DTO deserialization silently produced decision objects with null business IDs.
+   - A shared payload reader now accepts direct JSON, object envelopes, and textual JSON payloads.
+
+5. **Property-test input drift**
+   - A generic non-blank generator produced control-only strings that violated the domain's request-ID rules.
+   - Accounting properties now use an explicit domain-valid request-ID provider.
+
+## Verification Gates
+
+The following commands and workflows must pass on the same final branch SHA. Exact run URLs are recorded in PR #4.
+
+| Gate | Command or workflow | Required result |
+|------|---------------------|-----------------|
+| Module matrix | Phase 01 Module Diagnostics | 7/7 modules green |
+| Full build | `./gradlew --no-daemon clean test --stacktrace` | Green |
+| Phase 02 contracts | Phase 02 Core Order Flow / `phase02-contracts` | Green |
+| Phase 02 full suite | Phase 02 Core Order Flow / `clean-test` | Green |
+| Migration and context | Phase 01 Verification | Green |
+| Fresh stack | Phase 01 Fresh Stack Smoke | Two clean-volume cycles green |
+| Core order-flow E2E | Phase 02 Core Order Flow E2E | Eight scenarios in two clean-state cycles green |
+
+### Local E2E Command
 
 ```bash
-git add .github/workflows/phase-02-core-order-flow.yml
-git commit -m "ci: verify phase 02 core order flow"
+bash scripts/smoke/verify-core-order-flow.sh --runs 2
 ```
 
----
+### Dedicated Scenario Set
 
-### Task 1: Define Shared Order-Flow Contracts
+1. Accept and confirm.
+2. Menu drift.
+3. Insufficient credit.
+4. Payment denial.
+5. Explicit reject.
+6. Timeout.
+7. Accept-timeout race.
+8. Duplicate delivery.
 
-**Files:**
-- Create: `common/src/main/java/net/ftgo/common/orderflow/menu/OrderMenuLineItem.java`
-- Create: `common/src/main/java/net/ftgo/common/orderflow/commands/ValidateOrderMenuCommand.java`
-- Create: `common/src/main/java/net/ftgo/common/orderflow/commands/ReserveConsumerCreditCommand.java`
-- Create: `common/src/main/java/net/ftgo/common/orderflow/commands/CommitConsumerCreditCommand.java`
-- Create: `common/src/main/java/net/ftgo/common/orderflow/commands/ReleaseConsumerCreditCommand.java`
-- Create: `common/src/main/java/net/ftgo/common/orderflow/commands/CaptureAuthorizationCommand.java`
-- Create: `common/src/main/java/net/ftgo/common/orderflow/commands/VoidAuthorizationCommand.java`
-- Create: `common/src/main/java/net/ftgo/common/orderflow/commands/RefundPaymentCommand.java`
-- Modify: `common/src/main/java/net/ftgo/common/orderflow/commands/AuthorizeCardCommand.java`
-- Create: `common/src/main/java/net/ftgo/common/orderflow/replies/OrderMenuValidated.java`
-- Create: `common/src/main/java/net/ftgo/common/orderflow/replies/OrderMenuValidationRejected.java`
-- Create: `common/src/main/java/net/ftgo/common/orderflow/replies/ConsumerCreditReserved.java`
-- Create: `common/src/main/java/net/ftgo/common/orderflow/replies/ConsumerCreditCommitted.java`
-- Create: `common/src/main/java/net/ftgo/common/orderflow/replies/ConsumerCreditReleased.java`
-- Create: `common/src/main/java/net/ftgo/common/orderflow/replies/ConsumerCreditReservationRejected.java`
-- Create: `common/src/main/java/net/ftgo/common/orderflow/replies/PaymentCaptured.java`
-- Create: `common/src/main/java/net/ftgo/common/orderflow/replies/AuthorizationVoided.java`
-- Create: `common/src/main/java/net/ftgo/common/orderflow/replies/PaymentRefunded.java`
-- Create: `common/src/main/java/net/ftgo/common/orderflow/events/TicketAcceptedEvent.java`
-- Create: `common/src/main/java/net/ftgo/common/orderflow/events/TicketRejectedEvent.java`
-- Create: `common/src/main/java/net/ftgo/common/orderflow/events/TicketAcceptanceTimedOutEvent.java`
-- Create: `common/src/test/java/net/ftgo/common/orderflow/Phase02OrderFlowContractsSerializationTest.java`
-- Modify: `common/src/test/java/net/ftgo/common/orderflow/SharedContractGuardrailsTest.java`
+## Rollout and Rollback
 
-**Interfaces:**
-- Menu validation key: `orderId`; request includes `restaurantId`, `expectedMenuVersion`, requested line items.
-- Credit commands use `consumerId` and `orderId`; reserve also carries `Money amount`.
-- Payment commands use `orderId`, authorization/capture ID, and deterministic `requestId`.
-- Ticket decision events carry `eventId`, `ticketId`, `orderId`, and `occurredAt`.
+The operational source of truth is:
 
-- [ ] **Step 1: Write failing serialization tests**
+- `docs/operations/phase-02-core-order-flow-rollout.md`
 
-Round-trip every new contract with `ObjectMapper.findAndRegisterModules()` and assert all business-key fields survive serialization.
+Key controls:
 
-- [ ] **Step 2: Verify red**
-
-```bash
-./gradlew :common:test --tests '*Phase02OrderFlowContractsSerializationTest'
-```
-
-Expected: compilation failure because the new contract classes do not exist.
-
-- [ ] **Step 3: Add minimal contract classes**
-
-Use JavaBeans-compatible no-arg constructors, full constructors, getters and setters because Eventuate/Jackson deserialize by class name.
-
-Update `AuthorizeCardCommand` to:
-
-```java
-AuthorizeCardCommand(Long consumerId, Long orderId, Money amount, String requestId)
-```
-
-- [ ] **Step 4: Add guardrails**
-
-Assert participant modules no longer define duplicate classes with the same simple names and assert every command implements `io.eventuate.tram.commands.common.Command`.
-
-- [ ] **Step 5: Verify green**
-
-```bash
-./gradlew :common:test --tests '*Phase02OrderFlowContractsSerializationTest' --tests '*SharedContractGuardrailsTest'
-```
-
-Expected: PASS.
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add common
-git commit -m "feat: define phase 02 order flow contracts"
-```
-
----
-
-### Task 2: Implement Authoritative Restaurant Menu Validation
-
-**Files:**
-- Modify: `restaurant-service/src/main/java/net/ftgo/restaurant/domain/Restaurant.java`
-- Modify: `restaurant-service/src/main/java/net/ftgo/restaurant/domain/MenuItem.java`
-- Modify: `restaurant-service/src/main/java/net/ftgo/restaurant/repository/MenuItemRepository.java`
-- Create: `restaurant-service/src/main/java/net/ftgo/restaurant/messaging/RestaurantOrderCommandHandlers.java`
-- Create: `restaurant-service/src/main/resources/db/migration/V2__add_menu_version_and_status.sql`
-- Create: `restaurant-service/src/test/java/net/ftgo/restaurant/messaging/RestaurantOrderCommandHandlersTest.java`
-- Create: `restaurant-service/src/test/java/net/ftgo/restaurant/migration/RestaurantPhase02MigrationTest.java`
-
-**Interfaces:**
-- Consumes: `ValidateOrderMenuCommand`.
-- Produces: `OrderMenuValidated` or `OrderMenuValidationRejected` with one stable reason code.
-
-- [ ] **Step 1: Write failing handler tests** for exact match and each failure code.
-- [ ] **Step 2: Add backward-compatible migrations** for `menu_version`, restaurant enabled/open state and indexes.
-- [ ] **Step 3: Implement one-round-trip menu lookup** preserving request item order.
-- [ ] **Step 4: Register the Eventuate command dispatcher** on the restaurant command channel.
-- [ ] **Step 5: Run** `./gradlew :restaurant-service:test` and expect PASS.
-- [ ] **Step 6: Commit** `feat: validate authoritative restaurant menu`.
-
----
-
-### Task 3: Implement Durable Consumer Credit Reservations
-
-**Files:**
-- Create: `consumer-service/src/main/java/net/ftgo/consumer/domain/CreditReservation.java`
-- Create: `consumer-service/src/main/java/net/ftgo/consumer/domain/CreditReservationStatus.java`
-- Create: `consumer-service/src/main/java/net/ftgo/consumer/repository/CreditReservationRepository.java`
-- Create: `consumer-service/src/main/java/net/ftgo/consumer/service/CreditReservationService.java`
-- Modify: `consumer-service/src/main/java/net/ftgo/consumer/domain/Consumer.java`
-- Modify: `consumer-service/src/main/java/net/ftgo/consumer/messaging/ConsumerCommandHandlers.java`
-- Create: `consumer-service/src/main/resources/db/migration/V3__create_credit_reservations.sql`
-- Create: `consumer-service/src/test/java/net/ftgo/consumer/service/CreditReservationServiceTest.java`
-- Create: `consumer-service/src/test/java/net/ftgo/consumer/integration/CreditReservationConcurrencyTest.java`
-
-**Interfaces:**
-- Unique reservation key: `orderId`.
-- State machine: `RESERVED -> COMMITTED -> RELEASED`, and `RESERVED -> RELEASED`.
-- Duplicate reserve/commit/release returns the established outcome without changing balances twice.
-
-- [ ] **Step 1: Write failing state/idempotency/concurrency tests**.
-- [ ] **Step 2: Add schema and optimistic version fields**.
-- [ ] **Step 3: Implement transactional reserve/commit/release**.
-- [ ] **Step 4: Route shared commands in ConsumerCommandHandlers**.
-- [ ] **Step 5: Run** `./gradlew :consumer-service:test` and expect PASS.
-- [ ] **Step 6: Commit** `feat: reserve consumer credit per order`.
-
----
-
-### Task 4: Implement Accounting Authorization Lifecycle
-
-**Files:**
-- Modify: `accounting-service/src/main/java/net/ftgo/accounting/domain/Authorization.java`
-- Modify: `accounting-service/src/main/java/net/ftgo/accounting/domain/AuthorizationStatus.java`
-- Modify: `accounting-service/src/main/java/net/ftgo/accounting/domain/Account.java`
-- Modify: `accounting-service/src/main/java/net/ftgo/accounting/messaging/AccountingServiceCommandHandlers.java`
-- Create: `accounting-service/src/main/resources/db/migration/V4__add_capture_void_refund_lifecycle.sql`
-- Create: `accounting-service/src/test/java/net/ftgo/accounting/domain/AuthorizationLifecycleTest.java`
-- Create: `accounting-service/src/test/java/net/ftgo/accounting/messaging/AccountingPhase02CommandHandlersTest.java`
-
-**Interfaces:**
-- Authorization state: `AUTHORIZED`, `DENIED`, `CAPTURED`, `VOIDED`, `REFUNDED`.
-- Unique operation identity: `(operationType, requestId)`.
-- Capture is the pivot; duplicate authorize/capture/void/refund returns the original result.
-
-- [ ] **Step 1: Write failing lifecycle and duplicate-request tests**.
-- [ ] **Step 2: Add schema columns and unique operation index**.
-- [ ] **Step 3: Implement idempotent authorize/capture/void/refund transitions**.
-- [ ] **Step 4: Register shared commands and typed replies**.
-- [ ] **Step 5: Run** `./gradlew :accounting-service:test` and expect PASS.
-- [ ] **Step 6: Commit** `feat: add payment authorization lifecycle`.
-
----
-
-### Task 5: Implement Kitchen Accept, Reject and Timeout Decisions
-
-**Files:**
-- Modify: `kitchen-service/src/main/java/net/ftgo/kitchen/domain/Ticket.java`
-- Modify: `kitchen-service/src/main/java/net/ftgo/kitchen/domain/TicketState.java`
-- Modify: `kitchen-service/src/main/java/net/ftgo/kitchen/repository/TicketRepository.java`
-- Modify: `kitchen-service/src/main/java/net/ftgo/kitchen/service/KitchenService.java`
-- Modify: `kitchen-service/src/main/java/net/ftgo/kitchen/api/KitchenController.java`
-- Create: `kitchen-service/src/main/java/net/ftgo/kitchen/service/TicketAcceptanceTimeoutService.java`
-- Create: `kitchen-service/src/main/resources/db/migration/V7__add_ticket_acceptance_decision.sql`
-- Create: `kitchen-service/src/test/java/net/ftgo/kitchen/domain/TicketAcceptanceDecisionTest.java`
-- Create: `kitchen-service/src/test/java/net/ftgo/kitchen/service/TicketAcceptanceTimeoutServiceTest.java`
-
-**Interfaces:**
-- `POST /tickets/{ticketId}/reject` accepts a stable reason code.
-- Only one transition from `AWAITING_ACCEPTANCE` to `ACCEPTED`, `REJECTED_BY_RESTAURANT`, or `REJECTED_TIMEOUT` succeeds.
-- Each winner publishes one versioned outbox event.
-
-- [ ] **Step 1: Write failing transition/race tests**.
-- [ ] **Step 2: Add migration and configuration properties**.
-- [ ] **Step 3: Implement state-guarded accept/reject/timeout methods**.
-- [ ] **Step 4: Implement atomic timeout claiming** suitable for multiple instances.
-- [ ] **Step 5: Run** `./gradlew :kitchen-service:test` and expect PASS.
-- [ ] **Step 6: Commit** `feat: add restaurant ticket decisions`.
-
----
-
-### Task 6: Split Order Workflow into Create, Confirm and Reject Sagas
-
-**Files:**
-- Modify: `order-service/src/main/java/net/ftgo/order/domain/Order.java`
-- Modify: `order-service/src/main/java/net/ftgo/order/domain/OrderState.java`
-- Modify: `order-service/src/main/java/net/ftgo/order/saga/CreateOrderSaga.java`
-- Modify: `order-service/src/main/java/net/ftgo/order/saga/CreateOrderSagaData.java`
-- Modify: `order-service/src/main/java/net/ftgo/order/saga/CreateOrderSagaLocalSteps.java`
-- Create: `order-service/src/main/java/net/ftgo/order/saga/ConfirmOrderSaga.java`
-- Create: `order-service/src/main/java/net/ftgo/order/saga/ConfirmOrderSagaData.java`
-- Create: `order-service/src/main/java/net/ftgo/order/saga/ConfirmOrderSagaLocalSteps.java`
-- Create: `order-service/src/main/java/net/ftgo/order/saga/RejectOrderSaga.java`
-- Create: `order-service/src/main/java/net/ftgo/order/saga/RejectOrderSagaData.java`
-- Create: `order-service/src/main/java/net/ftgo/order/saga/RejectOrderSagaLocalSteps.java`
-- Create: `order-service/src/main/java/net/ftgo/order/messaging/TicketDecisionEventHandler.java`
-- Create: `order-service/src/main/resources/db/migration/V5__add_restaurant_decision_states.sql`
-- Create: `order-service/src/test/java/net/ftgo/order/saga/CreateOrderSagaPhase02Test.java`
-- Create: `order-service/src/test/java/net/ftgo/order/saga/ConfirmOrderSagaTest.java`
-- Create: `order-service/src/test/java/net/ftgo/order/saga/RejectOrderSagaTest.java`
-- Create: `order-service/src/test/java/net/ftgo/order/messaging/TicketDecisionEventHandlerTest.java`
-
-**Interfaces:**
-- Create saga final state: `AWAITING_RESTAURANT_ACCEPTANCE`.
-- Confirm decision CAS: `AWAITING_RESTAURANT_ACCEPTANCE -> CONFIRMATION_PENDING`.
-- Reject/timeout decision CAS: `AWAITING_RESTAURANT_ACCEPTANCE -> REJECTION_PENDING`.
-- Only the CAS winner starts a decision saga.
-
-- [ ] **Step 1: Write failing saga command/compensation tests**.
-- [ ] **Step 2: Add order states and migration**.
-- [ ] **Step 3: Rebuild CreateOrderSaga with validate/reserve/create/authorize/wait and reverse-order compensations**.
-- [ ] **Step 4: Implement ConfirmOrderSaga with capture pivot, credit commit and approval**.
-- [ ] **Step 5: Implement RejectOrderSaga with void, credit release and rejection**.
-- [ ] **Step 6: Implement stale/duplicate decision handling without poison-message retries**.
-- [ ] **Step 7: Run** `./gradlew :order-service:test` and expect PASS.
-- [ ] **Step 8: Commit** `feat: orchestrate restaurant-confirmed orders`.
-
----
-
-### Task 7: Add Real Cross-Service Verification
-
-**Files:**
-- Create: `e2e-tests/build.gradle`
-- Modify: `settings.gradle`
-- Create: `e2e-tests/src/test/java/net/ftgo/e2e/CoreOrderFlowTest.java`
-- Create: `e2e-tests/src/test/resources/application.yml`
-- Modify: `deployment/tests/docker-compose.fresh-stack.yml`
-- Create: `scripts/smoke/verify-core-order-flow.sh`
-
-**Interfaces:**
-- Uses real service processes, MySQL, Kafka/Eventuate and outbox relay.
-
-- [ ] **Step 1: Add failing scenarios** for happy accept, menu mismatch, insufficient credit, authorization denied, explicit reject, timeout, accept-timeout race and duplicate delivery.
-- [ ] **Step 2: Implement reusable fresh-stack fixtures**.
-- [ ] **Step 3: Run** `./gradlew :e2e-tests:test --tests '*CoreOrderFlowTest'`.
-- [ ] **Step 4: Run** `./gradlew clean test`.
-- [ ] **Step 5: Run** `bash scripts/smoke/verify-core-order-flow.sh` twice from clean state.
-- [ ] **Step 6: Commit** `test: verify core order flow end to end`.
-
----
-
-### Task 8: Complete Documentation and Review Gates
-
-**Files:**
-- Modify: `docs/superpowers/specs/2026-07-23-phase-02-core-order-flow-design.md`
-- Modify: `docs/superpowers/plans/2026-07-23-phase-02-core-order-flow.md`
-- Modify: `README.md`
-
-- [ ] **Step 1: Mark completed checklist items only after evidence exists**.
-- [ ] **Step 2: Document migrations, feature flag, rollout and rollback order**.
-- [ ] **Step 3: Record exact verification commands and workflow run URLs**.
-- [ ] **Step 4: Review for placeholders, contradictory state names and contract drift**.
-- [ ] **Step 5: Commit** `docs: complete phase 02 core order flow`.
+- Apply backward-compatible migrations before application rollout.
+- Deploy participants before enabling new order creation.
+- Use canary rollout and verify saga/consumer health before increasing traffic.
+- Disable new Phase 02 orders with `FTGO_ORDER_PHASE2_ENABLED=false` before service rollback.
+- Do not contract enum schemas while persisted rows or in-flight messages still use Phase 02 values.
+- Preserve outbox, command, reply, and saga data during rollback and recovery.
 
 ## Completion Criteria
 
-- [ ] Restaurant Service rejects stale/unavailable/changed menu snapshots with typed codes.
-- [ ] Consumer reservations are durable, unique per order, concurrency-safe and idempotent.
-- [ ] Payment authorization is voidable; capture occurs only after restaurant acceptance.
-- [ ] Restaurant accept, reject and timeout produce exactly one decision.
-- [ ] Create, Confirm and Reject sagas converge after retries/restarts without duplicate effects.
-- [ ] Shared contract serialization and guardrail tests pass.
-- [ ] Module, full-build and fresh-stack E2E verification pass.
+- [x] Restaurant Service rejects stale, unavailable, or changed menu snapshots with typed codes.
+- [x] Consumer reservations are durable, unique per order, concurrency-safe, and idempotent.
+- [x] Payment authorization is voidable; capture occurs only after restaurant acceptance.
+- [x] Restaurant accept, reject, and timeout produce exactly one winning decision.
+- [x] Create, Confirm, and Reject sagas converge without duplicate participant effects.
+- [x] Shared contract serialization and guardrail tests pass.
+- [x] Module, full-build, migration, context, fresh-stack, and dedicated E2E verification pass.
+- [x] Two clean-state E2E cycles pass all eight scenarios.
+- [x] Rollout, kill-switch, rollback, and recovery procedures are documented.
