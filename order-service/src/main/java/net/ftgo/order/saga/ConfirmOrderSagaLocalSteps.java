@@ -37,7 +37,7 @@ public class ConfirmOrderSagaLocalSteps {
             );
         }
 
-        order = orderRepository.saveAndFlush(order);
+        orderRepository.saveAndFlush(order);
         eventPublisher.publishOrderEvent(
             order.getId(),
             order.getVersion().longValue(),
