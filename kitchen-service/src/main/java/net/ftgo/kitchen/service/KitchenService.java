@@ -10,9 +10,7 @@ import net.ftgo.kitchen.repository.TicketRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/**
- * Transaction boundary for kitchen ticket operations.
- */
+/** Transaction boundary for kitchen ticket operations. */
 @Service
 public class KitchenService {
 
@@ -24,41 +22,41 @@ public class KitchenService {
         this.eventPublisher = eventPublisher;
     }
 
-    /**
-     * Locks the ticket row so accept, reject, and timeout decisions serialize.
-     * A duplicate accepted decision returns the current aggregate without
-     * emitting another outbox event.
-     */
     @Transactional
     public Ticket acceptTicket(Long ticketId) {
         Ticket ticket = requireForUpdate(ticketId);
         if (ticket.accept()) {
-            ticketRepository.save(ticket);
-            eventPublisher.publishTicketEvent(ticket.getId(), new TicketAcceptedEvent(
-                ticket.getDecisionEventId(),
+            ticket = ticketRepository.saveAndFlush(ticket);
+            eventPublisher.publishTicketEvent(
                 ticket.getId(),
-                ticket.getOrderId(),
-                ticket.getDecisionAt()
-            ));
+                ticket.getVersion(),
+                new TicketAcceptedEvent(
+                    ticket.getDecisionEventId(),
+                    ticket.getId(),
+                    ticket.getOrderId(),
+                    ticket.getDecisionAt()
+                )
+            );
         }
         return ticket;
     }
 
-    /**
-     * Rejects a waiting ticket and emits exactly one typed decision event.
-     */
     @Transactional
     public Ticket rejectTicket(Long ticketId, String reason) {
         Ticket ticket = requireForUpdate(ticketId);
         if (ticket.reject(reason)) {
-            ticketRepository.save(ticket);
-            eventPublisher.publishTicketEvent(ticket.getId(), new TicketRejectedEvent(
-                ticket.getDecisionEventId(),
+            ticket = ticketRepository.saveAndFlush(ticket);
+            eventPublisher.publishTicketEvent(
                 ticket.getId(),
-                ticket.getOrderId(),
-                ticket.getDecisionReason(),
-                ticket.getDecisionAt()
-            ));
+                ticket.getVersion(),
+                new TicketRejectedEvent(
+                    ticket.getDecisionEventId(),
+                    ticket.getId(),
+                    ticket.getOrderId(),
+                    ticket.getDecisionReason(),
+                    ticket.getDecisionAt()
+                )
+            );
         }
         return ticket;
     }
@@ -67,9 +65,10 @@ public class KitchenService {
     public Ticket markPreparing(Long ticketId) {
         Ticket ticket = require(ticketId);
         ticket.preparing();
-        ticketRepository.save(ticket);
+        ticket = ticketRepository.saveAndFlush(ticket);
         eventPublisher.publishTicketEvent(
             ticket.getId(),
+            ticket.getVersion(),
             new TicketPreparingEvent(ticket.getId(), ticket.getOrderId())
         );
         return ticket;
@@ -79,9 +78,10 @@ public class KitchenService {
     public Ticket markReady(Long ticketId) {
         Ticket ticket = require(ticketId);
         ticket.readyForPickup();
-        ticketRepository.save(ticket);
+        ticket = ticketRepository.saveAndFlush(ticket);
         eventPublisher.publishTicketEvent(
             ticket.getId(),
+            ticket.getVersion(),
             new TicketReadyEvent(ticket.getId(), ticket.getOrderId(), ticket.getReadyBy())
         );
         return ticket;
