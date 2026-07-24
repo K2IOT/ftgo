@@ -76,6 +76,7 @@ jobs:
           chmod +x gradlew
           timeout 10m ./gradlew --no-daemon \
             :common:test --tests 'net.ftgo.common.messaging.IdempotentCommandExecutorTest' \
+            :consumer-service:test --tests 'net.ftgo.consumer.messaging.LostReplyIdempotencyTest' \
             :kitchen-service:test --tests 'net.ftgo.kitchen.messaging.LostReplyIdempotencyTest' \
             :accounting-service:test --tests 'net.ftgo.accounting.messaging.LostReplyIdempotencyTest' \
             --stacktrace --info 2>&1 | tee phase03-idempotent-command-contracts.log
@@ -92,6 +93,8 @@ jobs:
             phase03-idempotent-command-contracts.log
             common/build/reports/tests/**
             common/build/test-results/**
+            consumer-service/build/reports/tests/**
+            consumer-service/build/test-results/**
             kitchen-service/build/reports/tests/**
             kitchen-service/build/test-results/**
             accounting-service/build/reports/tests/**
