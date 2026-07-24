@@ -39,10 +39,6 @@ public class AccountingServiceCommandHandlers {
     private final DomainEventPublisher eventPublisher;
     private final PaymentAuthorizationGateway paymentAuthorizationGateway;
 
-    /**
-     * Source-compatible constructor for legacy tests and rolling-upgrade
-     * integrations that predate the payment-provider boundary.
-     */
     public AccountingServiceCommandHandlers(
         AccountRepository accountRepository,
         DomainEventPublisher eventPublisher
@@ -90,7 +86,7 @@ public class AccountingServiceCommandHandlers {
             }
 
             Account account = accountRepository.findByConsumerId(command.getConsumerId())
-                .orElseGet(() -> accountRepository.save(new Account(command.getConsumerId())));
+                .orElseGet(() -> accountRepository.saveAndFlush(new Account(command.getConsumerId())));
 
             Authorization existing = account.findAuthorizationByRequestId(command.getRequestId());
             if (existing != null) {
@@ -101,10 +97,7 @@ public class AccountingServiceCommandHandlers {
                         "Request ID conflict"
                     ));
                 }
-                return withSuccess(new CardAuthorized(
-                    existing.getId(),
-                    command.getOrderId()
-                ));
+                return withSuccess(new CardAuthorized(existing.getId(), command.getOrderId()));
             }
 
             Authorization authorization = command.getOrderId() == null
@@ -114,25 +107,23 @@ public class AccountingServiceCommandHandlers {
                     command.getRequestId(),
                     command.getAmount()
                 );
-            accountRepository.save(account);
+            account = accountRepository.saveAndFlush(account);
 
-            eventPublisher.publishAccountEvent(account.getId(), new CardAuthorizedEvent(
+            eventPublisher.publishAccountEvent(
                 account.getId(),
-                authorization.getId(),
-                authorization.getRequestId(),
-                authorization.getAmount().getAmount(),
-                authorization.getCreatedAt()
-            ));
-            return withSuccess(new CardAuthorized(
-                authorization.getId(),
-                command.getOrderId()
-            ));
+                account.getVersion(),
+                new CardAuthorizedEvent(
+                    account.getId(),
+                    authorization.getId(),
+                    authorization.getRequestId(),
+                    authorization.getAmount().getAmount(),
+                    authorization.getCreatedAt()
+                )
+            );
+            return withSuccess(new CardAuthorized(authorization.getId(), command.getOrderId()));
         } catch (IllegalArgumentException e) {
             if (command.getOrderId() != null) {
-                return withFailure(new CardAuthorizationDenied(
-                    command.getOrderId(),
-                    e.getMessage()
-                ));
+                return withFailure(new CardAuthorizationDenied(command.getOrderId(), e.getMessage()));
             }
             return withFailure(e.getMessage());
         } catch (Exception e) {
@@ -150,15 +141,19 @@ public class AccountingServiceCommandHandlers {
                 command.getAuthorizationId(),
                 command.getRequestId()
             );
-            accountRepository.save(account);
+            account = accountRepository.saveAndFlush(account);
             if (changed) {
-                eventPublisher.publishAccountEvent(account.getId(), new PaymentCapturedEvent(
+                eventPublisher.publishAccountEvent(
                     account.getId(),
-                    command.getOrderId(),
-                    command.getAuthorizationId(),
-                    command.getRequestId(),
-                    LocalDateTime.now()
-                ));
+                    account.getVersion(),
+                    new PaymentCapturedEvent(
+                        account.getId(),
+                        command.getOrderId(),
+                        command.getAuthorizationId(),
+                        command.getRequestId(),
+                        LocalDateTime.now()
+                    )
+                );
             }
             return withSuccess(new PaymentCaptured(
                 command.getAuthorizationId(),
@@ -181,16 +176,20 @@ public class AccountingServiceCommandHandlers {
                 command.getReason(),
                 command.getRequestId()
             );
-            accountRepository.save(account);
+            account = accountRepository.saveAndFlush(account);
             if (changed) {
-                eventPublisher.publishAccountEvent(account.getId(), new AuthorizationVoidedEvent(
+                eventPublisher.publishAccountEvent(
                     account.getId(),
-                    command.getOrderId(),
-                    command.getAuthorizationId(),
-                    command.getReason(),
-                    command.getRequestId(),
-                    LocalDateTime.now()
-                ));
+                    account.getVersion(),
+                    new AuthorizationVoidedEvent(
+                        account.getId(),
+                        command.getOrderId(),
+                        command.getAuthorizationId(),
+                        command.getReason(),
+                        command.getRequestId(),
+                        LocalDateTime.now()
+                    )
+                );
             }
             return withSuccess(new AuthorizationVoided(
                 command.getAuthorizationId(),
@@ -213,16 +212,20 @@ public class AccountingServiceCommandHandlers {
                 command.getReason(),
                 command.getRequestId()
             );
-            accountRepository.save(account);
+            account = accountRepository.saveAndFlush(account);
             if (changed) {
-                eventPublisher.publishAccountEvent(account.getId(), new PaymentRefundedEvent(
+                eventPublisher.publishAccountEvent(
                     account.getId(),
-                    command.getOrderId(),
-                    command.getCaptureId(),
-                    command.getReason(),
-                    command.getRequestId(),
-                    LocalDateTime.now()
-                ));
+                    account.getVersion(),
+                    new PaymentRefundedEvent(
+                        account.getId(),
+                        command.getOrderId(),
+                        command.getCaptureId(),
+                        command.getReason(),
+                        command.getRequestId(),
+                        LocalDateTime.now()
+                    )
+                );
             }
             return withSuccess(new PaymentRefunded(
                 command.getCaptureId(),
@@ -243,12 +246,16 @@ public class AccountingServiceCommandHandlers {
                     "Account not found for consumer " + command.getConsumerId()
                 ));
             account.reverseAuthorization(command.getAuthorizationId());
-            accountRepository.save(account);
-            eventPublisher.publishAccountEvent(account.getId(), new CardReversed(
+            account = accountRepository.saveAndFlush(account);
+            eventPublisher.publishAccountEvent(
                 account.getId(),
-                command.getAuthorizationId(),
-                LocalDateTime.now()
-            ));
+                account.getVersion(),
+                new CardReversed(
+                    account.getId(),
+                    command.getAuthorizationId(),
+                    LocalDateTime.now()
+                )
+            );
             return withSuccess(new AuthorizationReversed(command.getAuthorizationId()));
         } catch (IllegalArgumentException | IllegalStateException e) {
             return withFailure(e.getMessage());
