@@ -41,7 +41,7 @@ class OrderMenuValidationServiceTest {
     }
 
     @Test
-    void exactAuthoritativeSnapshotReturnsCurrentMenuAndTotal() {
+    void exactAuthoritativeSnapshotReturnsCurrentMenuPickupAddressAndTotal() {
         Restaurant restaurant = restaurant();
         MenuItem burger = menuItem(11L, "Burger", "12.50", true);
         MenuItem fries = menuItem(12L, "Fries", "4.00", true);
@@ -60,6 +60,8 @@ class OrderMenuValidationServiceTest {
         assertThat(result.getOrderId()).isEqualTo(101L);
         assertThat(result.getRestaurantId()).isEqualTo(202L);
         assertThat(result.getCurrentMenuVersion()).isZero();
+        assertThat(result.getPickupAddress())
+            .isEqualTo(new Address("1 Main St", "Hanoi", "HN", "10000"));
         assertThat(result.getAuthoritativeLineItems())
             .extracting(OrderMenuLineItem::getMenuItemId)
             .containsExactly(11L, 12L);
