@@ -13,34 +13,33 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Consumer for Order domain events.
- * 
+ *
  * Handles OrderApproved events to create delivery records.
  * Implements idempotent event processing using processed_messages table.
  */
 @Component
 public class OrderEventConsumer {
-    
+
     private static final Logger logger = LoggerFactory.getLogger(OrderEventConsumer.class);
     private static final String ORDER_APPROVED_EVENT_TYPE = "OrderApproved";
-    
+
     private final DeliveryRepository deliveryRepository;
     private final ProcessedMessageRepository processedMessageRepository;
-    private final RestaurantPickupAddressResolver pickupAddressResolver;
     private final ObjectMapper objectMapper;
-    
-    public OrderEventConsumer(DeliveryRepository deliveryRepository,
-                             ProcessedMessageRepository processedMessageRepository,
-                             RestaurantPickupAddressResolver pickupAddressResolver,
-                             ObjectMapper objectMapper) {
+
+    public OrderEventConsumer(
+        DeliveryRepository deliveryRepository,
+        ProcessedMessageRepository processedMessageRepository,
+        ObjectMapper objectMapper
+    ) {
         this.deliveryRepository = deliveryRepository;
         this.processedMessageRepository = processedMessageRepository;
-        this.pickupAddressResolver = pickupAddressResolver;
         this.objectMapper = objectMapper;
     }
-    
+
     /**
      * Handles OrderApproved event by creating a delivery record.
-     * 
+     *
      * @param record the Kafka consumer record
      */
     @KafkaListener(topics = "net.ftgo.orderservice.domain.Order", groupId = "delivery-service")
@@ -49,20 +48,19 @@ public class OrderEventConsumer {
         String messageId = record.key();
         String payload = record.value();
         String eventType = eventType(record);
-        
+
         logger.info("Received Order event, messageId: {}, eventType: {}", messageId, eventType);
 
         if (!ORDER_APPROVED_EVENT_TYPE.equals(eventType)) {
             logger.info("Ignoring non-OrderApproved event, messageId: {}, eventType: {}", messageId, eventType);
             return;
         }
-        
-        // Check if message has already been processed (idempotency)
+
         if (processedMessageRepository.existsById(messageId)) {
             logger.info("Message {} already processed, skipping", messageId);
             return;
         }
-        
+
         try {
             OrderApproved orderApproved = objectMapper.readValue(payload, OrderApproved.class);
 
@@ -71,20 +69,22 @@ public class OrderEventConsumer {
                 processedMessageRepository.save(new ProcessedMessage(messageId));
                 return;
             }
-            
-            // Create delivery record
+            if (orderApproved.getPickupAddress() == null) {
+                throw new IllegalArgumentException(
+                    "OrderApproved pickupAddress is required for order " + orderApproved.getOrderId()
+                );
+            }
+
             Delivery delivery = new Delivery(
                 orderApproved.getOrderId(),
-                pickupAddressResolver.resolvePickupAddress(orderApproved.getRestaurantId()),
+                orderApproved.getPickupAddress(),
                 orderApproved.getDeliveryAddress(),
                 orderApproved.getDeliveryTime()
             );
-            
+
             deliveryRepository.save(delivery);
-            
-            // Mark message as processed
             processedMessageRepository.save(new ProcessedMessage(messageId));
-            
+
             logger.info("Created delivery {} for order {}", delivery.getId(), orderApproved.getOrderId());
         } catch (Exception e) {
             logger.error("Failed to handle Order event, messageId: {}", messageId, e);
