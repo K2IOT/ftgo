@@ -1,5 +1,6 @@
 package net.ftgo.order.messaging;
 
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.eventuate.tram.sagas.orchestration.SagaInstanceFactory;
 import net.ftgo.common.Money;
@@ -26,6 +27,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -50,17 +52,21 @@ class TicketDecisionEventHandlerTest {
     @Mock
     private RejectOrderSaga rejectOrderSaga;
 
+    private ObjectMapper objectMapper;
     private TicketDecisionEventHandler handler;
     private Order order;
 
     @BeforeEach
     void setUp() {
+        objectMapper = new ObjectMapper()
+            .findAndRegisterModules()
+            .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
         handler = new TicketDecisionEventHandler(
             orderRepository,
             sagaInstanceFactory,
             confirmOrderSaga,
             rejectOrderSaga,
-            new ObjectMapper().findAndRegisterModules()
+            objectMapper
         );
         order = awaitingOrder();
         when(orderRepository.findByIdWithLock(101L)).thenReturn(Optional.of(order));
@@ -85,6 +91,28 @@ class TicketDecisionEventHandlerTest {
         assertThat(data.getValue().getConsumerId()).isEqualTo(301L);
         assertThat(data.getValue().getAuthorizationId()).isEqualTo(501L);
         assertThat(data.getValue().getCreditReservationId()).isEqualTo(601L);
+    }
+
+    @Test
+    void schemaWrappedAcceptedEventStartsConfirmSaga() throws Exception {
+        TicketAcceptedEvent event = new TicketAcceptedEvent(
+            "accept-901",
+            901L,
+            101L,
+            LocalDateTime.now()
+        );
+        String payload = objectMapper.writeValueAsString(Map.of(
+            "schema", Map.of("type", "struct"),
+            "payload", event
+        ));
+
+        handler.handleTicketEvent(payload, "901", "TicketAcceptedEvent");
+
+        assertThat(order.getState()).isEqualTo(OrderState.CONFIRMATION_PENDING);
+        verify(sagaInstanceFactory).create(
+            eq(confirmOrderSaga),
+            org.mockito.ArgumentMatchers.any(ConfirmOrderSagaData.class)
+        );
     }
 
     @Test
