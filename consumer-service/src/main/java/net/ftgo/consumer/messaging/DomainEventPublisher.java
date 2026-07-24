@@ -4,54 +4,71 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import net.ftgo.common.channels.ChannelNames;
+import net.ftgo.common.messaging.DomainEventEnvelope;
+import net.ftgo.common.messaging.DomainEventMetadata;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
-/**
- * Publisher for domain events using the Transactional Outbox pattern.
- * 
- * Events are written to the outbox table within the same transaction as business data updates.
- * Debezium CDC monitors the outbox table and publishes events to Kafka.
- */
+/** Publisher for Consumer domain events using the Transactional Outbox pattern. */
 @Component("consumerDomainEventPublisher")
 public class DomainEventPublisher {
-    
+
     private static final Logger logger = LoggerFactory.getLogger(DomainEventPublisher.class);
-    
+    private static final int CURRENT_SCHEMA_VERSION = 1;
+
     private final OutboxRepository outboxRepository;
     private final ObjectMapper objectMapper;
-    
+
     public DomainEventPublisher(OutboxRepository outboxRepository) {
         this.outboxRepository = outboxRepository;
         this.objectMapper = new ObjectMapper();
         this.objectMapper.registerModule(new JavaTimeModule());
     }
-    
-    /**
-     * Publishes a domain event for a Consumer aggregate.
-     * 
-     * @param aggregateId the consumer ID
-     * @param event the domain event to publish
-     */
+
     @Transactional
     public void publishConsumerEvent(Long aggregateId, Object event) {
+        publishConsumerEvent(aggregateId, 0L, DomainEventMetadata.empty(), event);
+    }
+
+    @Transactional
+    public void publishConsumerEvent(Long aggregateId, long aggregateVersion, Object event) {
+        publishConsumerEvent(aggregateId, aggregateVersion, DomainEventMetadata.empty(), event);
+    }
+
+    @Transactional
+    public void publishConsumerEvent(
+        Long aggregateId,
+        long aggregateVersion,
+        DomainEventMetadata metadata,
+        Object event
+    ) {
         try {
-            String payload = objectMapper.writeValueAsString(event);
             String eventType = event.getClass().getSimpleName();
-            
-            OutboxEntry entry = new OutboxEntry(
+            DomainEventEnvelope<Object> envelope = DomainEventEnvelope.create(
+                eventType,
+                CURRENT_SCHEMA_VERSION,
                 "Consumer",
                 aggregateId.toString(),
-                eventType,
+                aggregateVersion,
+                metadata,
+                event
+            );
+            String payload = objectMapper.writeValueAsString(envelope);
+            OutboxEntry entry = new OutboxEntry(
+                envelope.eventId().toString(),
+                envelope.schemaVersion(),
+                envelope.aggregateVersion(),
+                envelope.aggregateType(),
+                envelope.aggregateId(),
+                envelope.eventType(),
                 payload,
                 ChannelNames.CONSUMER_EVENT_TOPIC
             );
-            
             outboxRepository.save(entry);
-            
-            logger.info("Published {} event for Consumer {} to outbox", eventType, aggregateId);
+            logger.info("Published {} event {} for Consumer {} at version {}",
+                eventType, envelope.eventId(), aggregateId, aggregateVersion);
         } catch (JsonProcessingException e) {
             logger.error("Failed to serialize event for Consumer {}", aggregateId, e);
             throw new RuntimeException("Failed to publish event", e);
