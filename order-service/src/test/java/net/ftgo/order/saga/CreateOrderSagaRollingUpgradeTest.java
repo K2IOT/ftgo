@@ -21,7 +21,15 @@ class CreateOrderSagaRollingUpgradeTest {
             .isEqualTo(7);
         assertThat(sagaSource)
             .doesNotContain("invokeLocal(this::snapshotPickupAddress)")
-            .contains("invokeLocal(this::awaitRestaurantAcceptance)");
+            .containsSubsequence(
+                "withCompensation(this::rejectOrder)",
+                "invokeParticipant(this::validateMenu)",
+                "invokeParticipant(this::reserveCredit)",
+                "invokeParticipant(this::createTicket)",
+                "invokeParticipant(this::authorizeCard)",
+                "invokeParticipant(this::approveTicket)",
+                "invokeLocal(this::awaitRestaurantAcceptance)"
+            );
     }
 
     private int countOccurrences(String value, String token) {
