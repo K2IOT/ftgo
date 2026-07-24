@@ -92,7 +92,7 @@ public class CancelOrderSagaLocalSteps {
             .orElseThrow(() -> new IllegalArgumentException("Order not found: " + orderId));
 
         order.confirmCancel();
-        order = orderRepository.saveAndFlush(order);
+        orderRepository.saveAndFlush(order);
         eventPublisher.publishOrderEvent(
             order.getId(),
             order.getVersion().longValue(),
