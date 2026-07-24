@@ -26,7 +26,7 @@ public class KitchenService {
     public Ticket acceptTicket(Long ticketId) {
         Ticket ticket = requireForUpdate(ticketId);
         if (ticket.accept()) {
-            ticket = ticketRepository.saveAndFlush(ticket);
+            ticketRepository.saveAndFlush(ticket);
             eventPublisher.publishTicketEvent(
                 ticket.getId(),
                 ticket.getVersion(),
@@ -45,7 +45,7 @@ public class KitchenService {
     public Ticket rejectTicket(Long ticketId, String reason) {
         Ticket ticket = requireForUpdate(ticketId);
         if (ticket.reject(reason)) {
-            ticket = ticketRepository.saveAndFlush(ticket);
+            ticketRepository.saveAndFlush(ticket);
             eventPublisher.publishTicketEvent(
                 ticket.getId(),
                 ticket.getVersion(),
@@ -65,7 +65,7 @@ public class KitchenService {
     public Ticket markPreparing(Long ticketId) {
         Ticket ticket = require(ticketId);
         ticket.preparing();
-        ticket = ticketRepository.saveAndFlush(ticket);
+        ticketRepository.saveAndFlush(ticket);
         eventPublisher.publishTicketEvent(
             ticket.getId(),
             ticket.getVersion(),
@@ -78,7 +78,7 @@ public class KitchenService {
     public Ticket markReady(Long ticketId) {
         Ticket ticket = require(ticketId);
         ticket.readyForPickup();
-        ticket = ticketRepository.saveAndFlush(ticket);
+        ticketRepository.saveAndFlush(ticket);
         eventPublisher.publishTicketEvent(
             ticket.getId(),
             ticket.getVersion(),
