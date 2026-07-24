@@ -5,6 +5,7 @@ import io.eventuate.tram.commands.consumer.CommandMessage;
 import io.eventuate.tram.messaging.common.Message;
 import io.eventuate.tram.sagas.participant.SagaCommandHandlersBuilder;
 import net.ftgo.common.channels.ChannelNames;
+import net.ftgo.common.messaging.IdempotentCommandExecutor;
 import net.ftgo.common.orderflow.commands.ApproveTicketCommand;
 import net.ftgo.common.orderflow.commands.BeginCancelTicketCommand;
 import net.ftgo.common.orderflow.commands.BeginReviseTicketCommand;
@@ -24,7 +25,6 @@ import net.ftgo.kitchen.repository.TicketRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -33,26 +33,25 @@ import java.util.Objects;
 import static io.eventuate.tram.commands.consumer.CommandHandlerReplyBuilder.withFailure;
 import static io.eventuate.tram.commands.consumer.CommandHandlerReplyBuilder.withSuccess;
 
-/**
- * Eventuate participant for ticket lifecycle commands.
- *
- * <p>Every handler uses a business identifier to make duplicate commands a
- * no-op or return the established result.</p>
- */
+/** Eventuate participant for ticket lifecycle commands. */
 @Component
 public class KitchenServiceCommandHandlers {
 
     private static final Logger logger = LoggerFactory.getLogger(KitchenServiceCommandHandlers.class);
+    private static final String CONSUMER_NAME = "kitchen-service";
 
     private final TicketRepository ticketRepository;
     private final DomainEventPublisher eventPublisher;
+    private final IdempotentCommandExecutor idempotentCommandExecutor;
 
     public KitchenServiceCommandHandlers(
         TicketRepository ticketRepository,
-        DomainEventPublisher eventPublisher
+        DomainEventPublisher eventPublisher,
+        IdempotentCommandExecutor idempotentCommandExecutor
     ) {
         this.ticketRepository = ticketRepository;
         this.eventPublisher = eventPublisher;
+        this.idempotentCommandExecutor = idempotentCommandExecutor;
     }
 
     public CommandHandlers commandHandlers() {
@@ -70,9 +69,79 @@ public class KitchenServiceCommandHandlers {
             .build();
     }
 
-    @Transactional
     public Message handleCreateTicket(CommandMessage<CreateTicketCommand> message) {
-        CreateTicketCommand command = message.getCommand();
+        return idempotentCommandExecutor.execute(
+            CONSUMER_NAME,
+            message,
+            () -> createTicketOnce(message.getCommand())
+        );
+    }
+
+    public Message handleApproveTicket(CommandMessage<ApproveTicketCommand> message) {
+        return idempotentCommandExecutor.execute(
+            CONSUMER_NAME,
+            message,
+            () -> approveTicketOnce(message.getCommand())
+        );
+    }
+
+    public Message handleCancelTicket(CommandMessage<CancelTicketCommand> message) {
+        return idempotentCommandExecutor.execute(
+            CONSUMER_NAME,
+            message,
+            () -> cancelTicketOnce(message.getCommand())
+        );
+    }
+
+    public Message handleBeginCancelTicket(CommandMessage<BeginCancelTicketCommand> message) {
+        return idempotentCommandExecutor.execute(
+            CONSUMER_NAME,
+            message,
+            () -> beginCancelTicketOnce(message.getCommand())
+        );
+    }
+
+    public Message handleConfirmCancelTicket(CommandMessage<ConfirmCancelTicketCommand> message) {
+        return idempotentCommandExecutor.execute(
+            CONSUMER_NAME,
+            message,
+            () -> confirmCancelTicketOnce(message.getCommand())
+        );
+    }
+
+    public Message handleUndoCancelTicket(CommandMessage<UndoCancelTicketCommand> message) {
+        return idempotentCommandExecutor.execute(
+            CONSUMER_NAME,
+            message,
+            () -> undoCancelTicketOnce(message.getCommand())
+        );
+    }
+
+    public Message handleBeginReviseTicket(CommandMessage<BeginReviseTicketCommand> message) {
+        return idempotentCommandExecutor.execute(
+            CONSUMER_NAME,
+            message,
+            () -> beginReviseTicketOnce(message.getCommand())
+        );
+    }
+
+    public Message handleConfirmReviseTicket(CommandMessage<ConfirmReviseTicketCommand> message) {
+        return idempotentCommandExecutor.execute(
+            CONSUMER_NAME,
+            message,
+            () -> confirmReviseTicketOnce(message.getCommand())
+        );
+    }
+
+    public Message handleUndoReviseTicket(CommandMessage<UndoReviseTicketCommand> message) {
+        return idempotentCommandExecutor.execute(
+            CONSUMER_NAME,
+            message,
+            () -> undoReviseTicketOnce(message.getCommand())
+        );
+    }
+
+    private Message createTicketOnce(CreateTicketCommand command) {
         try {
             Ticket existing = ticketRepository.findByOrderId(command.getOrderId()).orElse(null);
             if (existing != null) {
@@ -103,20 +172,16 @@ public class KitchenServiceCommandHandlers {
         }
     }
 
-    @Transactional
-    public Message handleApproveTicket(CommandMessage<ApproveTicketCommand> message) {
-        ApproveTicketCommand command = message.getCommand();
+    private Message approveTicketOnce(ApproveTicketCommand command) {
         try {
             Ticket ticket = requireForUpdate(command.getTicketId());
             LocalDateTime deadline = command.getAcceptanceDeadline();
-
             if (ticket.getState() == TicketState.AWAITING_ACCEPTANCE) {
                 if (deadline == null || Objects.equals(deadline, ticket.getAcceptanceDeadline())) {
                     return withSuccess();
                 }
                 return withFailure("Ticket is already awaiting another acceptance deadline");
             }
-
             if (deadline == null) {
                 ticket.approve();
             } else {
@@ -132,18 +197,17 @@ public class KitchenServiceCommandHandlers {
         }
     }
 
-    @Transactional
-    public Message handleCancelTicket(CommandMessage<CancelTicketCommand> message) {
-        CancelTicketCommand command = message.getCommand();
+    private Message cancelTicketOnce(CancelTicketCommand command) {
         try {
             Ticket ticket = requireForUpdate(command.getTicketId());
             if (ticket.getState() == TicketState.CANCELLED) {
                 return withSuccess();
             }
             ticket.cancel();
-            ticketRepository.save(ticket);
+            ticketRepository.saveAndFlush(ticket);
             eventPublisher.publishTicketEvent(
                 ticket.getId(),
+                ticket.getVersion(),
                 new TicketCancelledEvent(ticket.getId(), ticket.getOrderId())
             );
             return withSuccess();
@@ -155,9 +219,7 @@ public class KitchenServiceCommandHandlers {
         }
     }
 
-    @Transactional
-    public Message handleBeginCancelTicket(CommandMessage<BeginCancelTicketCommand> message) {
-        BeginCancelTicketCommand command = message.getCommand();
+    private Message beginCancelTicketOnce(BeginCancelTicketCommand command) {
         try {
             Ticket ticket = requireForUpdate(command.getTicketId());
             if (ticket.getState() == TicketState.CANCEL_PENDING) {
@@ -179,18 +241,17 @@ public class KitchenServiceCommandHandlers {
         }
     }
 
-    @Transactional
-    public Message handleConfirmCancelTicket(CommandMessage<ConfirmCancelTicketCommand> message) {
-        ConfirmCancelTicketCommand command = message.getCommand();
+    private Message confirmCancelTicketOnce(ConfirmCancelTicketCommand command) {
         try {
             Ticket ticket = requireForUpdate(command.getTicketId());
             if (ticket.getState() == TicketState.CANCELLED) {
                 return withSuccess();
             }
             ticket.confirmCancel();
-            ticketRepository.save(ticket);
+            ticketRepository.saveAndFlush(ticket);
             eventPublisher.publishTicketEvent(
                 ticket.getId(),
+                ticket.getVersion(),
                 new TicketCancelledEvent(ticket.getId(), ticket.getOrderId())
             );
             return withSuccess();
@@ -199,9 +260,7 @@ public class KitchenServiceCommandHandlers {
         }
     }
 
-    @Transactional
-    public Message handleUndoCancelTicket(CommandMessage<UndoCancelTicketCommand> message) {
-        UndoCancelTicketCommand command = message.getCommand();
+    private Message undoCancelTicketOnce(UndoCancelTicketCommand command) {
         try {
             Ticket ticket = requireForUpdate(command.getTicketId());
             ticket.undoCancel();
@@ -212,9 +271,7 @@ public class KitchenServiceCommandHandlers {
         }
     }
 
-    @Transactional
-    public Message handleBeginReviseTicket(CommandMessage<BeginReviseTicketCommand> message) {
-        BeginReviseTicketCommand command = message.getCommand();
+    private Message beginReviseTicketOnce(BeginReviseTicketCommand command) {
         try {
             Ticket ticket = requireForUpdate(command.getTicketId());
             if (ticket.getState() == TicketState.REVISION_PENDING) {
@@ -243,9 +300,7 @@ public class KitchenServiceCommandHandlers {
         }
     }
 
-    @Transactional
-    public Message handleConfirmReviseTicket(CommandMessage<ConfirmReviseTicketCommand> message) {
-        ConfirmReviseTicketCommand command = message.getCommand();
+    private Message confirmReviseTicketOnce(ConfirmReviseTicketCommand command) {
         try {
             Ticket ticket = requireForUpdate(command.getTicketId());
             ticket.confirmPendingRevise();
@@ -256,9 +311,7 @@ public class KitchenServiceCommandHandlers {
         }
     }
 
-    @Transactional
-    public Message handleUndoReviseTicket(CommandMessage<UndoReviseTicketCommand> message) {
-        UndoReviseTicketCommand command = message.getCommand();
+    private Message undoReviseTicketOnce(UndoReviseTicketCommand command) {
         try {
             Ticket ticket = requireForUpdate(command.getTicketId());
             ticket.undoRevise();
