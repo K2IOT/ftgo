@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.eventuate.tram.sagas.orchestration.SagaInstanceFactory;
 import net.ftgo.common.channels.ChannelNames;
+import net.ftgo.common.messaging.OutboxEventPayloadReader;
 import net.ftgo.common.orderflow.events.TicketAcceptanceTimedOutEvent;
 import net.ftgo.common.orderflow.events.TicketAcceptedEvent;
 import net.ftgo.common.orderflow.events.TicketRejectedEvent;
@@ -78,13 +79,17 @@ public class TicketDecisionEventHandler {
         try {
             switch (eventType) {
                 case "TicketAcceptedEvent" -> handleAccepted(
-                    objectMapper.readValue(payload, TicketAcceptedEvent.class)
+                    OutboxEventPayloadReader.read(objectMapper, payload, TicketAcceptedEvent.class)
                 );
                 case "TicketRejectedEvent" -> handleRejected(
-                    objectMapper.readValue(payload, TicketRejectedEvent.class)
+                    OutboxEventPayloadReader.read(objectMapper, payload, TicketRejectedEvent.class)
                 );
                 case "TicketAcceptanceTimedOutEvent" -> handleTimedOut(
-                    objectMapper.readValue(payload, TicketAcceptanceTimedOutEvent.class)
+                    OutboxEventPayloadReader.read(
+                        objectMapper,
+                        payload,
+                        TicketAcceptanceTimedOutEvent.class
+                    )
                 );
                 default -> logger.debug(
                     "Ignoring non-decision ticket event: key={}, eventType={}",

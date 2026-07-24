@@ -2,6 +2,7 @@ package net.ftgo.orderhistory.messaging;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import net.ftgo.common.messaging.OutboxEventPayloadReader;
 import net.ftgo.common.orderflow.events.TicketAcceptanceTimedOutEvent;
 import net.ftgo.common.orderflow.events.TicketRejectedEvent;
 import net.ftgo.orderhistory.domain.OrderHistoryRecord;
@@ -71,11 +72,18 @@ public class Phase02TicketDecisionEventHandler {
 
         try {
             if ("TicketRejectedEvent".equals(eventType)) {
-                TicketRejectedEvent event = objectMapper.readValue(payload, TicketRejectedEvent.class);
+                TicketRejectedEvent event = OutboxEventPayloadReader.read(
+                    objectMapper,
+                    payload,
+                    TicketRejectedEvent.class
+                );
                 updateTicketStatus(event.getOrderId(), "REJECTED_BY_RESTAURANT");
             } else {
-                TicketAcceptanceTimedOutEvent event =
-                    objectMapper.readValue(payload, TicketAcceptanceTimedOutEvent.class);
+                TicketAcceptanceTimedOutEvent event = OutboxEventPayloadReader.read(
+                    objectMapper,
+                    payload,
+                    TicketAcceptanceTimedOutEvent.class
+                );
                 updateTicketStatus(event.getOrderId(), "REJECTED_TIMEOUT");
             }
             processedMessageRepository.save(new ProcessedMessage(messageId));
