@@ -17,7 +17,6 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
@@ -36,6 +35,8 @@ class DomainEventPublisherContractTest {
 
     @Test
     void publishOrderApprovedPreservesCurrentEmittedEventTypeAndContractPayload() throws Exception {
+        Address pickupAddress = new Address("123 Restaurant St", "San Francisco", "CA", "94102");
+        Address deliveryAddress = new Address("456 Consumer Ave", "San Francisco", "CA", "94103");
         OrderApproved event = new OrderApproved(
             101L,
             202L,
@@ -43,7 +44,8 @@ class DomainEventPublisherContractTest {
             new Money("30.97"),
             404L,
             505L,
-            new Address("456 Consumer Ave", "San Francisco", "CA", "94103"),
+            pickupAddress,
+            deliveryAddress,
             LocalDateTime.of(2026, 5, 18, 10, 45)
         );
 
@@ -58,9 +60,11 @@ class DomainEventPublisherContractTest {
         assertEquals("OrderApproved", outboxEntry.getEventType());
 
         JsonNode payload = objectMapper.readTree(outboxEntry.getPayload());
+        assertNotNull(payload.get("pickupAddress"));
         assertNotNull(payload.get("deliveryAddress"));
         assertNotNull(payload.get("deliveryTime"));
-        assertNull(payload.get("pickupAddress"));
+        assertEquals("123 Restaurant St", payload.path("pickupAddress").path("street").asText());
+        assertEquals("456 Consumer Ave", payload.path("deliveryAddress").path("street").asText());
     }
 
     @Test
