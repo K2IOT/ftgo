@@ -62,7 +62,7 @@ class DebeziumConnectorContractTest(unittest.TestCase):
                 "io.debezium.transforms.outbox.EventRouter",
                 config["transforms.outbox.type"],
             )
-            self.assertEqual("id", config["transforms.outbox.table.field.event.id"])
+            self.assertEqual("event_id", config["transforms.outbox.table.field.event.id"])
             self.assertEqual("aggregate_id", config["transforms.outbox.table.field.event.key"])
             self.assertEqual("event_type", config["transforms.outbox.table.field.event.type"])
             self.assertEqual("payload", config["transforms.outbox.table.field.event.payload"])
