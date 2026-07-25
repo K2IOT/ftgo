@@ -251,15 +251,21 @@ public class Authorization {
     }
 
     public boolean completeRefund(String operationRequestId, String providerRefundId) {
+        PaymentRefund refund = requireRefund(operationRequestId);
+        if (status == AuthorizationStatus.REFUNDED) {
+            return refund.complete(providerRefundId);
+        }
         if (status != AuthorizationStatus.CAPTURED) {
             throw new IllegalStateException("Cannot complete refund in state " + status);
         }
-        PaymentRefund refund = requireRefund(operationRequestId);
         boolean changed = refund.complete(providerRefundId);
         if (changed) {
             refundRequestId = operationRequestId;
             refundReason = refund.getReason();
             refundedAt = refund.getCompletedAt();
+            if (getRefundedAmount().equals(amount)) {
+                status = AuthorizationStatus.REFUNDED;
+            }
         }
         return changed;
     }
