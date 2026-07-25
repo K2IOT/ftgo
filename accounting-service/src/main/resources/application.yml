@@ -37,6 +37,8 @@ eventuatelocal:
 ftgo:
   accounting:
     declined-payment-tokens: ${FTGO_ACCOUNTING_DECLINED_PAYMENT_TOKENS:}
+    payment-webhook-secrets: sandbox=${FTGO_ACCOUNTING_SANDBOX_WEBHOOK_SECRET:change-me}
+    webhook-replay-window-seconds: ${FTGO_ACCOUNTING_WEBHOOK_REPLAY_WINDOW_SECONDS:300}
 
 server:
   port: 8085
