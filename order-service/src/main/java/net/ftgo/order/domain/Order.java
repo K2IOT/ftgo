@@ -27,14 +27,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
-/**
- * Aggregate root for the Order bounded context.
- *
- * <p>Phase 02 separates resource preparation from the restaurant decision.
- * CreateOrderSaga finishes in {@link OrderState#AWAITING_RESTAURANT_ACCEPTANCE};
- * an acceptance, rejection, or timeout event must then atomically claim the
- * order before a confirmation or rejection saga can start.</p>
- */
+/** Aggregate root for the Order bounded context. */
 @Entity
 @Table(name = "orders")
 public class Order {
@@ -60,11 +53,6 @@ public class Order {
     @Column(name = "restaurant_id", nullable = false)
     private Long restaurantId;
 
-    /**
-     * Immutable Restaurant address captured by the authoritative menu
-     * validation reply. Columns stay nullable during the rolling-deployment
-     * compatibility window so existing rows are not assigned invented data.
-     */
     @Embedded
     @AttributeOverrides({
         @AttributeOverride(name = "street", column = @Column(name = "pickup_address_street")),
@@ -108,6 +96,22 @@ public class Order {
     @Column(name = "acceptance_deadline")
     private LocalDateTime acceptanceDeadline;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "payment_state", length = 50)
+    private OrderPaymentState paymentState;
+
+    @Column(name = "acceptance_request_id", unique = true, length = 100)
+    private String acceptanceRequestId;
+
+    @Column(name = "payment_operation_request_id", unique = true, length = 100)
+    private String paymentOperationRequestId;
+
+    @Column(name = "capture_id")
+    private Long captureId;
+
+    @Column(name = "payment_failure_code", length = 100)
+    private String paymentFailureCode;
+
     @Column(name = "rejection_code", length = 100)
     private String rejectionCode;
 
@@ -149,15 +153,11 @@ public class Order {
     }
 
     private void validateConsumerId(Long value) {
-        if (value == null) {
-            throw new IllegalArgumentException("Consumer ID cannot be null");
-        }
+        if (value == null) throw new IllegalArgumentException("Consumer ID cannot be null");
     }
 
     private void validateRestaurantId(Long value) {
-        if (value == null) {
-            throw new IllegalArgumentException("Restaurant ID cannot be null");
-        }
+        if (value == null) throw new IllegalArgumentException("Restaurant ID cannot be null");
     }
 
     private void validateLineItems(List<OrderLineItem> items) {
@@ -167,14 +167,16 @@ public class Order {
     }
 
     private void validateDeliveryInfo(DeliveryInfo value) {
-        if (value == null) {
-            throw new IllegalArgumentException("Delivery info cannot be null");
-        }
+        if (value == null) throw new IllegalArgumentException("Delivery info cannot be null");
     }
 
     private void validatePaymentInfo(PaymentInfo value) {
-        if (value == null) {
-            throw new IllegalArgumentException("Payment info cannot be null");
+        if (value == null) throw new IllegalArgumentException("Payment info cannot be null");
+    }
+
+    private static void requireText(String value, String field) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(field + " cannot be null or blank");
         }
     }
 
@@ -189,52 +191,29 @@ public class Order {
             .reduce(Money.ZERO, Money::add);
     }
 
-    /**
-     * Captures the authoritative pickup address once. Replaying the same menu
-     * validation reply is idempotent; trying to replace the snapshot is rejected.
-     */
     public boolean snapshotPickupAddress(Address address) {
-        if (address == null) {
-            throw new IllegalArgumentException("Pickup address snapshot is required");
-        }
+        if (address == null) throw new IllegalArgumentException("Pickup address snapshot is required");
         if (pickupAddress == null) {
             pickupAddress = address;
             touch();
             return true;
         }
-        if (pickupAddress.equals(address)) {
-            return false;
-        }
+        if (pickupAddress.equals(address)) return false;
         throw new IllegalStateException("Pickup address snapshot is immutable");
     }
 
-    /**
-     * Legacy Phase 01 approval transition retained for existing unit tests and
-     * rolling deployment compatibility. Phase 02 CreateOrderSaga does not call
-     * this method.
-     */
     public void approve() {
         requireState(OrderState.APPROVAL_PENDING, "approve");
         state = OrderState.APPROVED;
         touch();
     }
 
-    /**
-     * Legacy create-saga failure transition.
-     */
     public void reject() {
         requireState(OrderState.APPROVAL_PENDING, "reject");
         state = OrderState.REJECTED;
         touch();
     }
 
-    /**
-     * Completes the compensatable create saga and persists all remote resource
-     * identifiers required by subsequent decision sagas.
-     *
-     * @return true when this invocation performed the transition, false for an
-     * idempotent duplicate carrying the same established resource identifiers.
-     */
     public boolean awaitRestaurantAcceptance(
         Long ticketId,
         Long authorizationId,
@@ -258,6 +237,7 @@ public class Order {
         this.authorizationId = authorizationId;
         this.creditReservationId = creditReservationId;
         this.acceptanceDeadline = acceptanceDeadline;
+        this.paymentState = OrderPaymentState.AUTHORIZED;
         this.state = OrderState.AWAITING_RESTAURANT_ACCEPTANCE;
         touch();
         return true;
@@ -271,42 +251,104 @@ public class Order {
     ) {
         if (ticketId == null || authorizationId == null || creditReservationId == null || deadline == null) {
             throw new IllegalArgumentException(
-                "Ticket, authorization, credit reservation, and acceptance deadline are required"
-            );
+                "Ticket, authorization, credit reservation, and acceptance deadline are required");
         }
     }
 
-    /**
-     * Claims the accept/timeout race for the confirmation path.
-     */
-    public boolean claimRestaurantAcceptance() {
-        if (state == OrderState.CONFIRMATION_PENDING || state == OrderState.APPROVED) {
-            return false;
+    /** Claims a restaurant acceptance request and establishes one stable capture key. */
+    public boolean beginPaymentCapture(String requestId) {
+        requireText(requestId, "Acceptance request ID");
+        if (state == OrderState.CONFIRMATION_PENDING
+            || state == OrderState.APPROVED
+            || paymentState == OrderPaymentState.CAPTURED) {
+            if (Objects.equals(acceptanceRequestId, requestId)) return false;
+            throw new IllegalStateException("Order already has another acceptance request");
         }
-        if (state != OrderState.AWAITING_RESTAURANT_ACCEPTANCE) {
-            return false;
+        requireState(OrderState.AWAITING_RESTAURANT_ACCEPTANCE, "begin payment capture");
+        if (paymentState != OrderPaymentState.AUTHORIZED) {
+            throw new IllegalStateException("Cannot capture payment in financial state " + paymentState);
         }
-        state = OrderState.CONFIRMATION_PENDING;
+        this.acceptanceRequestId = requestId;
+        this.paymentOperationRequestId = stableCaptureRequestId();
+        this.paymentFailureCode = null;
+        this.paymentState = OrderPaymentState.CAPTURE_PENDING;
+        this.state = OrderState.CONFIRMATION_PENDING;
         touch();
         return true;
     }
 
-    /**
-     * Claims explicit rejection or timeout. Stale/out-of-order decisions are
-     * acknowledged as a no-op so they do not create poison-message retries.
-     */
+    public boolean completePaymentCapture(Long captureId, String requestId) {
+        if (captureId == null) throw new IllegalArgumentException("Capture ID is required");
+        requireText(requestId, "Capture request ID");
+        if (paymentState == OrderPaymentState.CAPTURED) {
+            if (Objects.equals(this.captureId, captureId)
+                && Objects.equals(paymentOperationRequestId, requestId)) {
+                return false;
+            }
+            throw new IllegalStateException("Payment was already captured by another operation");
+        }
+        requireState(OrderState.CONFIRMATION_PENDING, "complete payment capture");
+        if (paymentState != OrderPaymentState.CAPTURE_PENDING) {
+            throw new IllegalStateException("Cannot complete capture in financial state " + paymentState);
+        }
+        if (!Objects.equals(paymentOperationRequestId, requestId)) {
+            throw new IllegalArgumentException("Capture request ID does not match the pending operation");
+        }
+        this.captureId = captureId;
+        this.paymentState = OrderPaymentState.CAPTURED;
+        touch();
+        return true;
+    }
+
+    public boolean failPaymentCapture(String code) {
+        String stableCode = code == null || code.isBlank()
+            ? "PAYMENT_CAPTURE_FAILED"
+            : code;
+        if (paymentState == OrderPaymentState.FAILED) {
+            if (Objects.equals(paymentFailureCode, stableCode)) return false;
+            throw new IllegalStateException("Payment capture already failed with another code");
+        }
+        if (paymentState == OrderPaymentState.CAPTURED) {
+            throw new IllegalStateException("Captured payment cannot regress to failed");
+        }
+        if (paymentState != OrderPaymentState.CAPTURE_PENDING
+            && paymentState != OrderPaymentState.AUTHORIZED) {
+            throw new IllegalStateException("Cannot fail capture in financial state " + paymentState);
+        }
+        this.paymentFailureCode = stableCode;
+        this.paymentState = OrderPaymentState.FAILED;
+        this.rejectionCode = stableCode;
+        this.rejectionMessage = "Payment capture failed: " + stableCode;
+        this.state = OrderState.REJECTION_PENDING;
+        touch();
+        return true;
+    }
+
+    private String stableCaptureRequestId() {
+        if (id == null || authorizationId == null) {
+            throw new IllegalStateException("Persisted order and authorization are required for capture");
+        }
+        return "capture-order-" + id + "-authorization-" + authorizationId;
+    }
+
+    /** Legacy acceptance adapter retained for old tests; production uses beginPaymentCapture. */
+    public boolean claimRestaurantAcceptance() {
+        if (state == OrderState.CONFIRMATION_PENDING || state == OrderState.APPROVED) return false;
+        if (state != OrderState.AWAITING_RESTAURANT_ACCEPTANCE) return false;
+        String legacyAcceptanceId = "legacy-accept-order-" + id;
+        beginPaymentCapture(legacyAcceptanceId);
+        completePaymentCapture(authorizationId, paymentOperationRequestId);
+        return true;
+    }
+
     public boolean claimRestaurantRejection(String code, String message) {
         String safeCode = code == null || code.isBlank() ? "RESTAURANT_REJECTED" : code;
         String safeMessage = message == null || message.isBlank()
             ? "The restaurant could not accept this order"
             : message;
 
-        if (state == OrderState.REJECTION_PENDING || state == OrderState.REJECTED) {
-            return false;
-        }
-        if (state != OrderState.AWAITING_RESTAURANT_ACCEPTANCE) {
-            return false;
-        }
+        if (state == OrderState.REJECTION_PENDING || state == OrderState.REJECTED) return false;
+        if (state != OrderState.AWAITING_RESTAURANT_ACCEPTANCE) return false;
 
         rejectionCode = safeCode;
         rejectionMessage = safeMessage;
@@ -316,19 +358,18 @@ public class Order {
     }
 
     public boolean confirmRestaurantAcceptance() {
-        if (state == OrderState.APPROVED) {
-            return false;
-        }
+        if (state == OrderState.APPROVED) return false;
         requireState(OrderState.CONFIRMATION_PENDING, "confirm restaurant acceptance");
+        if (paymentState != OrderPaymentState.CAPTURED) {
+            throw new IllegalStateException("Order cannot be approved before payment capture");
+        }
         state = OrderState.APPROVED;
         touch();
         return true;
     }
 
     public boolean completeRestaurantRejection() {
-        if (state == OrderState.REJECTED) {
-            return false;
-        }
+        if (state == OrderState.REJECTED) return false;
         requireState(OrderState.REJECTION_PENDING, "complete restaurant rejection");
         state = OrderState.REJECTED;
         touch();
@@ -378,8 +419,7 @@ public class Order {
     private void requireState(OrderState expected, String operation) {
         if (state != expected) {
             throw new IllegalStateException(
-                "Cannot " + operation + " order in state " + state + ". Expected " + expected + "."
-            );
+                "Cannot " + operation + " order in state " + state + ". Expected " + expected + ".");
         }
     }
 
@@ -395,8 +435,7 @@ public class Order {
     public void validateNotPending() {
         if (isPending()) {
             throw new IllegalStateException(
-                "Cannot modify order in state " + state + ". Operation in progress."
-            );
+                "Cannot modify order in state " + state + ". Operation in progress.");
         }
     }
 
@@ -404,85 +443,31 @@ public class Order {
         updatedAt = LocalDateTime.now();
     }
 
-    public Long getId() {
-        return id;
-    }
-
-    public Integer getVersion() {
-        return version;
-    }
-
-    public OrderState getState() {
-        return state;
-    }
-
-    public Long getConsumerId() {
-        return consumerId;
-    }
-
-    public Long getRestaurantId() {
-        return restaurantId;
-    }
-
-    public Address getPickupAddress() {
-        return pickupAddress;
-    }
-
-    public List<OrderLineItem> getLineItems() {
-        return List.copyOf(lineItems);
-    }
-
-    public DeliveryInfo getDeliveryInfo() {
-        return deliveryInfo;
-    }
-
-    public PaymentInfo getPaymentInfo() {
-        return paymentInfo;
-    }
-
-    public Money getOrderTotal() {
-        return orderTotal;
-    }
-
-    public Long getTicketId() {
-        return ticketId;
-    }
-
-    public void setTicketId(Long ticketId) {
-        this.ticketId = ticketId;
-    }
-
-    public Long getAuthorizationId() {
-        return authorizationId;
-    }
-
-    public void setAuthorizationId(Long authorizationId) {
-        this.authorizationId = authorizationId;
-    }
-
-    public Long getCreditReservationId() {
-        return creditReservationId;
-    }
-
-    public LocalDateTime getAcceptanceDeadline() {
-        return acceptanceDeadline;
-    }
-
-    public String getRejectionCode() {
-        return rejectionCode;
-    }
-
-    public String getRejectionMessage() {
-        return rejectionMessage;
-    }
-
-    public LocalDateTime getCreatedAt() {
-        return createdAt;
-    }
-
-    public LocalDateTime getUpdatedAt() {
-        return updatedAt;
-    }
+    public Long getId() { return id; }
+    public Integer getVersion() { return version; }
+    public OrderState getState() { return state; }
+    public Long getConsumerId() { return consumerId; }
+    public Long getRestaurantId() { return restaurantId; }
+    public Address getPickupAddress() { return pickupAddress; }
+    public List<OrderLineItem> getLineItems() { return List.copyOf(lineItems); }
+    public DeliveryInfo getDeliveryInfo() { return deliveryInfo; }
+    public PaymentInfo getPaymentInfo() { return paymentInfo; }
+    public Money getOrderTotal() { return orderTotal; }
+    public Long getTicketId() { return ticketId; }
+    public void setTicketId(Long ticketId) { this.ticketId = ticketId; }
+    public Long getAuthorizationId() { return authorizationId; }
+    public void setAuthorizationId(Long authorizationId) { this.authorizationId = authorizationId; }
+    public Long getCreditReservationId() { return creditReservationId; }
+    public LocalDateTime getAcceptanceDeadline() { return acceptanceDeadline; }
+    public OrderPaymentState getPaymentState() { return paymentState; }
+    public String getAcceptanceRequestId() { return acceptanceRequestId; }
+    public String getPaymentOperationRequestId() { return paymentOperationRequestId; }
+    public Long getCaptureId() { return captureId; }
+    public String getPaymentFailureCode() { return paymentFailureCode; }
+    public String getRejectionCode() { return rejectionCode; }
+    public String getRejectionMessage() { return rejectionMessage; }
+    public LocalDateTime getCreatedAt() { return createdAt; }
+    public LocalDateTime getUpdatedAt() { return updatedAt; }
 
     @PrePersist
     protected void onCreate() {
@@ -499,6 +484,7 @@ public class Order {
     public String toString() {
         return "Order{id=" + id
             + ", state=" + state
+            + ", paymentState=" + paymentState
             + ", consumerId=" + consumerId
             + ", restaurantId=" + restaurantId
             + ", total=" + orderTotal + "}";
