@@ -5,14 +5,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import net.ftgo.common.channels.ChannelNames;
 import net.ftgo.common.messaging.DomainEventEnvelope;
 import net.ftgo.common.messaging.DomainEventMetadata;
+import net.ftgo.common.messaging.OutboxMetrics;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
-/**
- * Domain event publisher using the Transactional Outbox pattern.
- */
 @Component("ftgoDomainEventPublisher")
 public class DomainEventPublisher {
 
@@ -21,10 +20,21 @@ public class DomainEventPublisher {
 
     private final OutboxRepository outboxRepository;
     private final ObjectMapper objectMapper;
+    private final OutboxMetrics outboxMetrics;
 
     public DomainEventPublisher(OutboxRepository outboxRepository, ObjectMapper objectMapper) {
+        this(outboxRepository, objectMapper, OutboxMetrics.noop());
+    }
+
+    @Autowired
+    public DomainEventPublisher(
+        OutboxRepository outboxRepository,
+        ObjectMapper objectMapper,
+        OutboxMetrics outboxMetrics
+    ) {
         this.outboxRepository = outboxRepository;
         this.objectMapper = objectMapper;
+        this.outboxMetrics = outboxMetrics;
     }
 
     @Transactional
@@ -40,8 +50,8 @@ public class DomainEventPublisher {
         DomainEventMetadata metadata,
         T event
     ) {
+        String eventType = event.getClass().getSimpleName();
         try {
-            String eventType = event.getClass().getSimpleName();
             DomainEventEnvelope<T> envelope = DomainEventEnvelope.create(
                 eventType,
                 CURRENT_SCHEMA_VERSION,
@@ -52,8 +62,7 @@ public class DomainEventPublisher {
                 event
             );
             String payload = objectMapper.writeValueAsString(envelope);
-
-            OutboxEntry outboxEntry = new OutboxEntry(
+            outboxRepository.save(new OutboxEntry(
                 envelope.eventId().toString(),
                 envelope.schemaVersion(),
                 envelope.aggregateVersion(),
@@ -62,13 +71,9 @@ public class DomainEventPublisher {
                 eventType,
                 payload,
                 ChannelNames.ORDER_EVENT_TOPIC
-            );
-
-            outboxRepository.save(outboxEntry);
-
+            ));
             logger.info(
-                "Published event to outbox: eventId={}, aggregateType={}, aggregateId={}, "
-                    + "aggregateVersion={}, eventType={}",
+                "Published event to outbox: eventId={}, aggregateType={}, aggregateId={}, aggregateVersion={}, eventType={}",
                 envelope.eventId(),
                 aggregateType,
                 aggregateId,
@@ -76,8 +81,13 @@ public class DomainEventPublisher {
                 eventType
             );
         } catch (JsonProcessingException e) {
-            logger.error("Failed to serialize event: {}", event, e);
+            outboxMetrics.recordPublishError();
+            logger.error("Failed to serialize eventType={}", eventType, e);
             throw new RuntimeException("Failed to publish event", e);
+        } catch (RuntimeException e) {
+            outboxMetrics.recordPublishError();
+            logger.error("Failed to insert outbox eventType={}", eventType, e);
+            throw e;
         }
     }
 
@@ -86,13 +96,7 @@ public class DomainEventPublisher {
     }
 
     public <T> void publishOrderEvent(Long orderId, long aggregateVersion, T event) {
-        publish(
-            "Order",
-            orderId.toString(),
-            aggregateVersion,
-            DomainEventMetadata.empty(),
-            event
-        );
+        publish("Order", orderId.toString(), aggregateVersion, DomainEventMetadata.empty(), event);
     }
 
     public <T> void publishOrderEvent(
