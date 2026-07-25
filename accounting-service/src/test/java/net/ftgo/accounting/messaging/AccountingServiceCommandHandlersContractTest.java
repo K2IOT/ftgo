@@ -4,7 +4,7 @@ import io.eventuate.tram.commands.consumer.CommandMessage;
 import net.ftgo.accounting.domain.Account;
 import net.ftgo.accounting.domain.Authorization;
 import net.ftgo.accounting.domain.AuthorizationStatus;
-import net.ftgo.accounting.payment.PaymentAuthorizationDecision;
+import net.ftgo.accounting.payment.PaymentProvider;
 import net.ftgo.accounting.repository.AccountRepository;
 import net.ftgo.common.Money;
 import net.ftgo.common.messaging.IdempotentCommandExecutor;
@@ -38,7 +38,7 @@ class AccountingServiceCommandHandlersContractTest {
         handlers = new AccountingServiceCommandHandlers(
             accountRepository,
             eventPublisher,
-            (paymentToken, amount) -> PaymentAuthorizationDecision.allow(),
+            mock(PaymentProvider.class),
             new IdempotentCommandExecutor(new InMemoryProcessedCommandStore())
         );
     }
@@ -46,7 +46,10 @@ class AccountingServiceCommandHandlersContractTest {
     @Test
     void repeatedRevisionRetriesWithSameCommandIdReturnSameAuthorizationResult() throws Exception {
         Account account = new Account(100L);
-        Authorization original = account.authorize("auth-original", new Money(new BigDecimal("100.00")));
+        Authorization original = account.authorize(
+            "auth-original",
+            new Money(new BigDecimal("100.00"))
+        );
         setAuthorizationId(original, 300L);
 
         when(accountRepository.findByConsumerId(100L)).thenReturn(Optional.of(account));
