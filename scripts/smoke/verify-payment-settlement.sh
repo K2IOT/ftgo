@@ -147,7 +147,7 @@ run_cycle() {
   start_service "${run}" kitchen-service 8084 ftgo_kitchen FTGO_KITCHEN_ACCEPTANCE_TIMEOUT_SCAN_MS=100
   start_service "${run}" accounting-service 8085 ftgo_accounting \
     FTGO_ACCOUNTING_SANDBOX_PROVIDER_ADMIN_ENABLED=true \
-    FTGO_ACCOUNTING_SANDBOX_WEBHOOK_SECRET=phase02b-e2e-secret \
+    FTGO_ACCOUNTING_PAYMENT_WEBHOOK_SECRETS=sandbox=phase02b-e2e-secret \
     FTGO_ACCOUNTING_RECONCILIATION_INITIAL_DELAY_MS=500 \
     FTGO_ACCOUNTING_RECONCILIATION_FIXED_DELAY_MS=500
   start_service "${run}" order-service 8081 ftgo_order
