@@ -32,6 +32,10 @@ public class OrderSagaCommandHandlers {
             .onMessage(CancelOrderSagaLocalSteps.BeginCancelCommand.class, cancelOrderSteps::beginCancel)
             .onMessage(CancelOrderSagaLocalSteps.UndoCancelCommand.class, cancelOrderSteps::undoCancel)
             .onMessage(CancelOrderSagaLocalSteps.ConfirmCancelCommand.class, cancelOrderSteps::confirmCancel)
+            .onMessage(
+                CancelOrderSagaLocalSteps.NoopFinancialSettlementCommand.class,
+                cancelOrderSteps::noopFinancialSettlement
+            )
             .onMessage(ReviseOrderSagaLocalSteps.BeginReviseCommand.class, reviseOrderSteps::beginRevise)
             .onMessage(ReviseOrderSagaLocalSteps.UndoReviseCommand.class, reviseOrderSteps::undoRevise)
             .onMessage(ReviseOrderSagaLocalSteps.ConfirmReviseCommand.class, reviseOrderSteps::confirmRevise)
