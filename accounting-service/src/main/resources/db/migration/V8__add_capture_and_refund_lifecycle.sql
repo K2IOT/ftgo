@@ -14,6 +14,7 @@ CREATE TABLE payment_captures (
     CONSTRAINT fk_payment_capture_authorization
         FOREIGN KEY (authorization_id) REFERENCES authorizations(id),
     CONSTRAINT chk_payment_capture_amount_positive CHECK (amount > 0),
+    CONSTRAINT uq_payment_capture_authorization UNIQUE (authorization_id),
     CONSTRAINT uq_payment_capture_request UNIQUE (request_id),
     CONSTRAINT uq_payment_capture_provider UNIQUE (provider_capture_id)
 );
