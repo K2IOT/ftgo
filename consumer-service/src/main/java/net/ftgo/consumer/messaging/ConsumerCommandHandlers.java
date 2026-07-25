@@ -86,14 +86,10 @@ public class ConsumerCommandHandlers {
     }
 
     private Message verifyConsumerOnce(VerifyConsumerCommand command) {
-        try {
-            if (consumerService.verifyConsumerCredit(command.getConsumerId(), command.getOrderTotal())) {
-                return withSuccess(new ConsumerVerified(command.getConsumerId()));
-            }
-            return withFailure("INSUFFICIENT_CREDIT:Insufficient credit limit");
-        } catch (Exception e) {
-            return withFailure("CONSUMER_VERIFICATION_FAILED:" + e.getMessage());
+        if (consumerService.verifyConsumerCredit(command.getConsumerId(), command.getOrderTotal())) {
+            return withSuccess(new ConsumerVerified(command.getConsumerId()));
         }
+        return withFailure("INSUFFICIENT_CREDIT:Insufficient credit limit");
     }
 
     private Message reserveCreditOnce(ReserveConsumerCreditCommand command) {
