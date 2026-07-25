@@ -166,9 +166,9 @@ public class KitchenServiceCommandHandlers {
             return withSuccess(new TicketCreated(ticket.getId()));
         } catch (IllegalArgumentException | IllegalStateException e) {
             return withFailure(e.getMessage());
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             logger.error("Unexpected error creating ticket for order {}", command.getOrderId(), e);
-            return withFailure("Internal error creating ticket");
+            throw e;
         }
     }
 
@@ -191,9 +191,9 @@ public class KitchenServiceCommandHandlers {
             return withSuccess();
         } catch (IllegalArgumentException | IllegalStateException e) {
             return withFailure(e.getMessage());
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             logger.error("Unexpected error approving ticket {}", command.getTicketId(), e);
-            return withFailure("Internal error approving ticket");
+            throw e;
         }
     }
 
@@ -213,9 +213,9 @@ public class KitchenServiceCommandHandlers {
             return withSuccess();
         } catch (IllegalArgumentException | IllegalStateException e) {
             return withFailure(e.getMessage());
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             logger.error("Unexpected error cancelling ticket {}", command.getTicketId(), e);
-            return withFailure("Internal error cancelling ticket");
+            throw e;
         }
     }
 
