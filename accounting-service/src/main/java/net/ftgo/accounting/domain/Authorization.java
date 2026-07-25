@@ -2,14 +2,17 @@ package net.ftgo.accounting.domain;
 
 import jakarta.persistence.AttributeOverride;
 import jakarta.persistence.AttributeOverrides;
+import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Embedded;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.OneToMany;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
@@ -18,6 +21,8 @@ import jakarta.validation.constraints.NotNull;
 import net.ftgo.common.Money;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 
 @Entity
@@ -49,6 +54,12 @@ public class Authorization {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 50)
     private AuthorizationStatus status;
+
+    @OneToMany(mappedBy = "authorization", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    private List<PaymentCapture> paymentCaptures = new ArrayList<>();
+
+    @OneToMany(mappedBy = "authorization", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    private List<PaymentRefund> paymentRefunds = new ArrayList<>();
 
     @Column(name = "capture_request_id", unique = true)
     private String captureRequestId;
@@ -135,6 +146,130 @@ public class Authorization {
         }
     }
 
+    public PaymentCapture requestCapture(String operationRequestId) {
+        validateRequestId(operationRequestId);
+        PaymentCapture existing = findCaptureByRequestId(operationRequestId);
+        if (existing != null) {
+            if (!existing.matches(amount)) {
+                throw new IllegalArgumentException("Capture request ID was reused with a different amount");
+            }
+            return existing;
+        }
+        if (status != AuthorizationStatus.AUTHORIZED && status != AuthorizationStatus.APPROVED) {
+            throw new IllegalStateException("Cannot request capture in state " + status);
+        }
+        if (!paymentCaptures.isEmpty()) {
+            throw new IllegalStateException("Authorization already has a capture operation with another request ID");
+        }
+        PaymentCapture capture = new PaymentCapture(this, operationRequestId, amount);
+        paymentCaptures.add(capture);
+        return capture;
+    }
+
+    public boolean completeCapture(String operationRequestId, String providerCaptureId) {
+        PaymentCapture capture = requireCapture(operationRequestId);
+        boolean changed = capture.complete(providerCaptureId);
+        if (changed) {
+            status = AuthorizationStatus.CAPTURED;
+            captureRequestId = operationRequestId;
+            capturedAt = capture.getCompletedAt();
+        }
+        return changed;
+    }
+
+    public boolean failCapture(String operationRequestId, String failureCode) {
+        PaymentCapture capture = requireCapture(operationRequestId);
+        return capture.fail(failureCode);
+    }
+
+    public PaymentRefund requestRefund(Money refundAmount, String reason, String operationRequestId) {
+        validateRequestId(operationRequestId);
+        validateAmount(refundAmount);
+        PaymentRefund existing = findRefundByRequestId(operationRequestId);
+        if (existing != null) {
+            if (!existing.matches(refundAmount, reason)) {
+                throw new IllegalArgumentException("Refund request ID was reused with different data");
+            }
+            return existing;
+        }
+        if (status != AuthorizationStatus.CAPTURED) {
+            throw new IllegalStateException("Cannot request refund in state " + status);
+        }
+        Money reserved = getReservedRefundAmount();
+        if (reserved.add(refundAmount).isGreaterThan(amount)) {
+            throw new RefundExceedsCapturedAmountException(
+                "Refund total " + reserved.add(refundAmount) + " exceeds captured amount " + amount);
+        }
+        PaymentRefund refund = new PaymentRefund(this, refundAmount, reason, operationRequestId);
+        paymentRefunds.add(refund);
+        return refund;
+    }
+
+    public boolean completeRefund(String operationRequestId, String providerRefundId) {
+        PaymentRefund refund = requireRefund(operationRequestId);
+        boolean changed = refund.complete(providerRefundId);
+        if (changed) {
+            refundRequestId = operationRequestId;
+            refundReason = refund.getReason();
+            refundedAt = refund.getCompletedAt();
+        }
+        return changed;
+    }
+
+    public boolean failRefund(String operationRequestId, String failureCode) {
+        PaymentRefund refund = requireRefund(operationRequestId);
+        return refund.fail(failureCode);
+    }
+
+    public Money getRefundedAmount() {
+        return paymentRefunds.stream()
+            .filter(refund -> refund.getStatus() == FinancialOperationStatus.SUCCEEDED)
+            .map(PaymentRefund::getAmount)
+            .reduce(Money.ZERO, Money::add);
+    }
+
+    public Money getReservedRefundAmount() {
+        return paymentRefunds.stream()
+            .filter(refund -> refund.getStatus() != FinancialOperationStatus.FAILED)
+            .map(PaymentRefund::getAmount)
+            .reduce(Money.ZERO, Money::add);
+    }
+
+    public Money getRefundableAmount() {
+        return amount.subtract(getReservedRefundAmount());
+    }
+
+    private PaymentCapture findCaptureByRequestId(String operationRequestId) {
+        return paymentCaptures.stream()
+            .filter(capture -> capture.getRequestId().equals(operationRequestId))
+            .findFirst()
+            .orElse(null);
+    }
+
+    private PaymentCapture requireCapture(String operationRequestId) {
+        PaymentCapture capture = findCaptureByRequestId(operationRequestId);
+        if (capture == null) {
+            throw new IllegalArgumentException("Capture with request ID " + operationRequestId + " not found");
+        }
+        return capture;
+    }
+
+    private PaymentRefund findRefundByRequestId(String operationRequestId) {
+        return paymentRefunds.stream()
+            .filter(refund -> refund.getRequestId().equals(operationRequestId))
+            .findFirst()
+            .orElse(null);
+    }
+
+    private PaymentRefund requireRefund(String operationRequestId) {
+        PaymentRefund refund = findRefundByRequestId(operationRequestId);
+        if (refund == null) {
+            throw new IllegalArgumentException("Refund with request ID " + operationRequestId + " not found");
+        }
+        return refund;
+    }
+
+    /** Legacy direct authorization mutation retained while existing sagas migrate. */
     public boolean capture(String operationRequestId) {
         validateRequestId(operationRequestId);
         if (status == AuthorizationStatus.CAPTURED) {
@@ -167,6 +302,7 @@ public class Authorization {
         return true;
     }
 
+    /** Legacy full-refund adapter retained while command handlers migrate to PaymentRefund. */
     public boolean refund(Money refundAmount, String reason, String operationRequestId) {
         validateRequestId(operationRequestId);
         if (status == AuthorizationStatus.REFUNDED) {
@@ -224,6 +360,8 @@ public class Authorization {
     public String getRequestId() { return requestId; }
     public Money getAmount() { return amount; }
     public AuthorizationStatus getStatus() { return status; }
+    public List<PaymentCapture> getPaymentCaptures() { return List.copyOf(paymentCaptures); }
+    public List<PaymentRefund> getPaymentRefunds() { return List.copyOf(paymentRefunds); }
     public String getCaptureRequestId() { return captureRequestId; }
     public String getVoidRequestId() { return voidRequestId; }
     public String getRefundRequestId() { return refundRequestId; }
