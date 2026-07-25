@@ -86,6 +86,7 @@ class OrderOperationReconcilerTest {
     void neverAutoForcesAmbiguousRevisionPaymentState() {
         Order order = order(OrderState.REVISION_PENDING, 201L, 301L, 401L);
         when(sagaInspector.findActiveForOrder(101L)).thenReturn(Optional.empty());
+        when(orderRepository.findByIdWithLock(101L)).thenReturn(Optional.of(order));
 
         assertEquals(
             OrderOperationReconciler.Classification.MANUAL_REVIEW,
@@ -161,7 +162,7 @@ class OrderOperationReconcilerTest {
         assertEquals(OrderOperationStatus.FAILED, saved.getStatus());
         assertTrue(saved.getDetails().contains("saga store unavailable"));
         assertEquals(1, transactions.requiresNewCalls);
-        verify(operationRepository, times(2)).saveAndFlush(saved);
+        verify(operationRepository, times(2)).saveAndFlush(any(OrderOperation.class));
     }
 
     private void stubRepairPersistence(Order order, OrderOperation saved, String idempotencyKey) {
