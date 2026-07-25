@@ -124,9 +124,10 @@ public class Authorization {
         Long orderId,
         String requestId,
         Money amount,
-        String providerAuthorizationId
+        String providerAuthorizationId,
+        AuthorizationStatus status
     ) {
-        initialize(orderId, requestId, providerAuthorizationId, amount, AuthorizationStatus.AUTHORIZED);
+        initialize(orderId, requestId, providerAuthorizationId, amount, status);
     }
 
     public Authorization(Long accountId, Long orderId, String requestId,
