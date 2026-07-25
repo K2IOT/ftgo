@@ -4,24 +4,24 @@ import io.eventuate.tram.commands.consumer.CommandHandlers;
 import io.eventuate.tram.sagas.participant.SagaCommandHandlersBuilder;
 import net.ftgo.common.channels.ChannelNames;
 
-/**
- * Owns the single Order Service command subscription used by all local saga
- * participants. A Kafka command channel must have one dispatcher handler set;
- * registering independent dispatcher groups on the same channel causes every
- * group to receive commands it cannot handle.
- */
+/** Consolidated local Order Service saga participant command registry. */
 public class OrderSagaCommandHandlers {
 
     private final CreateOrderSagaLocalSteps createOrderSteps;
     private final CancelOrderSagaLocalSteps cancelOrderSteps;
     private final ReviseOrderSagaLocalSteps reviseOrderSteps;
+    private final CapturePaymentSagaLocalSteps capturePaymentSteps;
 
-    public OrderSagaCommandHandlers(CreateOrderSagaLocalSteps createOrderSteps,
-                                    CancelOrderSagaLocalSteps cancelOrderSteps,
-                                    ReviseOrderSagaLocalSteps reviseOrderSteps) {
+    public OrderSagaCommandHandlers(
+        CreateOrderSagaLocalSteps createOrderSteps,
+        CancelOrderSagaLocalSteps cancelOrderSteps,
+        ReviseOrderSagaLocalSteps reviseOrderSteps,
+        CapturePaymentSagaLocalSteps capturePaymentSteps
+    ) {
         this.createOrderSteps = createOrderSteps;
         this.cancelOrderSteps = cancelOrderSteps;
         this.reviseOrderSteps = reviseOrderSteps;
+        this.capturePaymentSteps = capturePaymentSteps;
     }
 
     public CommandHandlers commandHandlers() {
@@ -35,6 +35,10 @@ public class OrderSagaCommandHandlers {
             .onMessage(ReviseOrderSagaLocalSteps.BeginReviseCommand.class, reviseOrderSteps::beginRevise)
             .onMessage(ReviseOrderSagaLocalSteps.UndoReviseCommand.class, reviseOrderSteps::undoRevise)
             .onMessage(ReviseOrderSagaLocalSteps.ConfirmReviseCommand.class, reviseOrderSteps::confirmRevise)
+            .onMessage(
+                CapturePaymentSagaLocalSteps.FailPaymentCaptureCommand.class,
+                capturePaymentSteps::failPaymentCapture
+            )
             .build();
     }
 }
