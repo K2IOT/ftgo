@@ -33,8 +33,14 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.timeout;
+import static org.mockito.Mockito.verify;
 
 @Import(TestParticipantConfiguration.class)
 class CancelOrderSagaIntegrationTest extends OrderServiceIntegrationTestBase {
@@ -64,23 +70,32 @@ class CancelOrderSagaIntegrationTest extends OrderServiceIntegrationTestBase {
         clearInvocations(messageProducer, cancelOrderSagaLocalSteps);
     }
 
-    private Order createApprovedOrder(Long ticketId, Long authorizationId) {
+    private Order createCapturedOrder(Long ticketId, Long authorizationId) {
         List<OrderLineItem> lineItems = Arrays.asList(
             new OrderLineItem(1L, "Burger", new Money(BigDecimal.valueOf(12.99)), 2),
             new OrderLineItem(2L, "Fries", new Money(BigDecimal.valueOf(4.99)), 1)
         );
 
-        Order order = new Order(
+        Order order = orderRepository.saveAndFlush(new Order(
             100L,
             200L,
             lineItems,
             new DeliveryInfo("123 Main St", LocalDateTime.now().plusHours(1)),
             new PaymentInfo("tok_test_123")
+        ));
+        order.awaitRestaurantAcceptance(
+            ticketId,
+            authorizationId,
+            777L,
+            LocalDateTime.now().plusMinutes(5)
         );
-        order.approve();
-        order.setTicketId(ticketId);
-        order.setAuthorizationId(authorizationId);
-        return orderRepository.save(order);
+        order.beginPaymentCapture("accept-ticket-" + ticketId);
+        order.completePaymentCapture(
+            authorizationId + 1,
+            order.getPaymentOperationRequestId()
+        );
+        order.confirmRestaurantAcceptance();
+        return orderRepository.saveAndFlush(order);
     }
 
     private CancelOrderSagaData toSagaData(Order order) {
@@ -88,13 +103,16 @@ class CancelOrderSagaIntegrationTest extends OrderServiceIntegrationTestBase {
             order.getId(),
             order.getConsumerId(),
             order.getTicketId(),
-            order.getAuthorizationId()
+            order.getAuthorizationId(),
+            order.getCaptureId(),
+            order.getOrderTotal(),
+            order.getPaymentState()
         );
     }
 
     @Test
     void testCancelOrderSaga_StartsAndSendsParticipantCommands() {
-        Order order = createApprovedOrder(999L, 888L);
+        Order order = createCapturedOrder(999L, 888L);
         CancelOrderSagaData sagaData = toSagaData(order);
 
         SagaInstance sagaInstance = sagaInstanceFactory.create(cancelOrderSaga, sagaData);
@@ -106,7 +124,10 @@ class CancelOrderSagaIntegrationTest extends OrderServiceIntegrationTestBase {
 
         ArgumentCaptor<String> destinationCaptor = ArgumentCaptor.forClass(String.class);
         ArgumentCaptor<Message> messageCaptor = ArgumentCaptor.forClass(Message.class);
-        verify(messageProducer, timeout(5000).atLeastOnce()).send(destinationCaptor.capture(), messageCaptor.capture());
+        verify(messageProducer, timeout(5000).atLeastOnce()).send(
+            destinationCaptor.capture(),
+            messageCaptor.capture()
+        );
 
         List<String> destinations = destinationCaptor.getAllValues();
         List<Message> messages = messageCaptor.getAllValues();
@@ -123,7 +144,7 @@ class CancelOrderSagaIntegrationTest extends OrderServiceIntegrationTestBase {
 
     @Test
     void testOrderServiceKafkaConsumer_BeginCancelCommand() {
-        Order order = createApprovedOrder(999L, 888L);
+        Order order = createCapturedOrder(999L, 888L);
 
         cancelOrderSagaCommandDispatcher.messageHandler(
             commandMessage(new CancelOrderSagaLocalSteps.BeginCancelCommand(order.getId()))
@@ -139,9 +160,13 @@ class CancelOrderSagaIntegrationTest extends OrderServiceIntegrationTestBase {
 
     @Test
     void testOrderServiceKafkaConsumer_ConfirmCancelCommand() {
-        Order order = createApprovedOrder(999L, 888L);
+        Order order = createCapturedOrder(999L, 888L);
         order.beginCancel();
-        orderRepository.save(order);
+        order.markPaymentRefunded(
+            "cancel-order-" + order.getId()
+                + "-capture-" + order.getCaptureId() + "-refund"
+        );
+        orderRepository.saveAndFlush(order);
 
         cancelOrderSagaCommandDispatcher.messageHandler(
             commandMessage(new CancelOrderSagaLocalSteps.ConfirmCancelCommand(order.getId()))
@@ -157,9 +182,9 @@ class CancelOrderSagaIntegrationTest extends OrderServiceIntegrationTestBase {
 
     @Test
     void testOrderServiceKafkaConsumer_UndoCancelCommand() {
-        Order order = createApprovedOrder(999L, 888L);
+        Order order = createCapturedOrder(999L, 888L);
         order.beginCancel();
-        orderRepository.save(order);
+        orderRepository.saveAndFlush(order);
 
         cancelOrderSagaCommandDispatcher.messageHandler(
             commandMessage(new CancelOrderSagaLocalSteps.UndoCancelCommand(order.getId()))
