@@ -4,6 +4,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import net.ftgo.order.domain.Order;
 import net.ftgo.order.domain.OrderState;
 import net.ftgo.order.repository.OrderRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -35,6 +36,7 @@ public class StuckSagaMonitor {
     private final Clock clock;
     private final AtomicInteger stuckCount = new AtomicInteger();
 
+    @Autowired
     public StuckSagaMonitor(
         OrderRepository orderRepository,
         OrderOperationReconciler reconciler,
