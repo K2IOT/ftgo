@@ -111,6 +111,8 @@ class OrderOperationReconcilerTest {
         when(operationRepository.findByIdempotencyKey("repair-create-1"))
             .thenReturn(Optional.empty())
             .thenReturn(Optional.of(saved));
+        when(operationRepository.save(any(OrderOperation.class)))
+            .thenAnswer(invocation -> invocation.getArgument(0));
 
         reconciler.repair(
             101L,
@@ -176,8 +178,6 @@ class OrderOperationReconcilerTest {
             return operation;
         });
         when(operationRepository.findById(501L)).thenReturn(Optional.of(saved));
-        when(operationRepository.save(any(OrderOperation.class)))
-            .thenAnswer(invocation -> invocation.getArgument(0));
         assertEquals(idempotencyKey, saved.getIdempotencyKey());
     }
 
