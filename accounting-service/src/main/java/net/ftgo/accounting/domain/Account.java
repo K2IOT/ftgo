@@ -61,14 +61,33 @@ public class Account {
     }
 
     public Authorization authorize(Long orderId, String requestId, Money amount) {
+        return authorize(orderId, requestId, amount, "pa_legacy_" + requestId);
+    }
+
+    public Authorization authorize(
+        Long orderId,
+        String requestId,
+        Money amount,
+        String providerAuthorizationId
+    ) {
         Authorization existing = findAuthorizationByRequestId(requestId);
         if (existing != null) {
             if (!existing.matches(orderId, amount)) {
-                throw new IllegalArgumentException("Authorization request ID was reused with different order data");
+                throw new IllegalArgumentException(
+                    "Authorization request ID was reused with different order data");
+            }
+            if (!existing.getProviderAuthorizationId().equals(providerAuthorizationId)) {
+                throw new IllegalArgumentException(
+                    "Authorization request ID was reused with another provider reference");
             }
             return existing;
         }
-        Authorization authorization = new Authorization(orderId, requestId, amount);
+        Authorization authorization = new Authorization(
+            orderId,
+            requestId,
+            amount,
+            providerAuthorizationId
+        );
         authorizations.add(authorization);
         return authorization;
     }
@@ -99,7 +118,8 @@ public class Account {
     public void reverseAuthorizationByRequestId(String requestId) {
         Authorization authorization = findAuthorizationByRequestId(requestId);
         if (authorization == null) {
-            throw new IllegalArgumentException("Authorization with request ID " + requestId + " not found");
+            throw new IllegalArgumentException(
+                "Authorization with request ID " + requestId + " not found");
         }
         authorization.reverse();
     }
@@ -115,7 +135,11 @@ public class Account {
         if (existing.isReversed()) throw new IllegalStateException("Cannot revise a reversed authorization");
         if (existing.isDenied()) throw new IllegalStateException("Cannot revise a denied authorization");
         existing.reverse();
-        Authorization revised = new Authorization(newRequestId, newAmount, AuthorizationStatus.APPROVED);
+        Authorization revised = new Authorization(
+            newRequestId,
+            newAmount,
+            AuthorizationStatus.APPROVED
+        );
         authorizations.add(revised);
         return revised;
     }
@@ -134,17 +158,23 @@ public class Account {
             .orElse(null);
     }
 
+    public Authorization requireAuthorizationById(Long authorizationId) {
+        return requireAuthorization(authorizationId);
+    }
+
     private Authorization requireAuthorization(Long authorizationId) {
         Authorization authorization = findAuthorizationById(authorizationId);
         if (authorization == null) {
-            throw new IllegalArgumentException("Authorization with ID " + authorizationId + " not found");
+            throw new IllegalArgumentException(
+                "Authorization with ID " + authorizationId + " not found");
         }
         return authorization;
     }
 
-    private void requireOrder(Authorization authorization, Long orderId) {
+    public void requireOrder(Authorization authorization, Long orderId) {
         if (authorization.getOrderId() == null || !authorization.getOrderId().equals(orderId)) {
-            throw new IllegalArgumentException("Authorization does not belong to order " + orderId);
+            throw new IllegalArgumentException(
+                "Authorization does not belong to order " + orderId);
         }
     }
 
