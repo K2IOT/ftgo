@@ -15,7 +15,7 @@ class ConfigurablePaymentProviderLedgerTest {
 
         PaymentAuthorizationDecision authorization =
             provider.authorize("tok_ok", amount, "authorize-1");
-        String providerAuthorizationId = authorization.getProviderAuthorizationId();
+        String providerAuthorizationId = authorization.providerAuthorizationId();
 
         PaymentProviderResult firstCapture =
             provider.capture(providerAuthorizationId, amount, "capture-1");
@@ -28,9 +28,9 @@ class ConfigurablePaymentProviderLedgerTest {
             .isEqualTo(PaymentProviderSettlementStatus.CAPTURED);
 
         PaymentProviderResult firstRefund =
-            provider.refund(firstCapture.getProviderReference(), amount, "refund-1");
+            provider.refund(firstCapture.providerReference(), amount, "refund-1");
         PaymentProviderResult replayedRefund =
-            provider.refund(firstCapture.getProviderReference(), amount, "refund-1");
+            provider.refund(firstCapture.providerReference(), amount, "refund-1");
 
         assertThat(replayedRefund).isEqualTo(firstRefund);
         assertThat(provider.getOperationCount("refund")).isEqualTo(1L);
@@ -47,7 +47,7 @@ class ConfigurablePaymentProviderLedgerTest {
 
         PaymentAuthorizationDecision authorization =
             provider.authorize("tok_ok", amount, "authorize-void");
-        String providerAuthorizationId = authorization.getProviderAuthorizationId();
+        String providerAuthorizationId = authorization.providerAuthorizationId();
 
         PaymentProviderResult firstVoid =
             provider.voidAuthorization(providerAuthorizationId, "void-1");
