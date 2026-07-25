@@ -76,8 +76,7 @@ class OutOfOrderEventIntegrationTest {
     void ticketReadyWaitsForTicketAcceptedAndDuplicatePendingIsCollapsed() throws Exception {
         projectionService.apply(envelope(UUID.randomUUID(), "OrderCreated", 1, orderCreated()));
         UUID readyId = UUID.randomUUID();
-        String ready = envelope(readyId, "TicketReadyEvent", 3,
-            new TicketReadyEvent(55L, 123L, LocalDateTime.now()));
+        String ready = envelope(readyId, "TicketReadyEvent", 3, ticketReady());
 
         projectionService.apply(ready);
         projectionService.apply(ready);
@@ -87,7 +86,7 @@ class OutOfOrderEventIntegrationTest {
             UUID.randomUUID(),
             "TicketAcceptedEvent",
             2,
-            new TicketAcceptedEvent(55L, 123L, LocalDateTime.now())
+            ticketAccepted()
         ));
 
         assertEquals("READY", records.get("123").getTicketStatus());
@@ -100,12 +99,33 @@ class OutOfOrderEventIntegrationTest {
             UUID.randomUUID(),
             "DeliveryDeliveredEvent",
             2,
-            new DeliveryDeliveredEvent(77L, 123L, LocalDateTime.now())
+            deliveryDelivered()
         ));
         projectionService.apply(envelope(UUID.randomUUID(), "OrderCreated", 1, orderCreated()));
 
         assertEquals("DELIVERED", records.get("123").getDeliveryStatus());
         assertTrue(pendingStore.findByOrderId("123").isEmpty());
+    }
+
+    private TicketReadyEvent ticketReady() {
+        TicketReadyEvent event = new TicketReadyEvent();
+        event.setTicketId(55L);
+        event.setOrderId(123L);
+        return event;
+    }
+
+    private TicketAcceptedEvent ticketAccepted() {
+        TicketAcceptedEvent event = new TicketAcceptedEvent();
+        event.setTicketId(55L);
+        event.setOrderId(123L);
+        return event;
+    }
+
+    private DeliveryDeliveredEvent deliveryDelivered() {
+        DeliveryDeliveredEvent event = new DeliveryDeliveredEvent();
+        event.setDeliveryId(77L);
+        event.setOrderId(123L);
+        return event;
     }
 
     private OrderCreated orderCreated() {
