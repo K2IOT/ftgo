@@ -86,7 +86,8 @@ public class Account {
             orderId,
             requestId,
             amount,
-            providerAuthorizationId
+            providerAuthorizationId,
+            AuthorizationStatus.AUTHORIZED
         );
         authorizations.add(authorization);
         return authorization;
