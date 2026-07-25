@@ -8,6 +8,7 @@ import net.ftgo.common.orderflow.events.OrderCreated;
 import net.ftgo.order.domain.DeliveryInfo;
 import net.ftgo.order.domain.Order;
 import net.ftgo.order.domain.OrderLineItem;
+import net.ftgo.order.domain.OrderPaymentState;
 import net.ftgo.order.domain.PaymentInfo;
 import net.ftgo.order.messaging.DomainEventPublisher;
 import net.ftgo.order.repository.OrderRepository;
@@ -25,9 +26,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.stream.Collectors;
 
-/**
- * Application service for order lifecycle operations.
- */
+/** Application service for order lifecycle operations. */
 @Service
 public class OrderService {
 
@@ -61,9 +60,6 @@ public class OrderService {
             .register(meterRegistry);
     }
 
-    /**
-     * Backward-compatible entrypoint for callers that predate menu versioning.
-     */
     @Transactional
     public Long createOrder(
         Long consumerId,
@@ -72,20 +68,9 @@ public class OrderService {
         DeliveryInfo deliveryInfo,
         PaymentInfo paymentInfo
     ) {
-        return createOrder(
-            consumerId,
-            restaurantId,
-            0L,
-            lineItems,
-            deliveryInfo,
-            paymentInfo
-        );
+        return createOrder(consumerId, restaurantId, 0L, lineItems, deliveryInfo, paymentInfo);
     }
 
-    /**
-     * Persists the order and starts resource preparation against the exact menu
-     * snapshot rendered by the client.
-     */
     @Transactional
     public Long createOrder(
         Long consumerId,
@@ -97,11 +82,7 @@ public class OrderService {
     ) {
         logger.info(
             "Creating order: consumerId={}, restaurantId={}, expectedMenuVersion={}, lineItemCount={}",
-            consumerId,
-            restaurantId,
-            expectedMenuVersion,
-            lineItems.size()
-        );
+            consumerId, restaurantId, expectedMenuVersion, lineItems.size());
 
         Order order = orderRepository.save(new Order(
             consumerId,
@@ -125,10 +106,7 @@ public class OrderService {
         ordersPlacedCounter.increment();
         logger.info(
             "CreateOrderSaga initiated: orderId={}, state={}, total={}",
-            order.getId(),
-            order.getState(),
-            order.getOrderTotal()
-        );
+            order.getId(), order.getState(), order.getOrderTotal());
         return order.getId();
     }
 
@@ -166,13 +144,30 @@ public class OrderService {
         Order order = orderRepository.findById(orderId)
             .orElseThrow(() -> new OrderNotFoundException("Order not found: " + orderId));
 
+        requireDeterministicCancellationState(order.getPaymentState());
         sagaInstanceFactory.create(cancelOrderSaga, new CancelOrderSagaData(
             order.getId(),
             order.getConsumerId(),
             order.getTicketId(),
-            order.getAuthorizationId()
+            order.getAuthorizationId(),
+            order.getCaptureId(),
+            order.getOrderTotal(),
+            order.getPaymentState()
         ));
-        logger.info("CancelOrderSaga initiated for orderId={}", orderId);
+        logger.info(
+            "CancelOrderSaga initiated for orderId={}, paymentState={}",
+            orderId, order.getPaymentState());
+    }
+
+    private void requireDeterministicCancellationState(OrderPaymentState paymentState) {
+        if (paymentState == null
+            || paymentState == OrderPaymentState.MANUAL_REVIEW
+            || paymentState == OrderPaymentState.CAPTURE_PENDING
+            || paymentState == OrderPaymentState.REFUND_PENDING
+            || paymentState == OrderPaymentState.FAILED) {
+            throw new IllegalStateException(
+                "Cancellation paused for financial state " + paymentState);
+        }
     }
 
     @Transactional
@@ -195,9 +190,7 @@ public class OrderService {
         ));
         logger.info(
             "ReviseOrderSaga initiated for orderId={}, revisedTotal={}",
-            orderId,
-            revisedTotal
-        );
+            orderId, revisedTotal);
     }
 
     private String paymentRevisionRequestId(
