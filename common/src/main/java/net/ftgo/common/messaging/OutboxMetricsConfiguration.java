@@ -17,13 +17,13 @@ public class OutboxMetricsConfiguration {
         ObjectProvider<JdbcTemplate> jdbcTemplateProvider,
         ObjectProvider<MeterRegistry> meterRegistryProvider,
         @Value("${spring.application.name:ftgo-service}") String serviceName,
-        @Value("${ftgo.outbox.retention:PT168H}") Duration retention
+        @Value("${ftgo.outbox.retention:PT168H}") String retention
     ) {
         JdbcTemplate jdbcTemplate = jdbcTemplateProvider.getIfAvailable();
         MeterRegistry meterRegistry = meterRegistryProvider.getIfAvailable();
         if (jdbcTemplate == null || meterRegistry == null) {
             return OutboxMetrics.noop();
         }
-        return new OutboxMetrics(serviceName, jdbcTemplate, meterRegistry, retention);
+        return new OutboxMetrics(serviceName, jdbcTemplate, meterRegistry, Duration.parse(retention));
     }
 }
