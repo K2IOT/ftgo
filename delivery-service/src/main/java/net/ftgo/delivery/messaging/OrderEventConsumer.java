@@ -1,6 +1,8 @@
 package net.ftgo.delivery.messaging;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import net.ftgo.common.messaging.EventIdentityExtractor;
+import net.ftgo.common.messaging.KafkaEventHeaders;
 import net.ftgo.common.messaging.OutboxEventPayloadReader;
 import net.ftgo.common.orderflow.events.OrderApproved;
 import net.ftgo.delivery.domain.Delivery;
@@ -36,17 +38,32 @@ public class OrderEventConsumer {
     @KafkaListener(topics = "net.ftgo.orderservice.domain.Order", groupId = "delivery-service")
     @Transactional
     public void handleOrderEvent(ConsumerRecord<String, String> record) {
-        String messageId = record.key();
-        String eventType = eventType(record);
+        String messageId = EventIdentityExtractor.eventId(
+            record.headers(),
+            record.value(),
+            objectMapper
+        ).toString();
+        String eventType = KafkaEventHeaders.lastText(
+            record.headers(),
+            KafkaEventHeaders.EVENT_TYPE
+        ).orElse(null);
 
-        logger.info("Received Order event, messageId: {}, eventType: {}", messageId, eventType);
+        logger.info(
+            "Received Order event, eventId: {}, aggregateKey: {}, eventType: {}",
+            messageId,
+            record.key(),
+            eventType
+        );
         if (!ORDER_APPROVED_EVENT_TYPE.equals(eventType)) {
-            logger.info("Ignoring non-OrderApproved event, messageId: {}, eventType: {}",
-                messageId, eventType);
+            logger.info(
+                "Ignoring non-OrderApproved event, eventId: {}, eventType: {}",
+                messageId,
+                eventType
+            );
             return;
         }
         if (processedMessageRepository.existsById(messageId)) {
-            logger.info("Message {} already processed, skipping", messageId);
+            logger.info("Event {} already processed, skipping", messageId);
             return;
         }
 
@@ -77,17 +94,12 @@ public class OrderEventConsumer {
             deliveryRepository.save(delivery);
             processedMessageRepository.save(new ProcessedMessage(messageId));
             logger.info("Created delivery {} for order {}", delivery.getId(), orderApproved.getOrderId());
+        } catch (RuntimeException e) {
+            logger.error("Failed to handle Order event, eventId: {}", messageId, e);
+            throw e;
         } catch (Exception e) {
-            logger.error("Failed to handle Order event, messageId: {}", messageId, e);
+            logger.error("Failed to handle Order event, eventId: {}", messageId, e);
             throw new RuntimeException("Failed to process event", e);
         }
-    }
-
-    private String eventType(ConsumerRecord<String, String> record) {
-        var header = record.headers().lastHeader("eventType");
-        if (header == null) {
-            return null;
-        }
-        return new String(header.value(), java.nio.charset.StandardCharsets.UTF_8);
     }
 }
