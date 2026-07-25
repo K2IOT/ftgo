@@ -22,11 +22,12 @@ services:
         net.ftgo.restaurantservice.domain.Restaurant.DLT \
         net.ftgo.kitchenservice.domain.Ticket.DLT \
         net.ftgo.accountingservice.domain.Account.DLT \
-        net.ftgo.deliveryservice.domain.Delivery.DLT
+        net.ftgo.deliveryservice.domain.Delivery.DLT \
+        net.ftgo.orderhistory.projection.DLT
       do
         kafka-topics.sh --create --if-not-exists \
           --bootstrap-server kafka-1:9092,kafka-2:9092,kafka-3:9092 \
-          --topic \"$${topic}\" \
+          --topic "$${topic}" \
           --partitions 3 \
           --replication-factor 3 \
           --config retention.ms=1209600000 \
