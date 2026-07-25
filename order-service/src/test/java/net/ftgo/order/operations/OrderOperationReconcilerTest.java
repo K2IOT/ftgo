@@ -9,16 +9,20 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.Optional;
+import java.util.function.Supplier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
@@ -40,11 +44,12 @@ class OrderOperationReconcilerTest {
     @Mock
     private OrderRepairActionExecutor actionExecutor;
 
+    private Clock clock;
     private OrderOperationReconciler reconciler;
 
     @BeforeEach
     void setUp() {
-        Clock clock = Clock.fixed(Instant.parse("2026-07-25T05:00:00Z"), ZoneOffset.UTC);
+        clock = Clock.fixed(Instant.parse("2026-07-25T05:00:00Z"), ZoneOffset.UTC);
         reconciler = new OrderOperationReconciler(
             orderRepository,
             operationRepository,
@@ -100,19 +105,11 @@ class OrderOperationReconcilerTest {
     @Test
     void sameIdempotencyKeyExecutesRepairOnlyOnce() {
         Order order = order(OrderState.APPROVAL_PENDING, null, null, null);
-        when(orderRepository.findByIdWithLock(101L)).thenReturn(Optional.of(order));
-        when(sagaInspector.findActiveForOrder(101L)).thenReturn(Optional.empty());
-        OrderOperation saved = new OrderOperation(
-            101L,
-            OrderOperationType.CREATE,
-            "repair-create-1",
-            "operator requested restart"
-        );
+        OrderOperation saved = operation("repair-create-1");
+        stubRepairPersistence(order, saved, "repair-create-1");
         when(operationRepository.findByIdempotencyKey("repair-create-1"))
             .thenReturn(Optional.empty())
             .thenReturn(Optional.of(saved));
-        when(operationRepository.save(any(OrderOperation.class)))
-            .thenAnswer(invocation -> invocation.getArgument(0));
 
         reconciler.repair(
             101L,
@@ -130,6 +127,75 @@ class OrderOperationReconcilerTest {
         verify(actionExecutor, times(1)).restart(order, OrderOperationType.CREATE);
     }
 
+    @Test
+    void failedRepairIsRecordedInRequiresNewTransaction() {
+        RecordingTransactionRunner transactions = new RecordingTransactionRunner();
+        reconciler = new OrderOperationReconciler(
+            orderRepository,
+            operationRepository,
+            sagaInspector,
+            actionExecutor,
+            new SimpleMeterRegistry(),
+            clock,
+            transactions
+        );
+        Order order = order(OrderState.APPROVAL_PENDING, null, null, null);
+        OrderOperation saved = operation("repair-create-failure");
+        stubRepairPersistence(order, saved, "repair-create-failure");
+        when(operationRepository.findByIdempotencyKey("repair-create-failure"))
+            .thenReturn(Optional.empty());
+        doThrow(new IllegalStateException("saga store unavailable"))
+            .when(actionExecutor)
+            .restart(order, OrderOperationType.CREATE);
+
+        assertThrows(
+            IllegalStateException.class,
+            () -> reconciler.repair(
+                101L,
+                OrderOperationReconciler.RepairAction.RESTART,
+                "retry create saga",
+                "repair-create-failure"
+            )
+        );
+
+        assertEquals(OrderOperationStatus.FAILED, saved.getStatus());
+        assertTrue(saved.getDetails().contains("saga store unavailable"));
+        assertEquals(1, transactions.requiresNewCalls);
+        verify(operationRepository, times(2)).saveAndFlush(saved);
+    }
+
+    private void stubRepairPersistence(Order order, OrderOperation saved, String idempotencyKey) {
+        when(orderRepository.findByIdWithLock(101L)).thenReturn(Optional.of(order));
+        when(sagaInspector.findActiveForOrder(101L)).thenReturn(Optional.empty());
+        when(operationRepository.saveAndFlush(any(OrderOperation.class))).thenAnswer(invocation -> {
+            OrderOperation operation = invocation.getArgument(0);
+            if (operation.getId() == null) {
+                ReflectionTestUtils.setField(operation, "id", 501L);
+            }
+            return operation;
+        });
+        when(operationRepository.findById(501L)).thenReturn(Optional.of(saved));
+        when(operationRepository.save(any(OrderOperation.class)))
+            .thenAnswer(invocation -> invocation.getArgument(0));
+        assertEquals(idempotencyKey, saved.getIdempotencyKey());
+    }
+
+    private OrderOperation operation(String idempotencyKey) {
+        OrderOperation operation = new OrderOperation(
+            101L,
+            OrderOperationType.CREATE,
+            idempotencyKey,
+            "operator requested restart"
+        );
+        ReflectionTestUtils.setField(operation, "id", 501L);
+        operation.recordAssessment(
+            OrderOperationReconciler.Classification.RESUMABLE.name(),
+            OrderOperationReconciler.RepairAction.RESTART.name(),
+            "Create saga is missing while order remains approval pending"
+        );
+        return operation;
+    }
+
     private Order order(
         OrderState state,
         Long ticketId,
@@ -144,5 +210,22 @@ class OrderOperationReconcilerTest {
         lenient().when(order.getCreditReservationId()).thenReturn(creditReservationId);
         when(order.getUpdatedAt()).thenReturn(LocalDateTime.of(2026, 7, 25, 4, 0));
         return order;
+    }
+
+    private static final class RecordingTransactionRunner
+        implements OrderOperationTransactionRunner {
+
+        private int requiresNewCalls;
+
+        @Override
+        public <T> T required(Supplier<T> callback) {
+            return callback.get();
+        }
+
+        @Override
+        public <T> T requiresNew(Supplier<T> callback) {
+            requiresNewCalls++;
+            return callback.get();
+        }
     }
 }
