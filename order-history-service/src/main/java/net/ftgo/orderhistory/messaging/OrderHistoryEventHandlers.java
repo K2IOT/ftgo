@@ -68,7 +68,7 @@ public class OrderHistoryEventHandlers {
         @Header(value = KafkaEventHeaders.EVENT_TYPE, required = false) String eventType,
         @Header(KafkaEventHeaders.EVENT_ID) String eventIdHeader
     ) {
-        processOnce(payload, key, eventType, eventIdHeader);
+        processOnceWithHeader(payload, key, eventType, eventIdHeader);
     }
 
     public void handleOrderEvent(String payload, String key, String eventType) {
@@ -87,7 +87,7 @@ public class OrderHistoryEventHandlers {
         @Header(value = KafkaEventHeaders.EVENT_TYPE, required = false) String eventType,
         @Header(KafkaEventHeaders.EVENT_ID) String eventIdHeader
     ) {
-        processOnce(payload, key, eventType, eventIdHeader);
+        processOnceWithHeader(payload, key, eventType, eventIdHeader);
     }
 
     public void handleTicketEvent(String payload, String key, String eventType) {
@@ -106,7 +106,7 @@ public class OrderHistoryEventHandlers {
         @Header(value = KafkaEventHeaders.EVENT_TYPE, required = false) String eventType,
         @Header(KafkaEventHeaders.EVENT_ID) String eventIdHeader
     ) {
-        processOnce(payload, key, eventType, eventIdHeader);
+        processOnceWithHeader(payload, key, eventType, eventIdHeader);
     }
 
     public void handleDeliveryEvent(String payload, String key, String eventType) {
@@ -125,14 +125,14 @@ public class OrderHistoryEventHandlers {
         @Header(value = KafkaEventHeaders.EVENT_TYPE, required = false) String eventType,
         @Header(KafkaEventHeaders.EVENT_ID) String eventIdHeader
     ) {
-        processOnce(payload, key, eventType, eventIdHeader);
+        processOnceWithHeader(payload, key, eventType, eventIdHeader);
     }
 
     public void handleAccountEvent(String payload, String key, String eventType) {
         processOnce(payload, key, eventType, legacyId(key, eventType, payload));
     }
 
-    private void processOnce(
+    private void processOnceWithHeader(
         String payload,
         String aggregateKey,
         String eventType,
@@ -143,6 +143,15 @@ public class OrderHistoryEventHandlers {
             payload,
             objectMapper
         ).toString();
+        processOnce(payload, aggregateKey, eventType, eventId);
+    }
+
+    private void processOnce(
+        String payload,
+        String aggregateKey,
+        String eventType,
+        String eventId
+    ) {
         logger.info(
             "Received eventId={}, aggregateKey={}, eventType={}",
             eventId,
