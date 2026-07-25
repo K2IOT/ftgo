@@ -112,6 +112,9 @@ public class Order {
     @Column(name = "payment_failure_code", length = 100)
     private String paymentFailureCode;
 
+    @Column(name = "payment_settlement_request_id", unique = true, length = 100)
+    private String paymentSettlementRequestId;
+
     @Column(name = "rejection_code", length = 100)
     private String rejectionCode;
 
@@ -221,7 +224,6 @@ public class Order {
         LocalDateTime acceptanceDeadline
     ) {
         requireRemoteResources(ticketId, authorizationId, creditReservationId, acceptanceDeadline);
-
         if (state == OrderState.AWAITING_RESTAURANT_ACCEPTANCE) {
             if (Objects.equals(this.ticketId, ticketId)
                 && Objects.equals(this.authorizationId, authorizationId)
@@ -231,7 +233,6 @@ public class Order {
             }
             throw new IllegalStateException("Order is already awaiting a different resource set");
         }
-
         requireState(OrderState.APPROVAL_PENDING, "await restaurant acceptance");
         this.ticketId = ticketId;
         this.authorizationId = authorizationId;
@@ -255,7 +256,6 @@ public class Order {
         }
     }
 
-    /** Claims a restaurant acceptance request and establishes one stable capture key. */
     public boolean beginPaymentCapture(String requestId) {
         requireText(requestId, "Acceptance request ID");
         if (state == OrderState.CONFIRMATION_PENDING
@@ -282,9 +282,7 @@ public class Order {
         requireText(requestId, "Capture request ID");
         if (paymentState == OrderPaymentState.CAPTURED) {
             if (Objects.equals(this.captureId, captureId)
-                && Objects.equals(paymentOperationRequestId, requestId)) {
-                return false;
-            }
+                && Objects.equals(paymentOperationRequestId, requestId)) return false;
             throw new IllegalStateException("Payment was already captured by another operation");
         }
         requireState(OrderState.CONFIRMATION_PENDING, "complete payment capture");
@@ -301,9 +299,7 @@ public class Order {
     }
 
     public boolean failPaymentCapture(String code) {
-        String stableCode = code == null || code.isBlank()
-            ? "PAYMENT_CAPTURE_FAILED"
-            : code;
+        String stableCode = code == null || code.isBlank() ? "PAYMENT_CAPTURE_FAILED" : code;
         if (paymentState == OrderPaymentState.FAILED) {
             if (Objects.equals(paymentFailureCode, stableCode)) return false;
             throw new IllegalStateException("Payment capture already failed with another code");
@@ -331,7 +327,6 @@ public class Order {
         return "capture-order-" + id + "-authorization-" + authorizationId;
     }
 
-    /** Legacy acceptance adapter retained for old tests; production uses beginPaymentCapture. */
     public boolean claimRestaurantAcceptance() {
         if (state == OrderState.CONFIRMATION_PENDING || state == OrderState.APPROVED) return false;
         if (state != OrderState.AWAITING_RESTAURANT_ACCEPTANCE) return false;
@@ -344,12 +339,9 @@ public class Order {
     public boolean claimRestaurantRejection(String code, String message) {
         String safeCode = code == null || code.isBlank() ? "RESTAURANT_REJECTED" : code;
         String safeMessage = message == null || message.isBlank()
-            ? "The restaurant could not accept this order"
-            : message;
-
+            ? "The restaurant could not accept this order" : message;
         if (state == OrderState.REJECTION_PENDING || state == OrderState.REJECTED) return false;
         if (state != OrderState.AWAITING_RESTAURANT_ACCEPTANCE) return false;
-
         rejectionCode = safeCode;
         rejectionMessage = safeMessage;
         state = OrderState.REJECTION_PENDING;
@@ -377,20 +369,72 @@ public class Order {
     }
 
     public void beginCancel() {
-        requireState(OrderState.APPROVED, "cancel");
+        if (paymentState == null
+            || paymentState == OrderPaymentState.MANUAL_REVIEW
+            || paymentState == OrderPaymentState.CAPTURE_PENDING
+            || paymentState == OrderPaymentState.REFUND_PENDING
+            || paymentState == OrderPaymentState.FAILED) {
+            throw new IllegalStateException(
+                "Cancellation requires a deterministic financial state, found " + paymentState);
+        }
+        if (state != OrderState.APPROVED
+            && state != OrderState.AWAITING_RESTAURANT_ACCEPTANCE) {
+            throw new IllegalStateException(
+                "Cannot cancel order in state " + state
+                    + ". Expected APPROVED or AWAITING_RESTAURANT_ACCEPTANCE.");
+        }
         state = OrderState.CANCEL_PENDING;
         touch();
     }
 
+    public boolean markPaymentVoided(String requestId) {
+        requireText(requestId, "Void request ID");
+        requireState(OrderState.CANCEL_PENDING, "record payment void");
+        if (paymentState == OrderPaymentState.VOIDED) {
+            if (Objects.equals(paymentSettlementRequestId, requestId)) return false;
+            throw new IllegalStateException("Authorization was voided by another operation");
+        }
+        if (paymentState != OrderPaymentState.AUTHORIZED) {
+            throw new IllegalStateException("Cannot void payment in state " + paymentState);
+        }
+        paymentState = OrderPaymentState.VOIDED;
+        paymentSettlementRequestId = requestId;
+        touch();
+        return true;
+    }
+
+    public boolean markPaymentRefunded(String requestId) {
+        requireText(requestId, "Refund request ID");
+        requireState(OrderState.CANCEL_PENDING, "record payment refund");
+        if (paymentState == OrderPaymentState.REFUNDED) {
+            if (Objects.equals(paymentSettlementRequestId, requestId)) return false;
+            throw new IllegalStateException("Payment was refunded by another operation");
+        }
+        if (paymentState != OrderPaymentState.CAPTURED) {
+            throw new IllegalStateException("Cannot refund payment in state " + paymentState);
+        }
+        paymentState = OrderPaymentState.REFUNDED;
+        paymentSettlementRequestId = requestId;
+        touch();
+        return true;
+    }
+
     public void confirmCancel() {
         requireState(OrderState.CANCEL_PENDING, "confirm cancel");
+        if (paymentState != OrderPaymentState.VOIDED
+            && paymentState != OrderPaymentState.REFUNDED) {
+            throw new IllegalStateException(
+                "Cannot cancel order before durable financial settlement: " + paymentState);
+        }
         state = OrderState.CANCELLED;
         touch();
     }
 
     public void undoCancel() {
         requireState(OrderState.CANCEL_PENDING, "undo cancel");
-        state = OrderState.APPROVED;
+        state = paymentState == OrderPaymentState.AUTHORIZED
+            ? OrderState.AWAITING_RESTAURANT_ACCEPTANCE
+            : OrderState.APPROVED;
         touch();
     }
 
@@ -439,9 +483,7 @@ public class Order {
         }
     }
 
-    private void touch() {
-        updatedAt = LocalDateTime.now();
-    }
+    private void touch() { updatedAt = LocalDateTime.now(); }
 
     public Long getId() { return id; }
     public Integer getVersion() { return version; }
@@ -464,6 +506,7 @@ public class Order {
     public String getPaymentOperationRequestId() { return paymentOperationRequestId; }
     public Long getCaptureId() { return captureId; }
     public String getPaymentFailureCode() { return paymentFailureCode; }
+    public String getPaymentSettlementRequestId() { return paymentSettlementRequestId; }
     public String getRejectionCode() { return rejectionCode; }
     public String getRejectionMessage() { return rejectionMessage; }
     public LocalDateTime getCreatedAt() { return createdAt; }
@@ -476,14 +519,11 @@ public class Order {
     }
 
     @PreUpdate
-    protected void onUpdate() {
-        updatedAt = LocalDateTime.now();
-    }
+    protected void onUpdate() { updatedAt = LocalDateTime.now(); }
 
     @Override
     public String toString() {
-        return "Order{id=" + id
-            + ", state=" + state
+        return "Order{id=" + id + ", state=" + state
             + ", paymentState=" + paymentState
             + ", consumerId=" + consumerId
             + ", restaurantId=" + restaurantId
