@@ -4,17 +4,18 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.eventuate.tram.sagas.orchestration.SagaInstanceFactory;
 import net.ftgo.common.Money;
+import net.ftgo.common.orderflow.events.TicketAcceptanceRequestedEvent;
 import net.ftgo.common.orderflow.events.TicketAcceptanceTimedOutEvent;
-import net.ftgo.common.orderflow.events.TicketAcceptedEvent;
 import net.ftgo.common.orderflow.events.TicketRejectedEvent;
 import net.ftgo.order.domain.DeliveryInfo;
 import net.ftgo.order.domain.Order;
 import net.ftgo.order.domain.OrderLineItem;
+import net.ftgo.order.domain.OrderPaymentState;
 import net.ftgo.order.domain.OrderState;
 import net.ftgo.order.domain.PaymentInfo;
 import net.ftgo.order.repository.OrderRepository;
-import net.ftgo.order.saga.ConfirmOrderSaga;
-import net.ftgo.order.saga.ConfirmOrderSagaData;
+import net.ftgo.order.saga.CapturePaymentSaga;
+import net.ftgo.order.saga.CapturePaymentSagaData;
 import net.ftgo.order.saga.RejectOrderSaga;
 import net.ftgo.order.saga.RejectOrderSagaData;
 import org.junit.jupiter.api.BeforeEach;
@@ -47,7 +48,7 @@ class TicketDecisionEventHandlerTest {
     private SagaInstanceFactory sagaInstanceFactory;
 
     @Mock
-    private ConfirmOrderSaga confirmOrderSaga;
+    private CapturePaymentSaga capturePaymentSaga;
 
     @Mock
     private RejectOrderSaga rejectOrderSaga;
@@ -64,7 +65,7 @@ class TicketDecisionEventHandlerTest {
         handler = new TicketDecisionEventHandler(
             orderRepository,
             sagaInstanceFactory,
-            confirmOrderSaga,
+            capturePaymentSaga,
             rejectOrderSaga,
             objectMapper
         );
@@ -73,32 +74,38 @@ class TicketDecisionEventHandlerTest {
     }
 
     @Test
-    void acceptedEventClaimsDecisionAndStartsConfirmSagaOnce() {
-        TicketAcceptedEvent event = new TicketAcceptedEvent(
+    void acceptanceRequestClaimsDecisionAndStartsCaptureSagaOnce() {
+        TicketAcceptanceRequestedEvent event = new TicketAcceptanceRequestedEvent(
             "accept-901",
             901L,
             101L,
+            "accept-ticket-901",
             LocalDateTime.now()
         );
 
-        handler.handleAccepted(event);
-        handler.handleAccepted(event);
+        handler.handleAcceptanceRequested(event);
+        handler.handleAcceptanceRequested(event);
 
         assertThat(order.getState()).isEqualTo(OrderState.CONFIRMATION_PENDING);
-        ArgumentCaptor<ConfirmOrderSagaData> data = ArgumentCaptor.forClass(ConfirmOrderSagaData.class);
-        verify(sagaInstanceFactory, times(1)).create(eq(confirmOrderSaga), data.capture());
+        assertThat(order.getPaymentState()).isEqualTo(OrderPaymentState.CAPTURE_PENDING);
+        ArgumentCaptor<CapturePaymentSagaData> data =
+            ArgumentCaptor.forClass(CapturePaymentSagaData.class);
+        verify(sagaInstanceFactory, times(1)).create(eq(capturePaymentSaga), data.capture());
         assertThat(data.getValue().getOrderId()).isEqualTo(101L);
         assertThat(data.getValue().getConsumerId()).isEqualTo(301L);
+        assertThat(data.getValue().getTicketId()).isEqualTo(901L);
         assertThat(data.getValue().getAuthorizationId()).isEqualTo(501L);
         assertThat(data.getValue().getCreditReservationId()).isEqualTo(601L);
+        assertThat(data.getValue().getAcceptanceRequestId()).isEqualTo("accept-ticket-901");
     }
 
     @Test
-    void schemaWrappedAcceptedEventStartsConfirmSaga() throws Exception {
-        TicketAcceptedEvent event = new TicketAcceptedEvent(
+    void schemaWrappedAcceptanceRequestStartsCaptureSaga() throws Exception {
+        TicketAcceptanceRequestedEvent event = new TicketAcceptanceRequestedEvent(
             "accept-901",
             901L,
             101L,
+            "accept-ticket-901",
             LocalDateTime.now()
         );
         String payload = objectMapper.writeValueAsString(Map.of(
@@ -106,12 +113,12 @@ class TicketDecisionEventHandlerTest {
             "payload", event
         ));
 
-        handler.handleTicketEvent(payload, "901", "TicketAcceptedEvent");
+        handler.handleTicketEvent(payload, "901", "TicketAcceptanceRequestedEvent");
 
-        assertThat(order.getState()).isEqualTo(OrderState.CONFIRMATION_PENDING);
+        assertThat(order.getPaymentState()).isEqualTo(OrderPaymentState.CAPTURE_PENDING);
         verify(sagaInstanceFactory).create(
-            eq(confirmOrderSaga),
-            org.mockito.ArgumentMatchers.any(ConfirmOrderSagaData.class)
+            eq(capturePaymentSaga),
+            org.mockito.ArgumentMatchers.any(CapturePaymentSagaData.class)
         );
     }
 
@@ -137,11 +144,12 @@ class TicketDecisionEventHandlerTest {
     }
 
     @Test
-    void timeoutAfterAcceptanceIsAcknowledgedAsStale() {
-        handler.handleAccepted(new TicketAcceptedEvent(
+    void timeoutAfterAcceptanceRequestIsAcknowledgedAsStale() {
+        handler.handleAcceptanceRequested(new TicketAcceptanceRequestedEvent(
             "accept-901",
             901L,
             101L,
+            "accept-ticket-901",
             LocalDateTime.now()
         ));
 
