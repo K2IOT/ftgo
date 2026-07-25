@@ -15,6 +15,7 @@ import net.ftgo.orderhistory.repository.OrderHistoryRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -234,7 +235,7 @@ public class OrderHistoryProjectionService {
             String eventType = envelope ? root.path("eventType").asText() : fallbackEventType;
             UUID eventId = envelope
                 ? UUID.fromString(root.path("eventId").asText())
-                : UUID.fromString(fallbackEventId);
+                : fallbackEventId(fallbackEventId);
             long aggregateVersion = envelope ? root.path("aggregateVersion").asLong(0L) : 0L;
             Instant occurredAt = envelope && root.hasNonNull("occurredAt")
                 ? Instant.parse(root.get("occurredAt").asText())
@@ -275,6 +276,17 @@ public class OrderHistoryProjectionService {
             throw e;
         } catch (JsonProcessingException | IllegalArgumentException e) {
             throw new NonRetryableEventException("Invalid domain-event envelope", e);
+        }
+    }
+
+    private UUID fallbackEventId(String eventId) {
+        if (eventId == null || eventId.isBlank()) {
+            throw new NonRetryableEventException("eventId is required");
+        }
+        try {
+            return UUID.fromString(eventId);
+        } catch (IllegalArgumentException ignored) {
+            return UUID.nameUUIDFromBytes(eventId.getBytes(StandardCharsets.UTF_8));
         }
     }
 
