@@ -4,26 +4,22 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import net.ftgo.common.messaging.NonRetryableEventException;
-import net.ftgo.common.orderflow.events.OrderApproved;
-import net.ftgo.common.orderflow.events.OrderCancelled;
 import net.ftgo.common.orderflow.events.OrderCreated;
-import net.ftgo.common.orderflow.events.OrderRejected;
 import net.ftgo.common.orderflow.events.OrderRevised;
 import net.ftgo.orderhistory.domain.LineItem;
 import net.ftgo.orderhistory.domain.OrderHistoryRecord;
 import net.ftgo.orderhistory.domain.PendingOrderEvent;
 import net.ftgo.orderhistory.domain.PendingOrderEventKey;
 import net.ftgo.orderhistory.messaging.CardAuthorizedEvent;
-import net.ftgo.orderhistory.messaging.DeliveryDeliveredEvent;
-import net.ftgo.orderhistory.messaging.DeliveryPickedUpEvent;
-import net.ftgo.orderhistory.messaging.TicketAcceptedEvent;
-import net.ftgo.orderhistory.messaging.TicketReadyEvent;
 import net.ftgo.orderhistory.repository.OrderHistoryRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -40,25 +36,35 @@ public class OrderHistoryProjectionService {
     private final OrderHistoryRepository orderHistoryRepository;
     private final PendingOrderEventStore pendingEventStore;
     private final ObjectMapper objectMapper;
+    private final OrderHistoryQueryProjectionWriter queryProjectionWriter;
 
     public OrderHistoryProjectionService(
         OrderHistoryRepository orderHistoryRepository,
         PendingOrderEventStore pendingEventStore,
         ObjectMapper objectMapper
     ) {
+        this(orderHistoryRepository, pendingEventStore, objectMapper, null);
+    }
+
+    @Autowired
+    public OrderHistoryProjectionService(
+        OrderHistoryRepository orderHistoryRepository,
+        PendingOrderEventStore pendingEventStore,
+        ObjectMapper objectMapper,
+        OrderHistoryQueryProjectionWriter queryProjectionWriter
+    ) {
         this.orderHistoryRepository = orderHistoryRepository;
         this.pendingEventStore = pendingEventStore;
         this.objectMapper = objectMapper;
+        this.queryProjectionWriter = queryProjectionWriter;
     }
 
     public ProjectionResult apply(String envelope) {
-        EventDescriptor descriptor = parse(envelope, null, null);
-        return applyDescriptor(descriptor, true);
+        return applyDescriptor(parse(envelope, null, null), true);
     }
 
     public ProjectionResult apply(String message, String eventType, String eventId) {
-        EventDescriptor descriptor = parse(message, eventType, eventId);
-        return applyDescriptor(descriptor, true);
+        return applyDescriptor(parse(message, eventType, eventId), true);
     }
 
     public ProjectionResult reconcile(PendingOrderEvent event) {
@@ -95,34 +101,37 @@ public class OrderHistoryProjectionService {
         switch (descriptor.eventType()) {
             case "OrderCreated" -> applyOrderCreated(read(descriptor, OrderCreated.class));
             case "OrderApproved" -> {
+                String previousStatus = existing.getStatus();
                 existing.setStatus("APPROVED");
                 existing.setAuthorizationStatus("APPROVED");
-                orderHistoryRepository.save(existing);
+                saveProjection(existing, previousStatus);
             }
             case "OrderRejected" -> {
+                String previousStatus = existing.getStatus();
                 existing.setStatus("REJECTED");
-                orderHistoryRepository.save(existing);
+                saveProjection(existing, previousStatus);
             }
             case "OrderCancelled" -> {
+                String previousStatus = existing.getStatus();
                 existing.setStatus("CANCELLED");
-                orderHistoryRepository.save(existing);
+                saveProjection(existing, previousStatus);
             }
             case "OrderRevised" -> applyOrderRevised(existing, read(descriptor, OrderRevised.class));
             case "TicketAcceptedEvent" -> {
                 existing.setTicketStatus("ACCEPTED");
-                orderHistoryRepository.save(existing);
+                saveProjection(existing, existing.getStatus());
             }
             case "TicketReadyEvent" -> {
                 existing.setTicketStatus("READY");
-                orderHistoryRepository.save(existing);
+                saveProjection(existing, existing.getStatus());
             }
             case "DeliveryPickedUpEvent" -> {
                 existing.setDeliveryStatus("PICKED_UP");
-                orderHistoryRepository.save(existing);
+                saveProjection(existing, existing.getStatus());
             }
             case "DeliveryDeliveredEvent" -> {
                 existing.setDeliveryStatus("DELIVERED");
-                orderHistoryRepository.save(existing);
+                saveProjection(existing, existing.getStatus());
             }
             case "CardAuthorizedEvent" -> read(descriptor, CardAuthorizedEvent.class);
             default -> throw new NonRetryableEventException(
@@ -134,6 +143,7 @@ public class OrderHistoryProjectionService {
     private void applyOrderCreated(OrderCreated event) {
         OrderHistoryRecord record = orderHistoryRepository.findById(event.getOrderId().toString())
             .orElseGet(() -> new OrderHistoryRecord(event.getOrderId().toString()));
+        String previousStatus = record.getStatus();
         record.setConsumerId(event.getConsumerId());
         record.setRestaurantId(event.getRestaurantId());
         record.setStatus(event.getStatus());
@@ -143,14 +153,21 @@ public class OrderHistoryProjectionService {
         record.setCreationDate(event.getCreatedAt());
         record.setLineItems(toLineItems(event.getLineItems()));
         record.setKeywords(toKeywords(event.getLineItems()));
-        orderHistoryRepository.save(record);
+        saveProjection(record, previousStatus);
     }
 
     private void applyOrderRevised(OrderHistoryRecord record, OrderRevised event) {
         record.setOrderTotal(event.getOrderTotal().getAmount());
         record.setLineItems(toLineItems(event.getLineItems()));
         record.setKeywords(toKeywords(event.getLineItems()));
-        orderHistoryRepository.save(record);
+        saveProjection(record, record.getStatus());
+    }
+
+    private void saveProjection(OrderHistoryRecord record, String previousStatus) {
+        OrderHistoryRecord saved = orderHistoryRepository.save(record);
+        if (queryProjectionWriter != null) {
+            queryProjectionWriter.upsert(saved, previousStatus);
+        }
     }
 
     private void storePending(EventDescriptor descriptor) {
@@ -214,9 +231,7 @@ public class OrderHistoryProjectionService {
             boolean envelope = root != null && root.isObject()
                 && root.hasNonNull("eventId") && root.has("payload");
             JsonNode payload = envelope ? root.get("payload") : root;
-            String eventType = envelope
-                ? root.path("eventType").asText()
-                : fallbackEventType;
+            String eventType = envelope ? root.path("eventType").asText() : fallbackEventType;
             UUID eventId = envelope
                 ? UUID.fromString(root.path("eventId").asText())
                 : UUID.fromString(fallbackEventId);
@@ -229,22 +244,24 @@ public class OrderHistoryProjectionService {
                 throw new NonRetryableEventException("eventType is required");
             }
             if (orderId == null || orderId.isBlank()) {
-                throw new NonRetryableEventException(
-                    "orderId is required for " + eventType
-                );
+                throw new NonRetryableEventException("orderId is required for " + eventType);
             }
-            String canonicalEnvelope = envelope
-                ? objectMapper.writeValueAsString(root)
-                : objectMapper.writeValueAsString(new java.util.LinkedHashMap<>() {{
-                    put("eventId", eventId.toString());
-                    put("eventType", eventType);
-                    put("schemaVersion", 1);
-                    put("aggregateType", "OrderHistory");
-                    put("aggregateId", orderId);
-                    put("aggregateVersion", aggregateVersion);
-                    put("occurredAt", occurredAt.toString());
-                    put("payload", payload);
-                }});
+
+            String canonicalEnvelope;
+            if (envelope) {
+                canonicalEnvelope = objectMapper.writeValueAsString(root);
+            } else {
+                Map<String, Object> canonical = new LinkedHashMap<>();
+                canonical.put("eventId", eventId.toString());
+                canonical.put("eventType", eventType);
+                canonical.put("schemaVersion", 1);
+                canonical.put("aggregateType", "OrderHistory");
+                canonical.put("aggregateId", orderId);
+                canonical.put("aggregateVersion", aggregateVersion);
+                canonical.put("occurredAt", occurredAt.toString());
+                canonical.put("payload", payload);
+                canonicalEnvelope = objectMapper.writeValueAsString(canonical);
+            }
             return new EventDescriptor(
                 eventId,
                 eventType,
@@ -254,10 +271,9 @@ public class OrderHistoryProjectionService {
                 payload,
                 canonicalEnvelope
             );
+        } catch (NonRetryableEventException e) {
+            throw e;
         } catch (JsonProcessingException | IllegalArgumentException e) {
-            if (e instanceof NonRetryableEventException nonRetryable) {
-                throw nonRetryable;
-            }
             throw new NonRetryableEventException("Invalid domain-event envelope", e);
         }
     }
