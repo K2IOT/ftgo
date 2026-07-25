@@ -44,6 +44,35 @@ class OutboxEventPayloadReaderTest {
     }
 
     @Test
+    void readsVersionedDomainEventEnvelope() throws Exception {
+        DomainEventEnvelope<TicketAcceptedEvent> envelope = envelope();
+
+        TicketAcceptedEvent actual = OutboxEventPayloadReader.read(
+            objectMapper,
+            objectMapper.writeValueAsString(envelope),
+            TicketAcceptedEvent.class
+        );
+
+        assertEvent(actual);
+    }
+
+    @Test
+    void readsKafkaConnectEnvelopeContainingVersionedDomainEvent() throws Exception {
+        String message = objectMapper.writeValueAsString(Map.of(
+            "schema", Map.of("type", "struct"),
+            "payload", envelope()
+        ));
+
+        TicketAcceptedEvent actual = OutboxEventPayloadReader.read(
+            objectMapper,
+            message,
+            TicketAcceptedEvent.class
+        );
+
+        assertEvent(actual);
+    }
+
+    @Test
     void readsTextualJsonPayload() throws Exception {
         String nestedJson = objectMapper.writeValueAsString(event());
         String message = objectMapper.writeValueAsString(Map.of(
@@ -58,6 +87,18 @@ class OutboxEventPayloadReaderTest {
         );
 
         assertEvent(actual);
+    }
+
+    private DomainEventEnvelope<TicketAcceptedEvent> envelope() {
+        return DomainEventEnvelope.create(
+            "TicketAcceptedEvent",
+            1,
+            "Ticket",
+            "901",
+            4L,
+            new DomainEventMetadata("correlation-101", "command-202", null),
+            event()
+        );
     }
 
     private TicketAcceptedEvent event() {

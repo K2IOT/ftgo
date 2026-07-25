@@ -9,6 +9,7 @@ import net.ftgo.accounting.payment.PaymentAuthorizationGateway;
 import net.ftgo.accounting.repository.AccountRepository;
 import net.ftgo.common.Money;
 import net.ftgo.common.channels.ChannelNames;
+import net.ftgo.common.messaging.IdempotentCommandExecutor;
 import net.ftgo.order.domain.OrderLineItem;
 import org.junit.jupiter.api.Test;
 
@@ -42,7 +43,8 @@ class PaymentAuthorizationSharedContractTest {
         CommandHandlers accountingHandlers = new AccountingServiceCommandHandlers(
             mock(AccountRepository.class),
             mock(DomainEventPublisher.class),
-            mock(PaymentAuthorizationGateway.class)
+            mock(PaymentAuthorizationGateway.class),
+            mock(IdempotentCommandExecutor.class)
         ).commandHandlers();
 
         assertParticipantAccepts(

@@ -7,10 +7,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.Objects;
 
 /**
- * Reads an outbox event from either a direct JSON value or the schema envelope
- * emitted by Kafka Connect's JSON converter.
+ * Reads an outbox event from legacy direct JSON, a Kafka Connect JSON wrapper,
+ * or the Phase 03 versioned domain-event envelope.
  */
 public final class OutboxEventPayloadReader {
+
+    private static final int MAX_WRAPPER_DEPTH = 4;
 
     private OutboxEventPayloadReader() {
     }
@@ -24,16 +26,40 @@ public final class OutboxEventPayloadReader {
         Objects.requireNonNull(eventType, "eventType");
 
         JsonNode eventNode = objectMapper.readTree(message);
-        if (eventNode != null && eventNode.isObject() && eventNode.has("payload")) {
-            eventNode = eventNode.get("payload");
+        for (int depth = 0; depth < MAX_WRAPPER_DEPTH; depth++) {
+            if (eventNode != null && eventNode.isTextual()) {
+                eventNode = objectMapper.readTree(eventNode.textValue());
+                continue;
+            }
+            if (isKafkaConnectEnvelope(eventNode) || isDomainEventEnvelope(eventNode)) {
+                eventNode = eventNode.get("payload");
+                continue;
+            }
+            break;
         }
-        if (eventNode != null && eventNode.isTextual()) {
-            eventNode = objectMapper.readTree(eventNode.textValue());
-        }
+
         if (eventNode == null || eventNode.isNull() || !eventNode.isObject()) {
             throw new IllegalArgumentException("Outbox event payload is missing or invalid");
         }
 
         return objectMapper.treeToValue(eventNode, eventType);
+    }
+
+    private static boolean isKafkaConnectEnvelope(JsonNode node) {
+        return node != null
+            && node.isObject()
+            && node.has("schema")
+            && node.has("payload");
+    }
+
+    private static boolean isDomainEventEnvelope(JsonNode node) {
+        return node != null
+            && node.isObject()
+            && node.hasNonNull("eventId")
+            && node.hasNonNull("eventType")
+            && node.hasNonNull("schemaVersion")
+            && node.hasNonNull("aggregateType")
+            && node.hasNonNull("aggregateId")
+            && node.has("payload");
     }
 }

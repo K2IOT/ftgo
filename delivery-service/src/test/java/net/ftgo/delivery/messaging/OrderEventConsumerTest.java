@@ -3,6 +3,7 @@ package net.ftgo.delivery.messaging;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import net.ftgo.common.Address;
 import net.ftgo.common.Money;
+import net.ftgo.common.messaging.KafkaEventHeaders;
 import net.ftgo.common.orderflow.events.OrderApproved;
 import net.ftgo.delivery.domain.Delivery;
 import net.ftgo.delivery.domain.DeliveryStatus;
@@ -51,17 +52,19 @@ class OrderEventConsumerTest {
 
     @Test
     void createsDeliveryFromSharedOrderApprovedSnapshots() throws Exception {
+        String eventId = "11111111-1111-1111-1111-111111111111";
         LocalDateTime deliveryTime = LocalDateTime.now().plusHours(1);
         Address pickupAddress = new Address("123 Restaurant St", "San Francisco", "CA", "94102");
         Address deliveryAddress = new Address("456 Consumer Ave", "San Francisco", "CA", "94103");
         OrderApproved event = event(pickupAddress, deliveryAddress, deliveryTime);
         ConsumerRecord<String, String> record = orderRecord(
-            "message-1",
+            "Order#101",
             objectMapper.writeValueAsString(event),
-            "OrderApproved"
+            "OrderApproved",
+            eventId
         );
 
-        when(processedMessageRepository.existsById("message-1")).thenReturn(false);
+        when(processedMessageRepository.existsById(eventId)).thenReturn(false);
         when(deliveryRepository.findByOrderId(101L)).thenReturn(Optional.empty());
 
         consumer.handleOrderEvent(record);
@@ -80,9 +83,10 @@ class OrderEventConsumerTest {
     @Test
     void ignoresOrderEventsThatAreNotOrderApproved() {
         ConsumerRecord<String, String> record = orderRecord(
-            "message-2",
+            "Order#101",
             "{}",
-            "OrderCreated"
+            "OrderCreated",
+            "22222222-2222-2222-2222-222222222222"
         );
 
         consumer.handleOrderEvent(record);
@@ -93,17 +97,19 @@ class OrderEventConsumerTest {
 
     @Test
     void createsOneDeliveryPerApprovedOrderIdempotently() throws Exception {
+        String firstEventId = "33333333-3333-3333-3333-333333333333";
+        String secondEventId = "44444444-4444-4444-4444-444444444444";
         LocalDateTime deliveryTime = LocalDateTime.now().plusHours(1);
         Address pickupAddress = new Address("123 Restaurant St", "San Francisco", "CA", "94102");
         Address deliveryAddress = new Address("456 Consumer Ave", "San Francisco", "CA", "94103");
         OrderApproved event = event(pickupAddress, deliveryAddress, deliveryTime);
         String payload = objectMapper.writeValueAsString(event);
-        ConsumerRecord<String, String> firstMessage = orderRecord("message-3", payload, "OrderApproved");
-        ConsumerRecord<String, String> retriedAsNewMessage = orderRecord("message-4", payload, "OrderApproved");
+        ConsumerRecord<String, String> firstMessage = orderRecord("Order#101", payload, "OrderApproved", firstEventId);
+        ConsumerRecord<String, String> retriedAsNewMessage = orderRecord("Order#101", payload, "OrderApproved", secondEventId);
         Delivery existingDelivery = new Delivery(101L, pickupAddress, deliveryAddress, deliveryTime);
 
-        when(processedMessageRepository.existsById("message-3")).thenReturn(false);
-        when(processedMessageRepository.existsById("message-4")).thenReturn(false);
+        when(processedMessageRepository.existsById(firstEventId)).thenReturn(false);
+        when(processedMessageRepository.existsById(secondEventId)).thenReturn(false);
         when(deliveryRepository.findByOrderId(101L)).thenReturn(Optional.empty(), Optional.of(existingDelivery));
 
         consumer.handleOrderEvent(firstMessage);
@@ -131,7 +137,12 @@ class OrderEventConsumerTest {
         );
     }
 
-    private ConsumerRecord<String, String> orderRecord(String key, String payload, String eventType) {
+    private ConsumerRecord<String, String> orderRecord(
+        String key,
+        String payload,
+        String eventType,
+        String eventId
+    ) {
         ConsumerRecord<String, String> record = new ConsumerRecord<>(
             "net.ftgo.orderservice.domain.Order",
             0,
@@ -139,7 +150,8 @@ class OrderEventConsumerTest {
             key,
             payload
         );
-        record.headers().add("eventType", eventType.getBytes(StandardCharsets.UTF_8));
+        record.headers().add(KafkaEventHeaders.EVENT_TYPE, eventType.getBytes(StandardCharsets.UTF_8));
+        record.headers().add(KafkaEventHeaders.EVENT_ID, eventId.getBytes(StandardCharsets.UTF_8));
         return record;
     }
 }

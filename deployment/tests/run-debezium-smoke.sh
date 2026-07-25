@@ -6,6 +6,7 @@ DEPLOYMENT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 COMPOSE_FILE="${SCRIPT_DIR}/docker-compose.debezium-smoke.yml"
 COMPOSE=(docker compose --project-name ftgo-debezium-smoke -f "${COMPOSE_FILE}")
 TOPIC="net.ftgo.orderservice.domain.Order"
+EVENT_ID="8a65c9bc-2107-4f47-9ae1-43f3140ae223"
 OUTPUT_FILE="${SCRIPT_DIR}/debezium-smoke-record.txt"
 RUN_LOG="${SCRIPT_DIR}/debezium-smoke.log"
 
@@ -33,7 +34,7 @@ wait_for_mysql() {
 }
 
 prepare_database() {
-  echo "Preparing outbox database"
+  echo "Preparing Phase 03 outbox database"
   "${COMPOSE[@]}" exec -T mysql-order mysql -uroot -prootpassword <<'SQL'
 GRANT SELECT, RELOAD, SHOW DATABASES, REPLICATION SLAVE, REPLICATION CLIENT
   ON *.* TO 'ftgo_user'@'%';
@@ -42,13 +43,17 @@ FLUSH PRIVILEGES;
 USE ftgo_order;
 CREATE TABLE outbox (
   id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  event_id VARCHAR(36) NOT NULL,
+  schema_version INT NOT NULL,
+  aggregate_version BIGINT NOT NULL,
   aggregate_type VARCHAR(255) NOT NULL,
   aggregate_id VARCHAR(255) NOT NULL,
   event_type VARCHAR(255) NOT NULL,
   payload JSON NOT NULL,
   destination VARCHAR(255) NOT NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  published BOOLEAN NOT NULL DEFAULT FALSE
+  published BOOLEAN NOT NULL DEFAULT FALSE,
+  UNIQUE KEY uq_outbox_event_id (event_id)
 ) ENGINE=InnoDB;
 SQL
 }
@@ -63,13 +68,30 @@ register_order_connector() {
 }
 
 insert_outbox_event() {
-  echo "Inserting deterministic outbox event"
+  echo "Inserting deterministic versioned outbox event ${EVENT_ID}"
   "${COMPOSE[@]}" exec -T mysql-order mysql -uftgo_user -pftgo_password ftgo_order <<SQL
 INSERT INTO outbox
-  (aggregate_type, aggregate_id, event_type, payload, destination, published)
+  (event_id, schema_version, aggregate_version, aggregate_type, aggregate_id,
+   event_type, payload, destination, published)
 VALUES
-  ('Order', '42', 'OrderCreated',
-   JSON_OBJECT('orderId', 42, 'state', 'APPROVAL_PENDING'),
+  ('${EVENT_ID}', 1, 7, 'Order', '42', 'OrderCreated',
+   JSON_OBJECT(
+     'eventId', '${EVENT_ID}',
+     'eventType', 'OrderCreated',
+     'schemaVersion', 1,
+     'aggregateType', 'Order',
+     'aggregateId', '42',
+     'aggregateVersion', 7,
+     'occurredAt', '2026-07-24T10:00:00Z',
+     'correlationId', 'cdc-smoke-correlation',
+     'causationId', 'cdc-smoke-causation',
+     'trace', JSON_OBJECT(
+       'traceId', '4bf92f3577b34da6a3ce929d0e0e4736',
+       'spanId', '00f067aa0ba902b7',
+       'sampled', TRUE
+     ),
+     'payload', JSON_OBJECT('orderId', 42, 'state', 'APPROVAL_PENDING')
+   ),
    '${TOPIC}', FALSE);
 SQL
 }
@@ -91,7 +113,11 @@ wait_for_topic() {
 
 assert_event_contract() {
   grep -q '42' "${OUTPUT_FILE}"
+  grep -q "id:${EVENT_ID}" "${OUTPUT_FILE}"
   grep -q 'eventType:OrderCreated' "${OUTPUT_FILE}"
+  grep -Eq '"eventId"[[:space:]]*:[[:space:]]*"8a65c9bc-2107-4f47-9ae1-43f3140ae223"' "${OUTPUT_FILE}"
+  grep -Eq '"schemaVersion"[[:space:]]*:[[:space:]]*1' "${OUTPUT_FILE}"
+  grep -Eq '"aggregateVersion"[[:space:]]*:[[:space:]]*7' "${OUTPUT_FILE}"
   grep -Eq '"orderId"[[:space:]]*:[[:space:]]*42' "${OUTPUT_FILE}"
   grep -Eq '"state"[[:space:]]*:[[:space:]]*"APPROVAL_PENDING"' "${OUTPUT_FILE}"
 

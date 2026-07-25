@@ -24,9 +24,11 @@ public class RestaurantService {
     private final MenuItemRepository menuItemRepository;
     private final DomainEventPublisher eventPublisher;
 
-    public RestaurantService(RestaurantRepository restaurantRepository,
-                             MenuItemRepository menuItemRepository,
-                             DomainEventPublisher eventPublisher) {
+    public RestaurantService(
+        RestaurantRepository restaurantRepository,
+        MenuItemRepository menuItemRepository,
+        DomainEventPublisher eventPublisher
+    ) {
         this.restaurantRepository = restaurantRepository;
         this.menuItemRepository = menuItemRepository;
         this.eventPublisher = eventPublisher;
@@ -52,9 +54,14 @@ public class RestaurantService {
     }
 
     @Transactional
-    public MenuItem updateMenuItem(Long restaurantId, Long menuItemId,
-                                   String name, String description,
-                                   Money price, Boolean available) {
+    public MenuItem updateMenuItem(
+        Long restaurantId,
+        Long menuItemId,
+        String name,
+        String description,
+        Money price,
+        Boolean available
+    ) {
         Restaurant restaurant = findRestaurant(restaurantId);
         MenuItem menuItem = menuItemRepository.findByRestaurantIdAndId(restaurantId, menuItemId)
             .orElseThrow(() -> new MenuItemNotFoundException(restaurantId, menuItemId));
@@ -86,10 +93,6 @@ public class RestaurantService {
         return menuItemRepository.findByRestaurantId(restaurantId);
     }
 
-    /**
-     * Preserves the original service API while the saga path uses
-     * {@link OrderMenuValidationService} for authoritative batch validation.
-     */
     public boolean validateMenuItems(Long restaurantId, List<Long> menuItemIds) {
         for (Long menuItemId : menuItemIds) {
             MenuItem menuItem = menuItemRepository.findByRestaurantIdAndId(restaurantId, menuItemId)
@@ -103,7 +106,7 @@ public class RestaurantService {
 
     private void advanceMenuVersion(Restaurant restaurant) {
         restaurant.incrementMenuVersion();
-        restaurantRepository.save(restaurant);
+        restaurantRepository.saveAndFlush(restaurant);
     }
 
     private void publishMenuChangedEvent(Long restaurantId, Restaurant restaurant) {
@@ -111,12 +114,20 @@ public class RestaurantService {
             .findByRestaurantId(restaurantId)
             .stream()
             .map(item -> new RestaurantMenuChanged.MenuItemInfo(
-                item.getId(), item.getName(), item.getDescription(),
-                item.getPrice().toString(), item.getAvailable()))
+                item.getId(),
+                item.getName(),
+                item.getDescription(),
+                item.getPrice().toString(),
+                item.getAvailable()
+            ))
             .collect(Collectors.toList());
 
-        eventPublisher.publishRestaurantEvent(restaurantId, new RestaurantMenuChanged(
-            restaurantId, restaurant.getName(), menuItemInfos));
-        logger.info("Published menu version {} for restaurant {}", restaurant.getMenuVersion(), restaurantId);
+        eventPublisher.publishRestaurantEvent(
+            restaurantId,
+            restaurant.getVersion(),
+            new RestaurantMenuChanged(restaurantId, restaurant.getName(), menuItemInfos)
+        );
+        logger.info("Published menu version {} for restaurant {} at aggregate version {}",
+            restaurant.getMenuVersion(), restaurantId, restaurant.getVersion());
     }
 }

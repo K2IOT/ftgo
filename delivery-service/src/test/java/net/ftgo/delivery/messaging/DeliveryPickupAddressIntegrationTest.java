@@ -3,6 +3,7 @@ package net.ftgo.delivery.messaging;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import net.ftgo.common.Address;
 import net.ftgo.common.Money;
+import net.ftgo.common.messaging.KafkaEventHeaders;
 import net.ftgo.common.orderflow.events.OrderApproved;
 import net.ftgo.delivery.domain.Delivery;
 import net.ftgo.delivery.repository.DeliveryRepository;
@@ -11,6 +12,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.test.context.ActiveProfiles;
 
 import java.math.BigDecimal;
@@ -23,6 +26,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 @SpringBootTest
 @ActiveProfiles("test")
 class DeliveryPickupAddressIntegrationTest {
+
+    @MockBean
+    private KafkaTemplate<Object, Object> kafkaTemplate;
 
     @Autowired
     private OrderEventConsumer orderEventConsumer;
@@ -44,6 +50,7 @@ class DeliveryPickupAddressIntegrationTest {
 
     @Test
     void persistsPickupAddressFromEventWithoutRestaurantNetworkDependency() throws Exception {
+        String eventId = "55555555-5555-5555-5555-555555555555";
         long restaurantId = 42L;
         long orderId = 101L;
         Address pickupAddress =
@@ -70,12 +77,16 @@ class DeliveryPickupAddressIntegrationTest {
             "net.ftgo.orderservice.domain.Order",
             0,
             0L,
-            "message-101",
+            "Order#101",
             payload
         );
         record.headers().add(
-            "eventType",
+            KafkaEventHeaders.EVENT_TYPE,
             "OrderApproved".getBytes(StandardCharsets.UTF_8)
+        );
+        record.headers().add(
+            KafkaEventHeaders.EVENT_ID,
+            eventId.getBytes(StandardCharsets.UTF_8)
         );
 
         orderEventConsumer.handleOrderEvent(record);
@@ -87,6 +98,6 @@ class DeliveryPickupAddressIntegrationTest {
                 payload, persisted.getDeliveryAddress())
             .isEqualTo(deliveryAddress);
         assertThat(persisted.getScheduledTime()).isEqualTo(deliveryTime);
-        assertThat(processedMessageRepository.existsById("message-101")).isTrue();
+        assertThat(processedMessageRepository.existsById(eventId)).isTrue();
     }
 }

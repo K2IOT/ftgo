@@ -11,6 +11,7 @@ import net.ftgo.accounting.payment.PaymentAuthorizationGateway;
 import net.ftgo.accounting.repository.AccountRepository;
 import net.ftgo.common.Money;
 import net.ftgo.common.channels.ChannelNames;
+import net.ftgo.common.messaging.IdempotentCommandExecutor;
 import net.ftgo.common.orderflow.commands.AuthorizeCardCommand;
 import net.ftgo.common.orderflow.commands.CaptureAuthorizationCommand;
 import net.ftgo.common.orderflow.commands.RefundPaymentCommand;
@@ -23,9 +24,7 @@ import net.ftgo.common.orderflow.replies.CardAuthorizationDenied;
 import net.ftgo.common.orderflow.replies.CardAuthorized;
 import net.ftgo.common.orderflow.replies.PaymentCaptured;
 import net.ftgo.common.orderflow.replies.PaymentRefunded;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 
@@ -35,31 +34,23 @@ import static io.eventuate.tram.commands.consumer.CommandHandlerReplyBuilder.wit
 @Component
 public class AccountingServiceCommandHandlers {
 
+    private static final String CONSUMER_NAME = "accounting-service";
+
     private final AccountRepository accountRepository;
     private final DomainEventPublisher eventPublisher;
     private final PaymentAuthorizationGateway paymentAuthorizationGateway;
+    private final IdempotentCommandExecutor idempotentCommandExecutor;
 
-    /**
-     * Source-compatible constructor for legacy tests and rolling-upgrade
-     * integrations that predate the payment-provider boundary.
-     */
-    public AccountingServiceCommandHandlers(
-        AccountRepository accountRepository,
-        DomainEventPublisher eventPublisher
-    ) {
-        this(accountRepository, eventPublisher, (paymentToken, amount) ->
-            PaymentAuthorizationDecision.allow());
-    }
-
-    @Autowired
     public AccountingServiceCommandHandlers(
         AccountRepository accountRepository,
         DomainEventPublisher eventPublisher,
-        PaymentAuthorizationGateway paymentAuthorizationGateway
+        PaymentAuthorizationGateway paymentAuthorizationGateway,
+        IdempotentCommandExecutor idempotentCommandExecutor
     ) {
         this.accountRepository = accountRepository;
         this.eventPublisher = eventPublisher;
         this.paymentAuthorizationGateway = paymentAuthorizationGateway;
+        this.idempotentCommandExecutor = idempotentCommandExecutor;
     }
 
     public CommandHandlers commandHandlers() {
@@ -74,9 +65,55 @@ public class AccountingServiceCommandHandlers {
             .build();
     }
 
-    @Transactional
     public Message handleAuthorizeCard(CommandMessage<AuthorizeCardCommand> message) {
-        AuthorizeCardCommand command = message.getCommand();
+        return idempotentCommandExecutor.execute(
+            CONSUMER_NAME,
+            message,
+            () -> authorizeCardOnce(message.getCommand())
+        );
+    }
+
+    public Message handleCaptureAuthorization(CommandMessage<CaptureAuthorizationCommand> message) {
+        return idempotentCommandExecutor.execute(
+            CONSUMER_NAME,
+            message,
+            () -> captureAuthorizationOnce(message.getCommand())
+        );
+    }
+
+    public Message handleVoidAuthorization(CommandMessage<VoidAuthorizationCommand> message) {
+        return idempotentCommandExecutor.execute(
+            CONSUMER_NAME,
+            message,
+            () -> voidAuthorizationOnce(message.getCommand())
+        );
+    }
+
+    public Message handleRefundPayment(CommandMessage<RefundPaymentCommand> message) {
+        return idempotentCommandExecutor.execute(
+            CONSUMER_NAME,
+            message,
+            () -> refundPaymentOnce(message.getCommand())
+        );
+    }
+
+    public Message handleReverseAuthorization(CommandMessage<ReverseAuthorizationCommand> message) {
+        return idempotentCommandExecutor.execute(
+            CONSUMER_NAME,
+            message,
+            () -> reverseAuthorizationOnce(message.getCommand())
+        );
+    }
+
+    public Message handleReviseAuthorization(CommandMessage<ReviseAuthorizationCommand> message) {
+        return idempotentCommandExecutor.execute(
+            CONSUMER_NAME,
+            message,
+            () -> reviseAuthorizationOnce(message.getCommand())
+        );
+    }
+
+    private Message authorizeCardOnce(AuthorizeCardCommand command) {
         try {
             PaymentAuthorizationDecision decision = paymentAuthorizationGateway.authorize(
                 command.getPaymentToken(),
@@ -90,7 +127,7 @@ public class AccountingServiceCommandHandlers {
             }
 
             Account account = accountRepository.findByConsumerId(command.getConsumerId())
-                .orElseGet(() -> accountRepository.save(new Account(command.getConsumerId())));
+                .orElseGet(() -> accountRepository.saveAndFlush(new Account(command.getConsumerId())));
 
             Authorization existing = account.findAuthorizationByRequestId(command.getRequestId());
             if (existing != null) {
@@ -101,10 +138,7 @@ public class AccountingServiceCommandHandlers {
                         "Request ID conflict"
                     ));
                 }
-                return withSuccess(new CardAuthorized(
-                    existing.getId(),
-                    command.getOrderId()
-                ));
+                return withSuccess(new CardAuthorized(existing.getId(), command.getOrderId()));
             }
 
             Authorization authorization = command.getOrderId() == null
@@ -114,35 +148,29 @@ public class AccountingServiceCommandHandlers {
                     command.getRequestId(),
                     command.getAmount()
                 );
-            accountRepository.save(account);
+            accountRepository.saveAndFlush(account);
 
-            eventPublisher.publishAccountEvent(account.getId(), new CardAuthorizedEvent(
+            eventPublisher.publishAccountEvent(
                 account.getId(),
-                authorization.getId(),
-                authorization.getRequestId(),
-                authorization.getAmount().getAmount(),
-                authorization.getCreatedAt()
-            ));
-            return withSuccess(new CardAuthorized(
-                authorization.getId(),
-                command.getOrderId()
-            ));
+                account.getVersion(),
+                new CardAuthorizedEvent(
+                    account.getId(),
+                    authorization.getId(),
+                    authorization.getRequestId(),
+                    authorization.getAmount().getAmount(),
+                    authorization.getCreatedAt()
+                )
+            );
+            return withSuccess(new CardAuthorized(authorization.getId(), command.getOrderId()));
         } catch (IllegalArgumentException e) {
             if (command.getOrderId() != null) {
-                return withFailure(new CardAuthorizationDenied(
-                    command.getOrderId(),
-                    e.getMessage()
-                ));
+                return withFailure(new CardAuthorizationDenied(command.getOrderId(), e.getMessage()));
             }
             return withFailure(e.getMessage());
-        } catch (Exception e) {
-            return withFailure("Internal error authorizing card");
         }
     }
 
-    @Transactional
-    public Message handleCaptureAuthorization(CommandMessage<CaptureAuthorizationCommand> message) {
-        CaptureAuthorizationCommand command = message.getCommand();
+    private Message captureAuthorizationOnce(CaptureAuthorizationCommand command) {
         try {
             Account account = requireAccount(command.getAuthorizationId());
             boolean changed = account.captureAuthorization(
@@ -150,15 +178,19 @@ public class AccountingServiceCommandHandlers {
                 command.getAuthorizationId(),
                 command.getRequestId()
             );
-            accountRepository.save(account);
+            accountRepository.saveAndFlush(account);
             if (changed) {
-                eventPublisher.publishAccountEvent(account.getId(), new PaymentCapturedEvent(
+                eventPublisher.publishAccountEvent(
                     account.getId(),
-                    command.getOrderId(),
-                    command.getAuthorizationId(),
-                    command.getRequestId(),
-                    LocalDateTime.now()
-                ));
+                    account.getVersion(),
+                    new PaymentCapturedEvent(
+                        account.getId(),
+                        command.getOrderId(),
+                        command.getAuthorizationId(),
+                        command.getRequestId(),
+                        LocalDateTime.now()
+                    )
+                );
             }
             return withSuccess(new PaymentCaptured(
                 command.getAuthorizationId(),
@@ -170,9 +202,7 @@ public class AccountingServiceCommandHandlers {
         }
     }
 
-    @Transactional
-    public Message handleVoidAuthorization(CommandMessage<VoidAuthorizationCommand> message) {
-        VoidAuthorizationCommand command = message.getCommand();
+    private Message voidAuthorizationOnce(VoidAuthorizationCommand command) {
         try {
             Account account = requireAccount(command.getAuthorizationId());
             boolean changed = account.voidAuthorization(
@@ -181,16 +211,20 @@ public class AccountingServiceCommandHandlers {
                 command.getReason(),
                 command.getRequestId()
             );
-            accountRepository.save(account);
+            accountRepository.saveAndFlush(account);
             if (changed) {
-                eventPublisher.publishAccountEvent(account.getId(), new AuthorizationVoidedEvent(
+                eventPublisher.publishAccountEvent(
                     account.getId(),
-                    command.getOrderId(),
-                    command.getAuthorizationId(),
-                    command.getReason(),
-                    command.getRequestId(),
-                    LocalDateTime.now()
-                ));
+                    account.getVersion(),
+                    new AuthorizationVoidedEvent(
+                        account.getId(),
+                        command.getOrderId(),
+                        command.getAuthorizationId(),
+                        command.getReason(),
+                        command.getRequestId(),
+                        LocalDateTime.now()
+                    )
+                );
             }
             return withSuccess(new AuthorizationVoided(
                 command.getAuthorizationId(),
@@ -201,9 +235,7 @@ public class AccountingServiceCommandHandlers {
         }
     }
 
-    @Transactional
-    public Message handleRefundPayment(CommandMessage<RefundPaymentCommand> message) {
-        RefundPaymentCommand command = message.getCommand();
+    private Message refundPaymentOnce(RefundPaymentCommand command) {
         try {
             Account account = requireAccount(command.getCaptureId());
             boolean changed = account.refundPayment(
@@ -213,16 +245,20 @@ public class AccountingServiceCommandHandlers {
                 command.getReason(),
                 command.getRequestId()
             );
-            accountRepository.save(account);
+            accountRepository.saveAndFlush(account);
             if (changed) {
-                eventPublisher.publishAccountEvent(account.getId(), new PaymentRefundedEvent(
+                eventPublisher.publishAccountEvent(
                     account.getId(),
-                    command.getOrderId(),
-                    command.getCaptureId(),
-                    command.getReason(),
-                    command.getRequestId(),
-                    LocalDateTime.now()
-                ));
+                    account.getVersion(),
+                    new PaymentRefundedEvent(
+                        account.getId(),
+                        command.getOrderId(),
+                        command.getCaptureId(),
+                        command.getReason(),
+                        command.getRequestId(),
+                        LocalDateTime.now()
+                    )
+                );
             }
             return withSuccess(new PaymentRefunded(
                 command.getCaptureId(),
@@ -234,30 +270,30 @@ public class AccountingServiceCommandHandlers {
         }
     }
 
-    @Transactional
-    public Message handleReverseAuthorization(CommandMessage<ReverseAuthorizationCommand> message) {
-        ReverseAuthorizationCommand command = message.getCommand();
+    private Message reverseAuthorizationOnce(ReverseAuthorizationCommand command) {
         try {
             Account account = accountRepository.findByConsumerId(command.getConsumerId())
                 .orElseThrow(() -> new IllegalArgumentException(
                     "Account not found for consumer " + command.getConsumerId()
                 ));
             account.reverseAuthorization(command.getAuthorizationId());
-            accountRepository.save(account);
-            eventPublisher.publishAccountEvent(account.getId(), new CardReversed(
+            accountRepository.saveAndFlush(account);
+            eventPublisher.publishAccountEvent(
                 account.getId(),
-                command.getAuthorizationId(),
-                LocalDateTime.now()
-            ));
+                account.getVersion(),
+                new CardReversed(
+                    account.getId(),
+                    command.getAuthorizationId(),
+                    LocalDateTime.now()
+                )
+            );
             return withSuccess(new AuthorizationReversed(command.getAuthorizationId()));
         } catch (IllegalArgumentException | IllegalStateException e) {
             return withFailure(e.getMessage());
         }
     }
 
-    @Transactional
-    public Message handleReviseAuthorization(CommandMessage<ReviseAuthorizationCommand> message) {
-        ReviseAuthorizationCommand command = message.getCommand();
+    private Message reviseAuthorizationOnce(ReviseAuthorizationCommand command) {
         try {
             Account account = accountRepository.findByConsumerId(command.getConsumerId())
                 .orElseThrow(() -> new IllegalArgumentException(

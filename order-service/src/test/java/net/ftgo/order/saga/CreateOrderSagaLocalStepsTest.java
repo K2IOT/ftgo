@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -51,9 +52,14 @@ class CreateOrderSagaLocalStepsTest {
     }
 
     @Test
-    void approveOrderPublishesSharedOrderApprovedWithRequestedDeliveryDetails() {
+    void approveOrderPublishesSharedOrderApprovedWithAggregateVersion() {
         LocalDateTime deliveryTime = LocalDateTime.now().plusHours(2);
-        Address deliveryAddress = new Address("456 Consumer Ave", "San Francisco", "CA", "94103");
+        Address deliveryAddress = new Address(
+            "456 Consumer Ave",
+            "San Francisco",
+            "CA",
+            "94103"
+        );
         Order order = new Order(
             202L,
             303L,
@@ -61,7 +67,7 @@ class CreateOrderSagaLocalStepsTest {
             new DeliveryInfo(deliveryAddress, deliveryTime),
             new PaymentInfo("tok_test_123")
         );
-        setOrderId(order, 101L);
+        setPersistedIdentity(order, 101L, 0);
         var command = new CreateOrderSagaLocalSteps.ApproveOrderCommand(101L, 404L, 505L);
 
         when(approveOrderCommandMessage.getCommand()).thenReturn(command);
@@ -70,8 +76,13 @@ class CreateOrderSagaLocalStepsTest {
         localSteps.approveOrder(approveOrderCommandMessage);
 
         assertEquals(OrderState.APPROVED, order.getState());
+        verify(orderRepository).saveAndFlush(order);
         ArgumentCaptor<OrderApproved> eventCaptor = ArgumentCaptor.forClass(OrderApproved.class);
-        verify(eventPublisher).publishOrderEvent(org.mockito.ArgumentMatchers.eq(101L), eventCaptor.capture());
+        verify(eventPublisher).publishOrderEvent(
+            eq(101L),
+            eq(order.getVersion().longValue()),
+            eventCaptor.capture()
+        );
         OrderApproved event = eventCaptor.getValue();
         assertEquals(101L, event.getOrderId());
         assertEquals(202L, event.getConsumerId());
@@ -83,13 +94,16 @@ class CreateOrderSagaLocalStepsTest {
         assertEquals(deliveryTime, event.getDeliveryTime());
     }
 
-    private void setOrderId(Order order, Long orderId) {
+    private void setPersistedIdentity(Order order, Long orderId, Integer version) {
         try {
             var idField = Order.class.getDeclaredField("id");
             idField.setAccessible(true);
             idField.set(order, orderId);
+            var versionField = Order.class.getDeclaredField("version");
+            versionField.setAccessible(true);
+            versionField.set(order, version);
         } catch (Exception e) {
-            throw new RuntimeException("Failed to set order ID", e);
+            throw new RuntimeException("Failed to set persisted Order identity", e);
         }
     }
 }

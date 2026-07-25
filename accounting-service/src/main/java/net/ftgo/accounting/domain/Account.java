@@ -11,6 +11,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import jakarta.validation.constraints.NotNull;
 import net.ftgo.common.Money;
 
@@ -29,6 +30,10 @@ public class Account {
     @NotNull
     @Column(name = "consumer_id", nullable = false, unique = true)
     private Long consumerId;
+
+    @Version
+    @Column(nullable = false)
+    private Long version = 0L;
 
     @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @JoinColumn(name = "account_id", nullable = false)
@@ -146,10 +151,12 @@ public class Account {
     public List<Authorization> getAuthorizations() { return List.copyOf(authorizations); }
     public Long getId() { return id; }
     public Long getConsumerId() { return consumerId; }
+    public Long getVersion() { return version; }
     public LocalDateTime getCreatedAt() { return createdAt; }
 
     @PrePersist
     protected void onCreate() {
+        if (version == null) version = 0L;
         if (createdAt == null) createdAt = LocalDateTime.now();
     }
 }

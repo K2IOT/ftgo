@@ -1,20 +1,16 @@
 package net.ftgo.orderhistory.messaging;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import net.ftgo.common.orderflow.events.OrderApproved;
-import net.ftgo.common.orderflow.events.OrderCancelled;
-import net.ftgo.common.orderflow.events.OrderCreated;
-import net.ftgo.common.orderflow.events.OrderRejected;
-import net.ftgo.common.orderflow.events.OrderRevised;
-import net.ftgo.orderhistory.domain.LineItem;
-import net.ftgo.orderhistory.domain.OrderHistoryRecord;
+import net.ftgo.common.messaging.EventIdentityExtractor;
+import net.ftgo.common.messaging.KafkaEventHeaders;
 import net.ftgo.orderhistory.domain.ProcessedMessage;
 import net.ftgo.orderhistory.repository.OrderHistoryRepository;
 import net.ftgo.orderhistory.repository.ProcessedMessageRepository;
+import net.ftgo.orderhistory.service.InMemoryPendingOrderEventStore;
+import net.ftgo.orderhistory.service.OrderHistoryProjectionService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.support.KafkaHeaders;
 import org.springframework.messaging.handler.annotation.Header;
@@ -22,46 +18,44 @@ import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.HashSet;
-import java.util.List;
-import java.util.Optional;
-import java.util.stream.Collectors;
-
-/**
- * Event handlers for updating the Order History CQRS read model.
- * 
- * Consumes domain events from multiple services:
- * - Order Service: OrderCreated, OrderApproved, OrderCancelled, OrderRevised
- * - Kitchen Service: TicketAccepted, TicketReady
- * - Delivery Service: DeliveryPickedUp, DeliveryDelivered
- * - Accounting Service: CardAuthorized
- * 
- * Implements idempotent event processing using processed_messages table.
- * Each event is processed at most once, ensuring eventual consistency.
- */
+/** Validates, deduplicates and delegates domain events to the projection service. */
 @Component
 public class OrderHistoryEventHandlers {
-    
+
     private static final Logger logger = LoggerFactory.getLogger(OrderHistoryEventHandlers.class);
-    
-    private final OrderHistoryRepository orderHistoryRepository;
+
+    private final OrderHistoryProjectionService projectionService;
     private final ProcessedMessageRepository processedMessageRepository;
     private final ObjectMapper objectMapper;
-    
+
+    @Autowired
+    public OrderHistoryEventHandlers(
+        OrderHistoryProjectionService projectionService,
+        ProcessedMessageRepository processedMessageRepository,
+        ObjectMapper objectMapper
+    ) {
+        this.projectionService = projectionService;
+        this.processedMessageRepository = processedMessageRepository;
+        this.objectMapper = objectMapper;
+    }
+
+    /** Compatibility constructor retained for focused unit tests. */
     public OrderHistoryEventHandlers(
         OrderHistoryRepository orderHistoryRepository,
         ProcessedMessageRepository processedMessageRepository,
         ObjectMapper objectMapper
     ) {
-        this.orderHistoryRepository = orderHistoryRepository;
-        this.processedMessageRepository = processedMessageRepository;
-        this.objectMapper = objectMapper;
+        this(
+            new OrderHistoryProjectionService(
+                orderHistoryRepository,
+                new InMemoryPendingOrderEventStore(),
+                objectMapper
+            ),
+            processedMessageRepository,
+            objectMapper
+        );
     }
-    
-    /**
-     * Handles OrderCreated events from Order Service.
-     * Creates a new order history record.
-     */
+
     @KafkaListener(
         topics = "net.ftgo.orderservice.domain.Order",
         groupId = "order-history-service",
@@ -71,62 +65,16 @@ public class OrderHistoryEventHandlers {
     public void handleOrderEvent(
         @Payload String payload,
         @Header(KafkaHeaders.RECEIVED_KEY) String key,
-        @Header(value = "eventType", required = false) String eventType
+        @Header(value = KafkaEventHeaders.EVENT_TYPE, required = false) String eventType,
+        @Header(KafkaEventHeaders.EVENT_ID) String eventIdHeader
     ) {
-        try {
-            // Parse the event to determine type
-            JsonNode eventNode = objectMapper.readTree(payload);
-            String messageId = key + "-" + eventType;
-            
-            // Idempotency check
-            if (isDuplicate(messageId)) {
-                logger.info("Skipping duplicate event: messageId={}, eventType={}", messageId, eventType);
-                return;
-            }
-            
-            if (eventType == null) {
-                logger.warn("Could not determine event type for messageId={}, skipping", messageId);
-                return;
-            }
-            
-            switch (eventType) {
-                case "OrderCreated":
-                    OrderCreated sharedOrderCreated = objectMapper.treeToValue(eventNode, OrderCreated.class);
-                    handleOrderCreated(sharedOrderCreated);
-                    break;
-                case "OrderApproved":
-                    OrderApproved sharedOrderApproved = objectMapper.treeToValue(eventNode, OrderApproved.class);
-                    handleOrderApproved(sharedOrderApproved.getOrderId());
-                    break;
-                case "OrderRejected":
-                    OrderRejected sharedOrderRejected = objectMapper.treeToValue(eventNode, OrderRejected.class);
-                    handleOrderRejected(sharedOrderRejected.getOrderId());
-                    break;
-                case "OrderCancelled":
-                    OrderCancelled sharedOrderCancelled = objectMapper.treeToValue(eventNode, OrderCancelled.class);
-                    handleOrderCancelled(sharedOrderCancelled.getOrderId());
-                    break;
-                case "OrderRevised":
-                    OrderRevised sharedOrderRevised = objectMapper.treeToValue(eventNode, OrderRevised.class);
-                    handleOrderRevised(sharedOrderRevised);
-                    break;
-                default:
-                    logger.warn("Unknown event type: {}", eventType);
-                    return;
-            }
-            
-            // Mark message as processed
-            markProcessed(messageId);
-            
-        } catch (JsonProcessingException e) {
-            logger.error("Failed to parse order event: {}", payload, e);
-            throw new RuntimeException("Failed to process order event", e);
-        }
+        processOnceWithHeader(payload, key, eventType, eventIdHeader);
     }
-    
-    /**
-     * Handles TicketAccepted and TicketReady events from Kitchen Service.
-     */
+
+    public void handleOrderEvent(String payload, String key, String eventType) {
+        processOnce(payload, key, eventType, legacyId(key, eventType, payload));
+    }
+
     @KafkaListener(
         topics = "net.ftgo.kitchenservice.domain.Ticket",
         groupId = "order-history-service",
@@ -136,44 +84,16 @@ public class OrderHistoryEventHandlers {
     public void handleTicketEvent(
         @Payload String payload,
         @Header(KafkaHeaders.RECEIVED_KEY) String key,
-        @Header(value = "eventType", required = false) String eventType
+        @Header(value = KafkaEventHeaders.EVENT_TYPE, required = false) String eventType,
+        @Header(KafkaEventHeaders.EVENT_ID) String eventIdHeader
     ) {
-        try {
-            JsonNode eventNode = objectMapper.readTree(payload);
-            String messageId = key + "-" + eventType;
-            
-            // Idempotency check
-            if (isDuplicate(messageId)) {
-                logger.info("Skipping duplicate event: messageId={}, eventType={}", messageId, eventType);
-                return;
-            }
-            
-            switch (eventType) {
-                case "TicketAcceptedEvent":
-                    TicketAcceptedEvent ticketAccepted = objectMapper.treeToValue(eventNode, TicketAcceptedEvent.class);
-                    handleTicketAccepted(ticketAccepted);
-                    break;
-                case "TicketReadyEvent":
-                    TicketReadyEvent ticketReady = objectMapper.treeToValue(eventNode, TicketReadyEvent.class);
-                    handleTicketReady(ticketReady);
-                    break;
-                default:
-                    logger.warn("Unknown ticket event type: {}", eventType);
-                    return;
-            }
-            
-            // Mark message as processed
-            markProcessed(messageId);
-            
-        } catch (JsonProcessingException e) {
-            logger.error("Failed to parse ticket event: {}", payload, e);
-            throw new RuntimeException("Failed to process ticket event", e);
-        }
+        processOnceWithHeader(payload, key, eventType, eventIdHeader);
     }
-    
-    /**
-     * Handles DeliveryPickedUp and DeliveryDelivered events from Delivery Service.
-     */
+
+    public void handleTicketEvent(String payload, String key, String eventType) {
+        processOnce(payload, key, eventType, legacyId(key, eventType, payload));
+    }
+
     @KafkaListener(
         topics = "net.ftgo.deliveryservice.domain.Delivery",
         groupId = "order-history-service",
@@ -183,44 +103,16 @@ public class OrderHistoryEventHandlers {
     public void handleDeliveryEvent(
         @Payload String payload,
         @Header(KafkaHeaders.RECEIVED_KEY) String key,
-        @Header(value = "eventType", required = false) String eventType
+        @Header(value = KafkaEventHeaders.EVENT_TYPE, required = false) String eventType,
+        @Header(KafkaEventHeaders.EVENT_ID) String eventIdHeader
     ) {
-        try {
-            JsonNode eventNode = objectMapper.readTree(payload);
-            String messageId = key + "-" + eventType;
-            
-            // Idempotency check
-            if (isDuplicate(messageId)) {
-                logger.info("Skipping duplicate event: messageId={}, eventType={}", messageId, eventType);
-                return;
-            }
-            
-            switch (eventType) {
-                case "DeliveryPickedUpEvent":
-                    DeliveryPickedUpEvent deliveryPickedUp = objectMapper.treeToValue(eventNode, DeliveryPickedUpEvent.class);
-                    handleDeliveryPickedUp(deliveryPickedUp);
-                    break;
-                case "DeliveryDeliveredEvent":
-                    DeliveryDeliveredEvent deliveryDelivered = objectMapper.treeToValue(eventNode, DeliveryDeliveredEvent.class);
-                    handleDeliveryDelivered(deliveryDelivered);
-                    break;
-                default:
-                    logger.warn("Unknown delivery event type: {}", eventType);
-                    return;
-            }
-            
-            // Mark message as processed
-            markProcessed(messageId);
-            
-        } catch (JsonProcessingException e) {
-            logger.error("Failed to parse delivery event: {}", payload, e);
-            throw new RuntimeException("Failed to process delivery event", e);
-        }
+        processOnceWithHeader(payload, key, eventType, eventIdHeader);
     }
-    
-    /**
-     * Handles CardAuthorized events from Accounting Service.
-     */
+
+    public void handleDeliveryEvent(String payload, String key, String eventType) {
+        processOnce(payload, key, eventType, legacyId(key, eventType, payload));
+    }
+
     @KafkaListener(
         topics = "net.ftgo.accountingservice.domain.Account",
         groupId = "order-history-service",
@@ -230,222 +122,53 @@ public class OrderHistoryEventHandlers {
     public void handleAccountEvent(
         @Payload String payload,
         @Header(KafkaHeaders.RECEIVED_KEY) String key,
-        @Header(value = "eventType", required = false) String eventType
+        @Header(value = KafkaEventHeaders.EVENT_TYPE, required = false) String eventType,
+        @Header(KafkaEventHeaders.EVENT_ID) String eventIdHeader
     ) {
-        try {
-            JsonNode eventNode = objectMapper.readTree(payload);
-            String messageId = key + "-" + eventType;
-            
-            // Idempotency check
-            if (isDuplicate(messageId)) {
-                logger.info("Skipping duplicate event: messageId={}, eventType={}", messageId, eventType);
-                return;
-            }
-            
-            if ("CardAuthorizedEvent".equals(eventType)) {
-                CardAuthorizedEvent cardAuthorized = objectMapper.treeToValue(eventNode, CardAuthorizedEvent.class);
-                handleCardAuthorized(cardAuthorized);
-            } else {
-                logger.warn("Unknown account event type: {}", eventType);
-                return;
-            }
-            
-            // Mark message as processed
-            markProcessed(messageId);
-            
-        } catch (JsonProcessingException e) {
-            logger.error("Failed to parse account event: {}", payload, e);
-            throw new RuntimeException("Failed to process account event", e);
-        }
-    }
-    
-    // ========== Event Handler Methods ==========
-    
-    private void handleOrderCreated(OrderCreated event) {
-        logger.info("Handling OrderCreated: orderId={}", event.getOrderId());
-        
-        OrderHistoryRecord record = new OrderHistoryRecord(event.getOrderId().toString());
-        record.setConsumerId(event.getConsumerId());
-        record.setRestaurantId(event.getRestaurantId());
-        record.setStatus(event.getStatus());
-        record.setOrderTotal(event.getOrderTotal().getAmount());
-        record.setDeliveryAddress(event.getDeliveryAddress());
-        record.setDeliveryTime(event.getDeliveryTime());
-        record.setCreationDate(event.getCreatedAt());
-        
-        // Convert line items
-        List<LineItem> lineItems = event.getLineItems().stream()
-            .map(dto -> new LineItem(dto.getMenuItemId(), dto.getName(), dto.getPrice().getAmount(), dto.getQuantity()))
-            .collect(Collectors.toList());
-        record.setLineItems(lineItems);
-        
-        // Extract keywords for search
-        HashSet<String> keywords = new HashSet<>();
-        event.getLineItems().forEach(item -> {
-            if (item.getName() != null) {
-                keywords.add(item.getName().toLowerCase());
-            }
-        });
-        record.setKeywords(keywords);
-        
-        orderHistoryRepository.save(record);
-        logger.info("Created order history record: orderId={}", event.getOrderId());
-    }
-    
-    private void handleOrderApproved(Long orderId) {
-        logger.info("Handling OrderApproved: orderId={}", orderId);
-        
-        Optional<OrderHistoryRecord> optionalRecord = orderHistoryRepository.findById(orderId.toString());
-        if (optionalRecord.isPresent()) {
-            OrderHistoryRecord record = optionalRecord.get();
-            record.setStatus("APPROVED");
-            record.setAuthorizationStatus("APPROVED");
-            orderHistoryRepository.save(record);
-            logger.info("Updated order status to APPROVED: orderId={}", orderId);
-        } else {
-            logger.warn("Order history record not found for OrderApproved: orderId={}", orderId);
-        }
+        processOnceWithHeader(payload, key, eventType, eventIdHeader);
     }
 
-    private void handleOrderRejected(Long orderId) {
-        logger.info("Handling OrderRejected: orderId={}", orderId);
-        
-        Optional<OrderHistoryRecord> optionalRecord = orderHistoryRepository.findById(orderId.toString());
-        if (optionalRecord.isPresent()) {
-            OrderHistoryRecord record = optionalRecord.get();
-            record.setStatus("REJECTED");
-            orderHistoryRepository.save(record);
-            logger.info("Updated order status to REJECTED: orderId={}", orderId);
-        } else {
-            logger.warn("Order history record not found for OrderRejected: orderId={}", orderId);
-        }
+    public void handleAccountEvent(String payload, String key, String eventType) {
+        processOnce(payload, key, eventType, legacyId(key, eventType, payload));
     }
 
-    private void handleOrderCancelled(Long orderId) {
-        logger.info("Handling OrderCancelled: orderId={}", orderId);
-        
-        Optional<OrderHistoryRecord> optionalRecord = orderHistoryRepository.findById(orderId.toString());
-        if (optionalRecord.isPresent()) {
-            OrderHistoryRecord record = optionalRecord.get();
-            record.setStatus("CANCELLED");
-            orderHistoryRepository.save(record);
-            logger.info("Updated order status to CANCELLED: orderId={}", orderId);
-        } else {
-            logger.warn("Order history record not found for OrderCancelled: orderId={}", orderId);
-        }
-    }
-    
-    private void handleOrderRevised(OrderRevised event) {
-        logger.info("Handling OrderRevised: orderId={}", event.getOrderId());
-        
-        Optional<OrderHistoryRecord> optionalRecord = orderHistoryRepository.findById(event.getOrderId().toString());
-        if (optionalRecord.isPresent()) {
-            OrderHistoryRecord record = optionalRecord.get();
-            record.setOrderTotal(event.getOrderTotal().getAmount());
-            
-            // Update line items
-            List<LineItem> lineItems = event.getLineItems().stream()
-                .map(dto -> new LineItem(dto.getMenuItemId(), dto.getName(), dto.getPrice().getAmount(), dto.getQuantity()))
-                .collect(Collectors.toList());
-            record.setLineItems(lineItems);
-            
-            // Update keywords
-            HashSet<String> keywords = new HashSet<>();
-            event.getLineItems().forEach(item -> {
-                if (item.getName() != null) {
-                    keywords.add(item.getName().toLowerCase());
-                }
-            });
-            record.setKeywords(keywords);
-            
-            orderHistoryRepository.save(record);
-            logger.info("Updated order details for revision: orderId={}", event.getOrderId());
-        } else {
-            logger.warn("Order history record not found for OrderRevised: orderId={}", event.getOrderId());
-        }
+    private void processOnceWithHeader(
+        String payload,
+        String aggregateKey,
+        String eventType,
+        String eventIdHeader
+    ) {
+        String eventId = EventIdentityExtractor.eventId(
+            eventIdHeader,
+            payload,
+            objectMapper
+        ).toString();
+        processOnce(payload, aggregateKey, eventType, eventId);
     }
 
-    private void handleTicketAccepted(TicketAcceptedEvent event) {
-        logger.info("Handling TicketAccepted: orderId={}", event.getOrderId());
-        
-        Optional<OrderHistoryRecord> optionalRecord = orderHistoryRepository.findById(event.getOrderId().toString());
-        if (optionalRecord.isPresent()) {
-            OrderHistoryRecord record = optionalRecord.get();
-            record.setTicketStatus("ACCEPTED");
-            orderHistoryRepository.save(record);
-            logger.info("Updated ticket status to ACCEPTED: orderId={}", event.getOrderId());
-        } else {
-            logger.warn("Order history record not found for TicketAccepted: orderId={}", event.getOrderId());
+    private void processOnce(
+        String payload,
+        String aggregateKey,
+        String eventType,
+        String eventId
+    ) {
+        logger.info(
+            "Received eventId={}, aggregateKey={}, eventType={}",
+            eventId,
+            aggregateKey,
+            eventType
+        );
+        if (processedMessageRepository.existsById(eventId)) {
+            logger.info("Skipping duplicate eventId={}, eventType={}", eventId, eventType);
+            return;
         }
+
+        projectionService.apply(payload, eventType, eventId);
+        processedMessageRepository.save(new ProcessedMessage(eventId));
+        logger.debug("Marked event as accepted: eventId={}", eventId);
     }
-    
-    private void handleTicketReady(TicketReadyEvent event) {
-        logger.info("Handling TicketReady: orderId={}", event.getOrderId());
-        
-        Optional<OrderHistoryRecord> optionalRecord = orderHistoryRepository.findById(event.getOrderId().toString());
-        if (optionalRecord.isPresent()) {
-            OrderHistoryRecord record = optionalRecord.get();
-            record.setTicketStatus("READY");
-            orderHistoryRepository.save(record);
-            logger.info("Updated ticket status to READY: orderId={}", event.getOrderId());
-        } else {
-            logger.warn("Order history record not found for TicketReady: orderId={}", event.getOrderId());
-        }
-    }
-    
-    private void handleDeliveryPickedUp(DeliveryPickedUpEvent event) {
-        logger.info("Handling DeliveryPickedUp: orderId={}", event.getOrderId());
-        
-        Optional<OrderHistoryRecord> optionalRecord = orderHistoryRepository.findById(event.getOrderId().toString());
-        if (optionalRecord.isPresent()) {
-            OrderHistoryRecord record = optionalRecord.get();
-            record.setDeliveryStatus("PICKED_UP");
-            orderHistoryRepository.save(record);
-            logger.info("Updated delivery status to PICKED_UP: orderId={}", event.getOrderId());
-        } else {
-            logger.warn("Order history record not found for DeliveryPickedUp: orderId={}", event.getOrderId());
-        }
-    }
-    
-    private void handleDeliveryDelivered(DeliveryDeliveredEvent event) {
-        logger.info("Handling DeliveryDelivered: orderId={}", event.getOrderId());
-        
-        Optional<OrderHistoryRecord> optionalRecord = orderHistoryRepository.findById(event.getOrderId().toString());
-        if (optionalRecord.isPresent()) {
-            OrderHistoryRecord record = optionalRecord.get();
-            record.setDeliveryStatus("DELIVERED");
-            orderHistoryRepository.save(record);
-            logger.info("Updated delivery status to DELIVERED: orderId={}", event.getOrderId());
-        } else {
-            logger.warn("Order history record not found for DeliveryDelivered: orderId={}", event.getOrderId());
-        }
-    }
-    
-    private void handleCardAuthorized(CardAuthorizedEvent event) {
-        logger.info("Ignoring CardAuthorized for authorization state; derived from OrderApproved: orderId={}",
-            event.getOrderId());
-    }
-    
-    // ========== Idempotency Support ==========
-    
-    /**
-     * Checks if a message has already been processed.
-     * 
-     * @param messageId the message ID
-     * @return true if the message has been processed
-     */
-    private boolean isDuplicate(String messageId) {
-        return processedMessageRepository.existsById(messageId);
-    }
-    
-    /**
-     * Marks a message as processed.
-     * 
-     * @param messageId the message ID
-     */
-    private void markProcessed(String messageId) {
-        ProcessedMessage processedMessage = new ProcessedMessage(messageId);
-        processedMessageRepository.save(processedMessage);
-        logger.debug("Marked message as processed: messageId={}", messageId);
+
+    private String legacyId(String key, String eventType, String payload) {
+        return String.valueOf(key) + "-" + String.valueOf(eventType);
     }
 }

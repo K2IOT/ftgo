@@ -13,13 +13,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.time.LocalDateTime;
 import java.util.List;
 
-/**
- * Claims expired acceptance decisions one ticket per transaction.
- *
- * <p>The initial scan is intentionally non-locking. Every candidate is then
- * loaded with a pessimistic write lock and rechecked inside its own transaction,
- * so concurrent service instances remain safe.</p>
- */
+/** Claims expired acceptance decisions one ticket per transaction. */
 @Service
 public class TicketAcceptanceTimeoutService {
 
@@ -57,9 +51,10 @@ public class TicketAcceptanceTimeoutService {
                 return false;
             }
 
-            ticketRepository.save(ticket);
+            ticketRepository.saveAndFlush(ticket);
             eventPublisher.publishTicketEvent(
                 ticket.getId(),
+                ticket.getVersion(),
                 new TicketAcceptanceTimedOutEvent(
                     ticket.getDecisionEventId(),
                     ticket.getId(),

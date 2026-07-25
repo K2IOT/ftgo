@@ -8,6 +8,7 @@ import net.ftgo.accounting.payment.PaymentAuthorizationGateway;
 import net.ftgo.accounting.repository.AccountRepository;
 import net.ftgo.common.Money;
 import net.ftgo.common.channels.ChannelNames;
+import net.ftgo.common.messaging.IdempotentCommandExecutor;
 import net.ftgo.consumer.messaging.ConsumerCommandHandlers;
 import net.ftgo.consumer.service.ConsumerService;
 import net.ftgo.consumer.service.CreditReservationService;
@@ -50,16 +51,19 @@ class CreateOrderSagaSharedContractTest {
         ).commandHandlers();
         CommandHandlers consumerHandlers = new ConsumerCommandHandlers(
             mock(ConsumerService.class),
-            mock(CreditReservationService.class)
+            mock(CreditReservationService.class),
+            mock(IdempotentCommandExecutor.class)
         ).commandHandlers();
         CommandHandlers kitchenHandlers = new KitchenServiceCommandHandlers(
             mock(TicketRepository.class),
-            mock(DomainEventPublisher.class)
+            mock(DomainEventPublisher.class),
+            mock(IdempotentCommandExecutor.class)
         ).commandHandlers();
         CommandHandlers accountingHandlers = new AccountingServiceCommandHandlers(
             mock(AccountRepository.class),
             mock(net.ftgo.accounting.messaging.DomainEventPublisher.class),
-            mock(PaymentAuthorizationGateway.class)
+            mock(PaymentAuthorizationGateway.class),
+            mock(IdempotentCommandExecutor.class)
         ).commandHandlers();
 
         assertParticipantAccepts(

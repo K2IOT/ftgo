@@ -3,82 +3,108 @@ package net.ftgo.order.messaging;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import net.ftgo.common.channels.ChannelNames;
+import net.ftgo.common.messaging.DomainEventEnvelope;
+import net.ftgo.common.messaging.DomainEventMetadata;
+import net.ftgo.common.messaging.OutboxMetrics;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
-/**
- * Domain event publisher using the Transactional Outbox pattern.
- * 
- * Ensures atomic database updates and event publishing by:
- * 1. Inserting events into the outbox table within the same transaction as business data
- * 2. Debezium CDC monitors the outbox table and publishes events to Kafka
- * 3. Guarantees exactly-once event publishing per database transaction
- * 
- * Event Flow:
- * 1. Service updates Order aggregate and calls publishEvent()
- * 2. publishEvent() inserts event into outbox table (same transaction)
- * 3. Transaction commits (both Order and outbox entry persisted atomically)
- * 4. Debezium detects outbox insert via MySQL binlog
- * 5. Debezium publishes event to Kafka topic
- * 6. Debezium marks outbox entry as published
- */
 @Component("ftgoDomainEventPublisher")
 public class DomainEventPublisher {
-    
+
     private static final Logger logger = LoggerFactory.getLogger(DomainEventPublisher.class);
-    
+    private static final int CURRENT_SCHEMA_VERSION = 1;
+
     private final OutboxRepository outboxRepository;
     private final ObjectMapper objectMapper;
-    
+    private final OutboxMetrics outboxMetrics;
+
     public DomainEventPublisher(OutboxRepository outboxRepository, ObjectMapper objectMapper) {
+        this(outboxRepository, objectMapper, OutboxMetrics.noop());
+    }
+
+    @Autowired
+    public DomainEventPublisher(
+        OutboxRepository outboxRepository,
+        ObjectMapper objectMapper,
+        OutboxMetrics outboxMetrics
+    ) {
         this.outboxRepository = outboxRepository;
         this.objectMapper = objectMapper;
+        this.outboxMetrics = outboxMetrics;
     }
-    
-    /**
-     * Publishes a domain event via the transactional outbox.
-     * 
-     * @param aggregateType the aggregate type (e.g., "Order")
-     * @param aggregateId the aggregate ID
-     * @param event the domain event to publish
-     * @param <T> the event type
-     */
+
     @Transactional
     public <T> void publish(String aggregateType, String aggregateId, T event) {
+        publish(aggregateType, aggregateId, 0L, DomainEventMetadata.empty(), event);
+    }
+
+    @Transactional
+    public <T> void publish(
+        String aggregateType,
+        String aggregateId,
+        long aggregateVersion,
+        DomainEventMetadata metadata,
+        T event
+    ) {
+        String eventType = event.getClass().getSimpleName();
         try {
-            String eventType = event.getClass().getSimpleName();
-            String payload = objectMapper.writeValueAsString(event);
-            String destination = ChannelNames.ORDER_EVENT_TOPIC;
-            
-            OutboxEntry outboxEntry = new OutboxEntry(
+            DomainEventEnvelope<T> envelope = DomainEventEnvelope.create(
+                eventType,
+                CURRENT_SCHEMA_VERSION,
+                aggregateType,
+                aggregateId,
+                aggregateVersion,
+                metadata,
+                event
+            );
+            String payload = objectMapper.writeValueAsString(envelope);
+            outboxRepository.save(new OutboxEntry(
+                envelope.eventId().toString(),
+                envelope.schemaVersion(),
+                envelope.aggregateVersion(),
                 aggregateType,
                 aggregateId,
                 eventType,
                 payload,
-                destination
+                ChannelNames.ORDER_EVENT_TOPIC
+            ));
+            logger.info(
+                "Published event to outbox: eventId={}, aggregateType={}, aggregateId={}, aggregateVersion={}, eventType={}",
+                envelope.eventId(),
+                aggregateType,
+                aggregateId,
+                aggregateVersion,
+                eventType
             );
-            
-            outboxRepository.save(outboxEntry);
-            
-            logger.info("Published event to outbox: aggregateType={}, aggregateId={}, eventType={}",
-                aggregateType, aggregateId, eventType);
-            
         } catch (JsonProcessingException e) {
-            logger.error("Failed to serialize event: {}", event, e);
+            outboxMetrics.recordPublishError();
+            logger.error("Failed to serialize eventType={}", eventType, e);
             throw new RuntimeException("Failed to publish event", e);
+        } catch (RuntimeException e) {
+            outboxMetrics.recordPublishError();
+            logger.error("Failed to insert outbox eventType={}", eventType, e);
+            throw e;
         }
     }
-    
-    /**
-     * Publishes a domain event for an Order aggregate.
-     * 
-     * @param orderId the order ID
-     * @param event the domain event to publish
-     * @param <T> the event type
-     */
+
     public <T> void publishOrderEvent(Long orderId, T event) {
         publish("Order", orderId.toString(), event);
+    }
+
+    public <T> void publishOrderEvent(Long orderId, long aggregateVersion, T event) {
+        publish("Order", orderId.toString(), aggregateVersion, DomainEventMetadata.empty(), event);
+    }
+
+    public <T> void publishOrderEvent(
+        Long orderId,
+        long aggregateVersion,
+        DomainEventMetadata metadata,
+        T event
+    ) {
+        publish("Order", orderId.toString(), aggregateVersion, metadata, event);
     }
 }

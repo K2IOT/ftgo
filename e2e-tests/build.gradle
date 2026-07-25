@@ -1,4 +1,4 @@
-description = 'Real-process verification for the Phase 02 core order flow'
+description = 'Real-process verification for distributed FTGO consistency'
 
 bootJar {
     enabled = false
@@ -6,4 +6,8 @@ bootJar {
 
 jar {
     enabled = true
+}
+
+dependencies {
+    testImplementation 'org.apache.kafka:kafka-clients'
 }

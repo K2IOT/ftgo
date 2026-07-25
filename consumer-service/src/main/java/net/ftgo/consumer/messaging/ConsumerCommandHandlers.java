@@ -5,6 +5,7 @@ import io.eventuate.tram.commands.consumer.CommandMessage;
 import io.eventuate.tram.messaging.common.Message;
 import io.eventuate.tram.sagas.participant.SagaCommandHandlersBuilder;
 import net.ftgo.common.channels.ChannelNames;
+import net.ftgo.common.messaging.IdempotentCommandExecutor;
 import net.ftgo.common.orderflow.commands.CommitConsumerCreditCommand;
 import net.ftgo.common.orderflow.commands.ReleaseConsumerCreditCommand;
 import net.ftgo.common.orderflow.commands.ReserveConsumerCreditCommand;
@@ -26,15 +27,20 @@ import static io.eventuate.tram.commands.consumer.CommandHandlerReplyBuilder.wit
 @Component
 public class ConsumerCommandHandlers {
 
+    private static final String CONSUMER_NAME = "consumer-service";
+
     private final ConsumerService consumerService;
     private final CreditReservationService creditReservationService;
+    private final IdempotentCommandExecutor idempotentCommandExecutor;
 
     public ConsumerCommandHandlers(
         ConsumerService consumerService,
-        CreditReservationService creditReservationService
+        CreditReservationService creditReservationService,
+        IdempotentCommandExecutor idempotentCommandExecutor
     ) {
         this.consumerService = consumerService;
         this.creditReservationService = creditReservationService;
+        this.idempotentCommandExecutor = idempotentCommandExecutor;
     }
 
     public CommandHandlers commandHandlers() {
@@ -47,20 +53,46 @@ public class ConsumerCommandHandlers {
             .build();
     }
 
-    private Message handleVerifyConsumer(CommandMessage<VerifyConsumerCommand> message) {
-        VerifyConsumerCommand command = message.getCommand();
-        try {
-            if (consumerService.verifyConsumerCredit(command.getConsumerId(), command.getOrderTotal())) {
-                return withSuccess(new ConsumerVerified(command.getConsumerId()));
-            }
-            return withFailure("INSUFFICIENT_CREDIT:Insufficient credit limit");
-        } catch (Exception e) {
-            return withFailure("CONSUMER_VERIFICATION_FAILED:" + e.getMessage());
-        }
+    public Message handleVerifyConsumer(CommandMessage<VerifyConsumerCommand> message) {
+        return idempotentCommandExecutor.execute(
+            CONSUMER_NAME,
+            message,
+            () -> verifyConsumerOnce(message.getCommand())
+        );
     }
 
-    private Message handleReserveCredit(CommandMessage<ReserveConsumerCreditCommand> message) {
-        ReserveConsumerCreditCommand command = message.getCommand();
+    public Message handleReserveCredit(CommandMessage<ReserveConsumerCreditCommand> message) {
+        return idempotentCommandExecutor.execute(
+            CONSUMER_NAME,
+            message,
+            () -> reserveCreditOnce(message.getCommand())
+        );
+    }
+
+    public Message handleCommitCredit(CommandMessage<CommitConsumerCreditCommand> message) {
+        return idempotentCommandExecutor.execute(
+            CONSUMER_NAME,
+            message,
+            () -> commitCreditOnce(message.getCommand())
+        );
+    }
+
+    public Message handleReleaseCredit(CommandMessage<ReleaseConsumerCreditCommand> message) {
+        return idempotentCommandExecutor.execute(
+            CONSUMER_NAME,
+            message,
+            () -> releaseCreditOnce(message.getCommand())
+        );
+    }
+
+    private Message verifyConsumerOnce(VerifyConsumerCommand command) {
+        if (consumerService.verifyConsumerCredit(command.getConsumerId(), command.getOrderTotal())) {
+            return withSuccess(new ConsumerVerified(command.getConsumerId()));
+        }
+        return withFailure("INSUFFICIENT_CREDIT:Insufficient credit limit");
+    }
+
+    private Message reserveCreditOnce(ReserveConsumerCreditCommand command) {
         try {
             CreditReservation reservation = creditReservationService.reserve(
                 command.getConsumerId(),
@@ -77,8 +109,7 @@ public class ConsumerCommandHandlers {
         }
     }
 
-    private Message handleCommitCredit(CommandMessage<CommitConsumerCreditCommand> message) {
-        CommitConsumerCreditCommand command = message.getCommand();
+    private Message commitCreditOnce(CommitConsumerCreditCommand command) {
         try {
             CreditReservation reservation = creditReservationService.commit(
                 command.getConsumerId(),
@@ -93,8 +124,7 @@ public class ConsumerCommandHandlers {
         }
     }
 
-    private Message handleReleaseCredit(CommandMessage<ReleaseConsumerCreditCommand> message) {
-        ReleaseConsumerCreditCommand command = message.getCommand();
+    private Message releaseCreditOnce(ReleaseConsumerCreditCommand command) {
         try {
             CreditReservation reservation = creditReservationService.release(
                 command.getConsumerId(),
