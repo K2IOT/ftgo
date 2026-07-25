@@ -20,6 +20,26 @@ services:
       retries: 40
       start_period: 20s
 
+  scylla:
+    image: scylladb/scylla:5.4
+    ports:
+      - "39042:9042"
+    command:
+      - --smp
+      - "1"
+      - --memory
+      - 768M
+      - --overprovisioned
+      - "1"
+      - --api-address
+      - 0.0.0.0
+    healthcheck:
+      test: ["CMD-SHELL", "cqlsh localhost 9042 -e 'DESCRIBE CLUSTER' >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 60
+      start_period: 40s
+
   zookeeper:
     image: confluentinc/cp-zookeeper:7.5.0
     environment:
