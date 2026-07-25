@@ -1,34 +1,46 @@
 package net.ftgo.orderhistory.domain;
 
+import org.springframework.data.cassandra.core.mapping.Column;
+
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Set;
 
-/** Shared columns for dedicated Scylla query tables. */
+/** Shared non-key columns for dedicated Scylla query tables. */
 public abstract class OrderHistoryQueryRow {
 
-    private Long consumerId;
-    private Long restaurantId;
-    private String status;
+    @Column("order_total")
     private BigDecimal orderTotal;
+
+    @Column("line_items")
     private List<LineItem> lineItems;
+
+    @Column("delivery_address")
     private String deliveryAddress;
+
+    @Column("delivery_time")
     private LocalDateTime deliveryTime;
+
+    @Column("delivery_status")
     private String deliveryStatus;
+
+    @Column("ticket_status")
     private String ticketStatus;
+
+    @Column("authorization_status")
     private String authorizationStatus;
-    private LocalDateTime creationDate;
+
+    @Column("updated_at")
     private LocalDateTime updatedAt;
+
+    @Column("keywords")
     private Set<String> keywords;
 
     protected OrderHistoryQueryRow() {
     }
 
     protected void copyFrom(OrderHistoryRecord record) {
-        consumerId = record.getConsumerId();
-        restaurantId = record.getRestaurantId();
-        status = record.getStatus();
         orderTotal = record.getOrderTotal();
         lineItems = record.getLineItems();
         deliveryAddress = record.getDeliveryAddress();
@@ -36,18 +48,25 @@ public abstract class OrderHistoryQueryRow {
         deliveryStatus = record.getDeliveryStatus();
         ticketStatus = record.getTicketStatus();
         authorizationStatus = record.getAuthorizationStatus();
-        creationDate = record.getCreationDate();
         updatedAt = record.getUpdatedAt();
         keywords = record.getKeywords();
     }
+
+    protected abstract Long consumerId();
+
+    protected abstract Long restaurantId();
+
+    protected abstract String status();
+
+    protected abstract LocalDateTime creationDate();
 
     public abstract String orderId();
 
     public OrderHistoryRecord toRecord() {
         OrderHistoryRecord record = new OrderHistoryRecord(orderId());
-        record.setConsumerId(consumerId);
-        record.setRestaurantId(restaurantId);
-        record.setStatus(status);
+        record.setConsumerId(consumerId());
+        record.setRestaurantId(restaurantId());
+        record.setStatus(status());
         record.setOrderTotal(orderTotal);
         record.setLineItems(lineItems);
         record.setDeliveryAddress(deliveryAddress);
@@ -55,18 +74,12 @@ public abstract class OrderHistoryQueryRow {
         record.setDeliveryStatus(deliveryStatus);
         record.setTicketStatus(ticketStatus);
         record.setAuthorizationStatus(authorizationStatus);
-        record.setCreationDate(creationDate);
+        record.setCreationDate(creationDate());
         record.setUpdatedAt(updatedAt);
         record.setKeywords(keywords);
         return record;
     }
 
-    public Long getConsumerId() { return consumerId; }
-    public void setConsumerId(Long consumerId) { this.consumerId = consumerId; }
-    public Long getRestaurantId() { return restaurantId; }
-    public void setRestaurantId(Long restaurantId) { this.restaurantId = restaurantId; }
-    public String getStatus() { return status; }
-    public void setStatus(String status) { this.status = status; }
     public BigDecimal getOrderTotal() { return orderTotal; }
     public void setOrderTotal(BigDecimal orderTotal) { this.orderTotal = orderTotal; }
     public List<LineItem> getLineItems() { return lineItems; }
@@ -81,8 +94,6 @@ public abstract class OrderHistoryQueryRow {
     public void setTicketStatus(String ticketStatus) { this.ticketStatus = ticketStatus; }
     public String getAuthorizationStatus() { return authorizationStatus; }
     public void setAuthorizationStatus(String authorizationStatus) { this.authorizationStatus = authorizationStatus; }
-    public LocalDateTime getCreationDate() { return creationDate; }
-    public void setCreationDate(LocalDateTime creationDate) { this.creationDate = creationDate; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
     public Set<String> getKeywords() { return keywords; }
