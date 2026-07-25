@@ -1,14 +1,17 @@
 package net.ftgo.kitchen.service;
 
-import net.ftgo.common.orderflow.events.TicketAcceptedEvent;
+import net.ftgo.common.orderflow.events.TicketAcceptanceRequestedEvent;
 import net.ftgo.common.orderflow.events.TicketRejectedEvent;
 import net.ftgo.kitchen.domain.Ticket;
+import net.ftgo.kitchen.domain.TicketState;
 import net.ftgo.kitchen.messaging.DomainEventPublisher;
 import net.ftgo.kitchen.messaging.TicketPreparingEvent;
 import net.ftgo.kitchen.messaging.TicketReadyEvent;
 import net.ftgo.kitchen.repository.TicketRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.UUID;
 
 /** Transaction boundary for kitchen ticket operations. */
 @Service
@@ -25,16 +28,20 @@ public class KitchenService {
     @Transactional
     public Ticket acceptTicket(Long ticketId) {
         Ticket ticket = requireForUpdate(ticketId);
-        if (ticket.accept()) {
+        String requestId = ticket.getState() == TicketState.ACCEPTANCE_PENDING_PAYMENT
+            ? ticket.getAcceptanceRequestId()
+            : UUID.randomUUID().toString();
+        if (ticket.requestAcceptance(requestId)) {
             ticketRepository.saveAndFlush(ticket);
             eventPublisher.publishTicketEvent(
                 ticket.getId(),
                 ticket.getVersion(),
-                new TicketAcceptedEvent(
-                    ticket.getDecisionEventId(),
+                new TicketAcceptanceRequestedEvent(
+                    requestId,
                     ticket.getId(),
                     ticket.getOrderId(),
-                    ticket.getDecisionAt()
+                    requestId,
+                    ticket.getAcceptanceRequestedAt()
                 )
             );
         }
@@ -63,7 +70,7 @@ public class KitchenService {
 
     @Transactional
     public Ticket markPreparing(Long ticketId) {
-        Ticket ticket = require(ticketId);
+        Ticket ticket = requireForUpdate(ticketId);
         ticket.preparing();
         ticketRepository.saveAndFlush(ticket);
         eventPublisher.publishTicketEvent(
@@ -76,7 +83,7 @@ public class KitchenService {
 
     @Transactional
     public Ticket markReady(Long ticketId) {
-        Ticket ticket = require(ticketId);
+        Ticket ticket = requireForUpdate(ticketId);
         ticket.readyForPickup();
         ticketRepository.saveAndFlush(ticket);
         eventPublisher.publishTicketEvent(
@@ -89,11 +96,6 @@ public class KitchenService {
 
     private Ticket requireForUpdate(Long ticketId) {
         return ticketRepository.findByIdForUpdate(ticketId)
-            .orElseThrow(() -> new IllegalArgumentException("Ticket " + ticketId + " not found"));
-    }
-
-    private Ticket require(Long ticketId) {
-        return ticketRepository.findById(ticketId)
             .orElseThrow(() -> new IllegalArgumentException("Ticket " + ticketId + " not found"));
     }
 }
