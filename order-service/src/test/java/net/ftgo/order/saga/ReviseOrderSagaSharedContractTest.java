@@ -4,6 +4,7 @@ import io.eventuate.tram.commands.common.Command;
 import io.eventuate.tram.commands.consumer.CommandHandlers;
 import io.eventuate.tram.commands.consumer.CommandWithDestination;
 import net.ftgo.common.channels.ChannelNames;
+import net.ftgo.common.messaging.IdempotentCommandExecutor;
 import net.ftgo.kitchen.messaging.DomainEventPublisher;
 import net.ftgo.kitchen.messaging.KitchenServiceCommandHandlers;
 import net.ftgo.kitchen.repository.TicketRepository;
@@ -35,7 +36,8 @@ class ReviseOrderSagaSharedContractTest {
 
         CommandHandlers kitchenHandlers = new KitchenServiceCommandHandlers(
             mock(TicketRepository.class),
-            mock(DomainEventPublisher.class)
+            mock(DomainEventPublisher.class),
+            mock(IdempotentCommandExecutor.class)
         ).commandHandlers();
 
         assertParticipantAccepts(commandSentBy(saga, "beginReviseTicket", data),
