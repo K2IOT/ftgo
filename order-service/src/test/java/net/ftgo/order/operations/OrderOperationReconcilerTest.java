@@ -19,6 +19,7 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -138,9 +139,9 @@ class OrderOperationReconcilerTest {
         Order order = mock(Order.class);
         when(order.getId()).thenReturn(101L);
         when(order.getState()).thenReturn(state);
-        when(order.getTicketId()).thenReturn(ticketId);
-        when(order.getAuthorizationId()).thenReturn(authorizationId);
-        when(order.getCreditReservationId()).thenReturn(creditReservationId);
+        lenient().when(order.getTicketId()).thenReturn(ticketId);
+        lenient().when(order.getAuthorizationId()).thenReturn(authorizationId);
+        lenient().when(order.getCreditReservationId()).thenReturn(creditReservationId);
         when(order.getUpdatedAt()).thenReturn(LocalDateTime.of(2026, 7, 25, 4, 0));
         return order;
     }
