@@ -43,6 +43,10 @@ public class Authorization {
     @Column(name = "request_id", nullable = false, unique = true)
     private String requestId;
 
+    @NotBlank
+    @Column(name = "provider_authorization_id", nullable = false, unique = true)
+    private String providerAuthorizationId;
+
     @NotNull
     @Embedded
     @AttributeOverrides({
@@ -69,6 +73,9 @@ public class Authorization {
 
     @Column(name = "refund_request_id", unique = true)
     private String refundRequestId;
+
+    @Column(name = "provider_void_id", unique = true)
+    private String providerVoidId;
 
     @Column(name = "void_reason")
     private String voidReason;
@@ -100,34 +107,59 @@ public class Authorization {
 
     public Authorization(Long accountId, String requestId, Money amount, AuthorizationStatus status) {
         validateAccountId(accountId);
-        initialize(null, requestId, amount, status);
+        initialize(null, requestId, legacyProviderAuthorizationId(requestId), amount, status);
         this.accountId = accountId;
     }
 
     public Authorization(String requestId, Money amount, AuthorizationStatus status) {
-        initialize(null, requestId, amount, status);
+        initialize(null, requestId, legacyProviderAuthorizationId(requestId), amount, status);
     }
 
     public Authorization(Long orderId, String requestId, Money amount) {
-        initialize(orderId, requestId, amount, AuthorizationStatus.AUTHORIZED);
+        initialize(orderId, requestId, legacyProviderAuthorizationId(requestId), amount,
+            AuthorizationStatus.AUTHORIZED);
+    }
+
+    public Authorization(
+        Long orderId,
+        String requestId,
+        Money amount,
+        String providerAuthorizationId
+    ) {
+        initialize(orderId, requestId, providerAuthorizationId, amount, AuthorizationStatus.AUTHORIZED);
     }
 
     public Authorization(Long accountId, Long orderId, String requestId,
                          Money amount, AuthorizationStatus status) {
         validateAccountId(accountId);
-        initialize(orderId, requestId, amount, status);
+        initialize(orderId, requestId, legacyProviderAuthorizationId(requestId), amount, status);
         this.accountId = accountId;
     }
 
-    private void initialize(Long orderId, String requestId, Money amount, AuthorizationStatus status) {
+    private void initialize(
+        Long orderId,
+        String requestId,
+        String providerAuthorizationId,
+        Money amount,
+        AuthorizationStatus status
+    ) {
         validateRequestId(requestId);
+        validateProviderReference(providerAuthorizationId, "providerAuthorizationId");
         validateAmount(amount);
         if (status == null) throw new IllegalArgumentException("Status cannot be null");
         this.orderId = orderId;
         this.requestId = requestId;
+        this.providerAuthorizationId = providerAuthorizationId;
         this.amount = amount;
         this.status = status;
         this.createdAt = LocalDateTime.now();
+    }
+
+    private static String legacyProviderAuthorizationId(String requestId) {
+        if (requestId == null || requestId.isBlank()) {
+            throw new IllegalArgumentException("Request ID cannot be null or blank");
+        }
+        return "pa_legacy_" + requestId;
     }
 
     private void validateAccountId(Long value) {
@@ -137,6 +169,12 @@ public class Authorization {
     private void validateRequestId(String value) {
         if (value == null || value.isBlank()) {
             throw new IllegalArgumentException("Request ID cannot be null or blank");
+        }
+    }
+
+    private void validateProviderReference(String value, String field) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(field + " cannot be null or blank");
         }
     }
 
@@ -168,6 +206,12 @@ public class Authorization {
 
     public boolean completeCapture(String operationRequestId, String providerCaptureId) {
         PaymentCapture capture = requireCapture(operationRequestId);
+        if (status == AuthorizationStatus.CAPTURED) {
+            return capture.complete(providerCaptureId);
+        }
+        if (status != AuthorizationStatus.AUTHORIZED && status != AuthorizationStatus.APPROVED) {
+            throw new IllegalStateException("Cannot complete capture in state " + status);
+        }
         boolean changed = capture.complete(providerCaptureId);
         if (changed) {
             status = AuthorizationStatus.CAPTURED;
@@ -206,6 +250,9 @@ public class Authorization {
     }
 
     public boolean completeRefund(String operationRequestId, String providerRefundId) {
+        if (status != AuthorizationStatus.CAPTURED) {
+            throw new IllegalStateException("Cannot complete refund in state " + status);
+        }
         PaymentRefund refund = requireRefund(operationRequestId);
         boolean changed = refund.complete(providerRefundId);
         if (changed) {
@@ -237,6 +284,13 @@ public class Authorization {
 
     public Money getRefundableAmount() {
         return amount.subtract(getReservedRefundAmount());
+    }
+
+    public PaymentCapture getSuccessfulCapture() {
+        return paymentCaptures.stream()
+            .filter(capture -> capture.getStatus() == FinancialOperationStatus.SUCCEEDED)
+            .findFirst()
+            .orElseThrow(() -> new IllegalStateException("Authorization has no successful capture"));
     }
 
     private PaymentCapture findCaptureByRequestId(String operationRequestId) {
@@ -286,17 +340,32 @@ public class Authorization {
     }
 
     public boolean voidAuthorization(String reason, String operationRequestId) {
+        return voidAuthorization(reason, operationRequestId, null);
+    }
+
+    public boolean voidAuthorization(
+        String reason,
+        String operationRequestId,
+        String providerVoidId
+    ) {
         validateRequestId(operationRequestId);
         if (status == AuthorizationStatus.VOIDED) {
-            if (Objects.equals(voidRequestId, operationRequestId)) return false;
+            if (Objects.equals(voidRequestId, operationRequestId)
+                && (providerVoidId == null || Objects.equals(this.providerVoidId, providerVoidId))) {
+                return false;
+            }
             throw new IllegalStateException("Authorization is already voided with another request");
         }
         if (status != AuthorizationStatus.AUTHORIZED && status != AuthorizationStatus.APPROVED) {
             throw new IllegalStateException("Cannot void authorization in state " + status);
         }
+        if (providerVoidId != null) {
+            validateProviderReference(providerVoidId, "providerVoidId");
+        }
         status = AuthorizationStatus.VOIDED;
         voidReason = reason;
         voidRequestId = operationRequestId;
+        this.providerVoidId = providerVoidId;
         voidedAt = LocalDateTime.now();
         reversedAt = voidedAt;
         return true;
@@ -358,6 +427,7 @@ public class Authorization {
     public Long getAccountId() { return accountId; }
     public Long getOrderId() { return orderId; }
     public String getRequestId() { return requestId; }
+    public String getProviderAuthorizationId() { return providerAuthorizationId; }
     public Money getAmount() { return amount; }
     public AuthorizationStatus getStatus() { return status; }
     public List<PaymentCapture> getPaymentCaptures() { return List.copyOf(paymentCaptures); }
@@ -365,6 +435,7 @@ public class Authorization {
     public String getCaptureRequestId() { return captureRequestId; }
     public String getVoidRequestId() { return voidRequestId; }
     public String getRefundRequestId() { return refundRequestId; }
+    public String getProviderVoidId() { return providerVoidId; }
     public String getVoidReason() { return voidReason; }
     public String getRefundReason() { return refundReason; }
     public LocalDateTime getCreatedAt() { return createdAt; }
@@ -378,5 +449,8 @@ public class Authorization {
     protected void onCreate() {
         if (createdAt == null) createdAt = LocalDateTime.now();
         if (version == null) version = 0L;
+        if (providerAuthorizationId == null || providerAuthorizationId.isBlank()) {
+            providerAuthorizationId = legacyProviderAuthorizationId(requestId);
+        }
     }
 }
