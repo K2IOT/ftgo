@@ -167,8 +167,6 @@ public class AccountingServiceCommandHandlers {
                 return withFailure(new CardAuthorizationDenied(command.getOrderId(), e.getMessage()));
             }
             return withFailure(e.getMessage());
-        } catch (Exception e) {
-            return withFailure("Internal error authorizing card");
         }
     }
 
