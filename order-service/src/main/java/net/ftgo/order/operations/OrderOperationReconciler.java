@@ -9,7 +9,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -20,6 +19,7 @@ import java.util.Optional;
 public class OrderOperationReconciler {
 
     private static final Logger logger = LoggerFactory.getLogger(OrderOperationReconciler.class);
+    private static final int MAX_DETAILS_LENGTH = 1000;
 
     public enum Classification {
         RESUMABLE,
@@ -41,6 +41,7 @@ public class OrderOperationReconciler {
     private final OrderRepairActionExecutor actionExecutor;
     private final MeterRegistry meterRegistry;
     private final Clock clock;
+    private final OrderOperationTransactionRunner transactionRunner;
 
     @Autowired
     public OrderOperationReconciler(
@@ -48,7 +49,8 @@ public class OrderOperationReconciler {
         OrderOperationRepository operationRepository,
         SagaInstanceInspector sagaInspector,
         OrderRepairActionExecutor actionExecutor,
-        MeterRegistry meterRegistry
+        MeterRegistry meterRegistry,
+        OrderOperationTransactionRunner transactionRunner
     ) {
         this(
             orderRepository,
@@ -56,7 +58,8 @@ public class OrderOperationReconciler {
             sagaInspector,
             actionExecutor,
             meterRegistry,
-            Clock.systemUTC()
+            Clock.systemUTC(),
+            transactionRunner
         );
     }
 
@@ -68,12 +71,33 @@ public class OrderOperationReconciler {
         MeterRegistry meterRegistry,
         Clock clock
     ) {
+        this(
+            orderRepository,
+            operationRepository,
+            sagaInspector,
+            actionExecutor,
+            meterRegistry,
+            clock,
+            OrderOperationTransactionRunner.direct()
+        );
+    }
+
+    public OrderOperationReconciler(
+        OrderRepository orderRepository,
+        OrderOperationRepository operationRepository,
+        SagaInstanceInspector sagaInspector,
+        OrderRepairActionExecutor actionExecutor,
+        MeterRegistry meterRegistry,
+        Clock clock,
+        OrderOperationTransactionRunner transactionRunner
+    ) {
         this.orderRepository = orderRepository;
         this.operationRepository = operationRepository;
         this.sagaInspector = sagaInspector;
         this.actionExecutor = actionExecutor;
         this.meterRegistry = meterRegistry;
         this.clock = clock;
+        this.transactionRunner = transactionRunner;
     }
 
     public Assessment classify(Order order) {
@@ -150,7 +174,6 @@ public class OrderOperationReconciler {
         );
     }
 
-    @Transactional
     public OrderOperation repair(
         Long orderId,
         RepairAction action,
@@ -160,9 +183,46 @@ public class OrderOperationReconciler {
         requireText(reason, "reason");
         requireText(idempotencyKey, "idempotencyKey");
 
+        PreparedRepair prepared;
+        try {
+            prepared = transactionRunner.required(
+                () -> prepareRepair(orderId, action, reason, idempotencyKey)
+            );
+        } catch (DataIntegrityViolationException race) {
+            return operationRepository.findByIdempotencyKey(idempotencyKey)
+                .orElseThrow(() -> race);
+        }
+
+        if (!prepared.execute()) {
+            return prepared.operation();
+        }
+
+        try {
+            return transactionRunner.required(
+                () -> executeRepair(prepared.operation().getId(), orderId, action)
+            );
+        } catch (RuntimeException executionFailure) {
+            try {
+                transactionRunner.requiresNew(() -> {
+                    recordFailure(prepared.operation().getId(), action, executionFailure);
+                    return null;
+                });
+            } catch (RuntimeException auditFailure) {
+                executionFailure.addSuppressed(auditFailure);
+            }
+            throw executionFailure;
+        }
+    }
+
+    private PreparedRepair prepareRepair(
+        Long orderId,
+        RepairAction action,
+        String reason,
+        String idempotencyKey
+    ) {
         Optional<OrderOperation> previous = operationRepository.findByIdempotencyKey(idempotencyKey);
         if (previous.isPresent()) {
-            return previous.get();
+            return new PreparedRepair(previous.get(), false);
         }
 
         Order order = orderRepository.findByIdWithLock(orderId)
@@ -181,55 +241,93 @@ public class OrderOperationReconciler {
             action.name(),
             assessment.explanation()
         );
-        try {
-            operationRepository.save(operation);
-        } catch (DataIntegrityViolationException race) {
-            return operationRepository.findByIdempotencyKey(idempotencyKey)
-                .orElseThrow(() -> race);
+        return new PreparedRepair(operationRepository.saveAndFlush(operation), true);
+    }
+
+    private OrderOperation executeRepair(Long operationId, Long orderId, RepairAction action) {
+        OrderOperation operation = operationRepository.findById(operationId)
+            .orElseThrow(() -> new IllegalStateException(
+                "Order repair operation not found: " + operationId
+            ));
+        if (operation.getStatus() != OrderOperationStatus.PENDING) {
+            return operation;
         }
 
-        try {
-            switch (action) {
-                case RESTART -> {
-                    actionExecutor.restart(order, assessment.operationType());
-                    operation.markExecuted("Saga restart request was persisted");
-                }
-                case COMPENSATE -> {
-                    actionExecutor.compensate(order, assessment.operationType());
-                    operation.markExecuted("Compensation saga request was persisted");
-                }
-                case MARK_SUCCESS -> operation.markCompleted(
-                    "Durable order state already represents the completed outcome"
-                );
-                case FLAG_MANUAL -> operation.markManualReview(
-                    "Operator flagged operation for manual review"
-                );
+        Order order = orderRepository.findByIdWithLock(orderId)
+            .orElseThrow(() -> new IllegalStateException("Order not found: " + orderId));
+        Assessment assessment = classify(order);
+        validateAction(assessment, action);
+        operation.recordAssessment(
+            assessment.classification().name(),
+            action.name(),
+            assessment.explanation()
+        );
+
+        switch (action) {
+            case RESTART -> {
+                actionExecutor.restart(order, assessment.operationType());
+                operation.markExecuted("Saga restart request was persisted");
             }
-            operationRepository.save(operation);
-            meterRegistry.counter(
-                "ftgo_order_reconciliation_action_total",
-                "action", action.name(),
-                "classification", assessment.classification().name()
-            ).increment();
-            logger.info(
-                "Order repair executed: orderId={}, action={}, classification={}, idempotencyKey={}, reason={}",
-                orderId,
-                action,
-                assessment.classification(),
-                idempotencyKey,
-                reason
+            case COMPENSATE -> {
+                actionExecutor.compensate(order, assessment.operationType());
+                operation.markExecuted("Compensation saga request was persisted");
+            }
+            case MARK_SUCCESS -> operation.markCompleted(
+                "Durable order state already represents the completed outcome"
             );
-            return operation;
-        } catch (RuntimeException e) {
-            operation.markFailed(e.getClass().getSimpleName() + ": " + e.getMessage());
-            operationRepository.save(operation);
-            meterRegistry.counter(
-                "ftgo_order_reconciliation_failure_total",
-                "action", action.name(),
-                "exception", e.getClass().getSimpleName()
-            ).increment();
-            throw e;
+            case FLAG_MANUAL -> operation.markManualReview(
+                "Operator flagged operation for manual review"
+            );
         }
+        operationRepository.save(operation);
+        meterRegistry.counter(
+            "ftgo_order_reconciliation_action_total",
+            "action", action.name(),
+            "classification", assessment.classification().name()
+        ).increment();
+        logger.info(
+            "Order repair executed: orderId={}, action={}, classification={}, idempotencyKey={}, reason={}",
+            orderId,
+            action,
+            assessment.classification(),
+            operation.getIdempotencyKey(),
+            operation.getReason()
+        );
+        return operation;
+    }
+
+    private void recordFailure(
+        Long operationId,
+        RepairAction action,
+        RuntimeException failure
+    ) {
+        OrderOperation operation = operationRepository.findById(operationId)
+            .orElseThrow(() -> new IllegalStateException(
+                "Order repair operation not found while recording failure: " + operationId
+            ));
+        operation.markFailed(failureDetails(failure));
+        operationRepository.saveAndFlush(operation);
+        meterRegistry.counter(
+            "ftgo_order_reconciliation_failure_total",
+            "action", action.name(),
+            "exception", failure.getClass().getSimpleName()
+        ).increment();
+        logger.error(
+            "Order repair failed: orderId={}, action={}, idempotencyKey={}",
+            operation.getOrderId(),
+            action,
+            operation.getIdempotencyKey(),
+            failure
+        );
+    }
+
+    private String failureDetails(RuntimeException failure) {
+        String message = failure.getMessage();
+        String details = failure.getClass().getSimpleName()
+            + (message == null || message.isBlank() ? "" : ": " + message);
+        return details.length() <= MAX_DETAILS_LENGTH
+            ? details
+            : details.substring(0, MAX_DETAILS_LENGTH);
     }
 
     private void validateAction(Assessment assessment, RepairAction action) {
@@ -268,6 +366,9 @@ public class OrderOperationReconciler {
         if (value == null || value.isBlank()) {
             throw new IllegalArgumentException(name + " is required");
         }
+    }
+
+    private record PreparedRepair(OrderOperation operation, boolean execute) {
     }
 
     public record Assessment(
