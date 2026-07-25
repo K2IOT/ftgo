@@ -160,6 +160,6 @@ public class OrderHistoryEventHandlers {
     }
 
     private String legacyId(String key, String eventType, String payload) {
-        return EventIdentityExtractor.legacyEventId(key, eventType, payload).toString();
+        return String.valueOf(key) + "-" + String.valueOf(eventType);
     }
 }
