@@ -205,8 +205,18 @@ public class Order {
         throw new IllegalStateException("Pickup address snapshot is immutable");
     }
 
+    /**
+     * Legacy Phase 02 approval represented an authorized payment, not a capture.
+     * Test/compatibility orders without an authorization reference are financially
+     * a no-op and therefore start in the terminal VOIDED state.
+     */
     public void approve() {
         requireState(OrderState.APPROVAL_PENDING, "approve");
+        if (paymentState == null) {
+            paymentState = authorizationId == null
+                ? OrderPaymentState.VOIDED
+                : OrderPaymentState.AUTHORIZED;
+        }
         state = OrderState.APPROVED;
         touch();
     }
@@ -369,6 +379,12 @@ public class Order {
     }
 
     public void beginCancel() {
+        if (state != OrderState.APPROVED
+            && state != OrderState.AWAITING_RESTAURANT_ACCEPTANCE) {
+            throw new IllegalStateException(
+                "Cannot cancel order in state " + state
+                    + ". Expected APPROVED or AWAITING_RESTAURANT_ACCEPTANCE.");
+        }
         if (paymentState == null
             || paymentState == OrderPaymentState.MANUAL_REVIEW
             || paymentState == OrderPaymentState.CAPTURE_PENDING
@@ -376,12 +392,6 @@ public class Order {
             || paymentState == OrderPaymentState.FAILED) {
             throw new IllegalStateException(
                 "Cancellation requires a deterministic financial state, found " + paymentState);
-        }
-        if (state != OrderState.APPROVED
-            && state != OrderState.AWAITING_RESTAURANT_ACCEPTANCE) {
-            throw new IllegalStateException(
-                "Cannot cancel order in state " + state
-                    + ". Expected APPROVED or AWAITING_RESTAURANT_ACCEPTANCE.");
         }
         state = OrderState.CANCEL_PENDING;
         touch();
