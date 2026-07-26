@@ -173,7 +173,7 @@ class PaymentSettlementTest {
         String eventId = "evt-" + UUID.randomUUID();
         ObjectNode payload = JSON.createObjectNode();
         payload.put("eventId", eventId);
-        payload.put("type", "CAPTURED");
+        payload.put("type", "PAYMENT_CAPTURED");
         payload.put("providerAuthorizationId", providerAuthorizationId);
         payload.put("providerCaptureId", "pc-webhook-" + orderId);
         payload.set("amount", money(fixture.price()));
@@ -216,7 +216,7 @@ class PaymentSettlementTest {
         post(ACCOUNTING_URL + "/admin/payments/provider-sandbox/capture", mismatch);
         Awaitility.await().atMost(30, TimeUnit.SECONDS).untilAsserted(() ->
             assertThat(count("ftgo_accounting",
-                "select count(*) from payment_reconciliation_cases where authorization_id=(select id from authorizations where order_id=?) and type='AMOUNT_MISMATCH'",
+                "select count(*) from payment_reconciliation_cases where authorization_id=(select id from authorizations where order_id=?) and case_type='AMOUNT_MISMATCH'",
                 mismatchOrderId)).isEqualTo(1L));
     }
 
