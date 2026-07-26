@@ -4,6 +4,7 @@ import net.ftgo.common.Money;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class ConfigurablePaymentProviderLedgerTest {
 
@@ -58,5 +59,29 @@ class ConfigurablePaymentProviderLedgerTest {
         assertThat(provider.getOperationCount("void")).isEqualTo(1L);
         assertThat(provider.getSettlement(providerAuthorizationId).status())
             .isEqualTo(PaymentProviderSettlementStatus.VOIDED);
+    }
+
+    @Test
+    void transientCaptureFailureOccursOnceAndSuccessfulRetryCountsOnce() {
+        ConfigurablePaymentAuthorizationGateway provider =
+            new ConfigurablePaymentAuthorizationGateway("");
+        Money amount = new Money("25.00");
+
+        assertThatThrownBy(() -> provider.capture(
+            "pa_capture_error_e2e",
+            amount,
+            "capture-retry-1"
+        )).isInstanceOf(RetryablePaymentProviderException.class);
+
+        PaymentProviderResult recovered = provider.capture(
+            "pa_capture_error_e2e",
+            amount,
+            "capture-retry-1"
+        );
+
+        assertThat(recovered.successful()).isTrue();
+        assertThat(provider.getOperationCount("capture")).isEqualTo(1L);
+        assertThat(provider.getSettlement("pa_capture_error_e2e").status())
+            .isEqualTo(PaymentProviderSettlementStatus.CAPTURED);
     }
 }
