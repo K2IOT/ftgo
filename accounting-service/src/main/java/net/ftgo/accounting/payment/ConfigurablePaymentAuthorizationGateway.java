@@ -11,6 +11,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
@@ -37,6 +38,7 @@ public class ConfigurablePaymentAuthorizationGateway implements PaymentProvider 
     private final Map<String, PaymentProviderResult> voidsByRequest = new HashMap<>();
     private final Map<String, PaymentProviderResult> refundsByRequest = new HashMap<>();
     private final Map<String, Long> operationCounts = new HashMap<>();
+    private final Set<String> transientCaptureFailures = new HashSet<>();
 
     public ConfigurablePaymentAuthorizationGateway(
         @Value("${ftgo.accounting.declined-payment-tokens:}") String declinedPaymentTokens
@@ -104,7 +106,11 @@ public class ConfigurablePaymentAuthorizationGateway implements PaymentProvider 
         if (replay != null) {
             return replay;
         }
-        if (providerAuthorizationId.startsWith("pa_capture_error_")) {
+        if (providerAuthorizationId.startsWith("pa_capture_error_always_")) {
+            throw new RetryablePaymentProviderException("Sandbox capture provider unavailable");
+        }
+        if (providerAuthorizationId.startsWith("pa_capture_error_")
+            && transientCaptureFailures.add(requestId)) {
             throw new RetryablePaymentProviderException("Sandbox capture provider unavailable");
         }
 
@@ -219,6 +225,7 @@ public class ConfigurablePaymentAuthorizationGateway implements PaymentProvider 
         voidsByRequest.clear();
         refundsByRequest.clear();
         operationCounts.clear();
+        transientCaptureFailures.clear();
     }
 
     private void increment(String operation) {
