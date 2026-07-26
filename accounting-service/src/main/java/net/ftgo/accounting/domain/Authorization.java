@@ -2,14 +2,18 @@ package net.ftgo.accounting.domain;
 
 import jakarta.persistence.AttributeOverride;
 import jakarta.persistence.AttributeOverrides;
+import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Embedded;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.OneToMany;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
@@ -18,6 +22,8 @@ import jakarta.validation.constraints.NotNull;
 import net.ftgo.common.Money;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 
 @Entity
@@ -64,6 +70,14 @@ public class Authorization {
 
     @Column(name = "refund_reason")
     private String refundReason;
+
+    @Embedded
+    @AttributeOverride(name = "amount", column = @Column(name = "refunded_amount", nullable = false, precision = 19, scale = 2))
+    private Money refundedAmount = Money.ZERO;
+
+    @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    @JoinColumn(name = "authorization_id", nullable = false)
+    private List<PaymentRefund> refunds = new ArrayList<>();
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -117,6 +131,7 @@ public class Authorization {
         this.amount = amount;
         this.status = status;
         this.createdAt = LocalDateTime.now();
+        this.refundedAmount = Money.ZERO;
     }
 
     private void validateAccountId(Long value) {
@@ -169,20 +184,36 @@ public class Authorization {
 
     public boolean refund(Money refundAmount, String reason, String operationRequestId) {
         validateRequestId(operationRequestId);
-        if (status == AuthorizationStatus.REFUNDED) {
-            if (Objects.equals(refundRequestId, operationRequestId)) return false;
-            throw new IllegalStateException("Payment is already refunded with another request");
+        validateAmount(refundAmount);
+
+        PaymentRefund existing = refunds.stream()
+            .filter(refund -> refund.getRequestId().equals(operationRequestId))
+            .findFirst()
+            .orElse(null);
+        if (existing != null) {
+            if (!existing.matches(refundAmount)) {
+                throw new IllegalArgumentException("Refund request ID was reused with another amount");
+            }
+            return false;
         }
-        if (status != AuthorizationStatus.CAPTURED) {
+
+        if (status != AuthorizationStatus.CAPTURED && status != AuthorizationStatus.PARTIALLY_REFUNDED) {
             throw new IllegalStateException("Cannot refund authorization in state " + status);
         }
-        if (!amount.equals(refundAmount)) {
-            throw new IllegalArgumentException("Refund must equal the full authorization amount");
+
+        Money nextRefundedAmount = refundedAmount.add(refundAmount);
+        if (nextRefundedAmount.isGreaterThan(amount)) {
+            throw new IllegalArgumentException("Refund total exceeds captured amount");
         }
-        status = AuthorizationStatus.REFUNDED;
+
+        refunds.add(new PaymentRefund(operationRequestId, refundAmount, reason, null));
+        refundedAmount = nextRefundedAmount;
         refundReason = reason;
         refundRequestId = operationRequestId;
         refundedAt = LocalDateTime.now();
+        status = refundedAmount.equals(amount)
+            ? AuthorizationStatus.REFUNDED
+            : AuthorizationStatus.PARTIALLY_REFUNDED;
         return true;
     }
 
@@ -194,7 +225,9 @@ public class Authorization {
         if (status == AuthorizationStatus.DENIED) {
             throw new IllegalStateException("Cannot reverse a denied authorization");
         }
-        if (status == AuthorizationStatus.CAPTURED || status == AuthorizationStatus.REFUNDED) {
+        if (status == AuthorizationStatus.CAPTURED
+            || status == AuthorizationStatus.PARTIALLY_REFUNDED
+            || status == AuthorizationStatus.REFUNDED) {
             throw new IllegalStateException("Captured payment requires refund");
         }
         status = status == AuthorizationStatus.APPROVED
@@ -229,6 +262,9 @@ public class Authorization {
     public String getRefundRequestId() { return refundRequestId; }
     public String getVoidReason() { return voidReason; }
     public String getRefundReason() { return refundReason; }
+    public Money getRefundedAmount() { return refundedAmount == null ? Money.ZERO : refundedAmount; }
+    public Money getRefundableAmount() { return amount.subtract(getRefundedAmount()); }
+    public List<PaymentRefund> getRefunds() { return List.copyOf(refunds); }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public LocalDateTime getCapturedAt() { return capturedAt; }
     public LocalDateTime getVoidedAt() { return voidedAt; }
@@ -240,5 +276,6 @@ public class Authorization {
     protected void onCreate() {
         if (createdAt == null) createdAt = LocalDateTime.now();
         if (version == null) version = 0L;
+        if (refundedAmount == null) refundedAmount = Money.ZERO;
     }
 }
