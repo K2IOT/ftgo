@@ -28,6 +28,9 @@ public class KitchenService {
     @Transactional
     public Ticket acceptTicket(Long ticketId) {
         Ticket ticket = requireForUpdate(ticketId);
+        if (ticket.getState() == TicketState.ACCEPTED) {
+            return ticket;
+        }
         String requestId = ticket.getState() == TicketState.ACCEPTANCE_PENDING_PAYMENT
             ? ticket.getAcceptanceRequestId()
             : UUID.randomUUID().toString();
