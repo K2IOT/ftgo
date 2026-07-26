@@ -2,6 +2,7 @@ package net.ftgo.order.domain;
 
 import net.ftgo.common.Money;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -77,6 +78,7 @@ class OrderRestaurantDecisionTest {
 
     private Order awaitingOrder() {
         Order order = newOrder();
+        ReflectionTestUtils.setField(order, "id", 101L);
         order.awaitRestaurantAcceptance(
             401L,
             501L,
