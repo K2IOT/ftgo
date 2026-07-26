@@ -15,11 +15,17 @@ ALTER TABLE orders
     ADD COLUMN capture_id BIGINT NULL AFTER payment_operation_request_id,
     ADD COLUMN payment_failure_code VARCHAR(100) NULL AFTER capture_id;
 
+-- Phase 02 orders only authorized funds; capture did not exist before this migration.
+-- Preserve that fact so cancellation voids legacy authorizations instead of attempting
+-- a refund with a capture reference that can never exist. Already-cancelled legacy
+-- orders are terminal and therefore safely represented as VOIDED.
 UPDATE orders
 SET payment_state = CASE
-    WHEN state IN ('APPROVED', 'CANCEL_PENDING', 'CANCELLED', 'REVISION_PENDING')
-        THEN 'CAPTURED'
+    WHEN state = 'CANCELLED' THEN 'VOIDED'
     WHEN state IN (
+        'APPROVED',
+        'CANCEL_PENDING',
+        'REVISION_PENDING',
         'AWAITING_RESTAURANT_ACCEPTANCE',
         'CONFIRMATION_PENDING',
         'REJECTION_PENDING'
