@@ -27,89 +27,63 @@
 - [x] Poison events cannot block a partition indefinitely.
 - [x] Events are not marked processed before projection mutation commits.
 
-## Task 1: Versioned Domain Event Envelope
+## Implementation Evidence
 
-Implemented:
+### Task 1 — Versioned Domain Event Envelope
 
-- `DomainEventEnvelope`, metadata and trace context.
-- Stable event UUID, schema version, aggregate identity/version, correlation and causation metadata.
-- Debezium event-router ID mapping uses `event_id` while aggregate ID remains the Kafka key.
-- Serialization and outbox-routing contract coverage.
+- `DomainEventEnvelope`, metadata and trace context are implemented.
+- Stable event UUID, schema version, aggregate identity/version, correlation and causation metadata are persisted.
+- Debezium event-router ID mapping uses `event_id`; aggregate ID remains the Kafka partition key.
+- Serialization and outbox-routing contracts are covered by tests.
 
-Verification gate: `Phase 03 Distributed Consistency`.
+### Task 2 — Idempotent Saga Command Results
 
-## Task 2: Idempotent Saga Command Results
-
-Implemented:
-
-- Shared `IdempotentCommandExecutor` and processed-command result persistence.
+- Shared `IdempotentCommandExecutor` and processed-command persistence are implemented.
 - Consumer, Kitchen and Accounting participant handlers replay original business replies.
-- Domain mutation and cached result share one local transaction.
-- Infrastructure/outbox failures propagate and are not cached as business replies.
+- Domain mutation and cached result commit in one local transaction.
+- Infrastructure and outbox failures propagate instead of being cached as business outcomes.
 
-Verification gates: module diagnostics, full Gradle verification and distributed-failure E2E.
+### Task 3 — Event Identity and Transaction Semantics
 
-## Task 3: Event Identity and Transaction Semantics
-
-Implemented:
-
-- Event ID extracted from envelope/header rather than aggregate key.
+- Event identity comes from the envelope/header rather than aggregate key.
 - Same-type events for the same aggregate are processed independently.
 - Duplicate event IDs are skipped idempotently.
-- Projection processing state supports recoverable application semantics.
+- Projection processing states support recoverable application semantics.
 
-Verification gates: Delivery and Order History consistency tests.
+### Task 4 — Bounded Retry and Dead Letters
 
-## Task 4: Bounded Retry and Dead Letters
+- Finite retry schedule is `1s → 5s → 30s`.
+- Terminal records route to `.DLT` with original event and failure metadata.
+- Poison messages cannot permanently block later valid records.
+- Retry/DLT metrics do not expose raw payload or PII labels.
 
-Implemented:
+### Task 5 — Out-of-Order Order History Recovery
 
-- Finite retry schedule `1s → 5s → 30s`.
-- Terminal `.DLT` routing with original event/failure metadata.
-- Poison messages do not permanently block later valid records.
-- Retry/DLT metrics avoid raw payload and PII labels.
+- Pending events are partitioned by order and reconciled in aggregate-version order.
+- Successful prerequisite creation performs a bounded synchronous drain.
+- Scheduled reconciliation handles remaining rows.
+- Events move to projection DLT after 20 attempts or 24 hours.
 
-Verification gate: distributed-failure E2E.
+### Task 6 — Scylla Access Patterns and Paging
 
-## Task 5: Out-of-Order Order History Recovery
+- Dedicated consumer, consumer+status and consumer+restaurant query tables exist.
+- Tables use monthly partition buckets.
+- Filtering is server-side through dedicated access patterns.
+- Continuation tokens come from actual driver paging state.
+- Cassandra mappings use explicit snake_case columns without duplicate composite-key mappings.
 
-Implemented:
+### Task 7 — Saga and Outbox Reconciliation
 
-- Pending-event storage partitioned by order.
-- Aggregate-version ordered reconciliation.
-- Synchronous bounded drain after prerequisite creation plus scheduled recovery.
-- Terminal projection DLT after 20 attempts or 24 hours.
-
-Verification gate: `Phase 03 Order History Consistency`.
-
-## Task 6: Scylla Access Patterns and Paging
-
-Implemented:
-
-- Consumer, consumer+status and consumer+restaurant access-pattern tables.
-- Monthly partition buckets.
-- Server-side filtering through dedicated tables.
-- Opaque continuation tokens derived from actual driver paging state.
-- Explicit snake_case Cassandra mappings without duplicate composite-key fields.
-
-Verification gate: `Phase 03 Order History Consistency`.
-
-## Task 7: Saga and Outbox Reconciliation
-
-Implemented:
-
-- Stuck-saga monitoring with configurable thresholds.
-- Persistent repair operations and idempotent action keys.
-- Repair execution split into transaction stages.
-- Failed repair audit rows persist with `REQUIRES_NEW`.
+- Stuck-saga monitoring uses configurable thresholds.
+- Repair operations are persistent and action keys are idempotent.
+- Repair execution is split into explicit transaction stages.
+- Failed repair audit rows survive rollback using `REQUIRES_NEW`.
 - Ambiguous financial states route to manual review.
-- Outbox backlog/age/error metrics.
+- Outbox backlog, age and publish-error metrics are exposed.
 
-Verification gate: `Phase 03 Operations Reconciliation`.
+### Task 8 — Distributed Failure E2E
 
-## Task 8: Distributed Failure E2E
-
-Implemented scenarios:
+Covered scenarios:
 
 1. Participant commits and reply is dropped; retry returns the original result.
 2. Service restarts after durable mutation.
@@ -119,13 +93,13 @@ Implemented scenarios:
 6. Poison event reaches DLT without blocking a valid event.
 7. Debezium pause/resume eventually delivers to an idempotent consumer.
 
-The workflow executes two clean-state cycles.
+The workflow runs two clean-state cycles.
 
 ## Final Verification
 
 Original Phase 3 feature head `8daa395d0db292a2f1c3bafe773a0c0245b308bd` passed the complete required matrix before merge through PR #15.
 
-Phase 3 was re-verified on Phase 02B head `842f66e4b50ae3197c0dd674a470c71b153966f8` after later Accounting, Kitchen and Scylla changes:
+Phase 3 was re-verified on later Payment Settlement head `842f66e4b50ae3197c0dd674a470c71b153966f8` after Accounting, Kitchen and Scylla changes:
 
 - [x] Phase 01 Verification — run #804.
 - [x] Phase 01 Module Diagnostics — run #646.
@@ -138,6 +112,8 @@ Phase 3 was re-verified on Phase 02B head `842f66e4b50ae3197c0dd674a470c71b15396
 - [x] Phase 03 Order History Consistency — run #239.
 - [x] Phase 03 Operations Reconciliation — run #196.
 - [x] Phase 03 Distributed Failure E2E — run #161, two clean-state cycles.
+
+Documentation-only completion commit `c75b8fa3fd70481bea07fccc64979bc0ce726593` started a fresh verification matrix. The previously verified implementation SHA remains the evidence for runtime correctness until that documentation-only matrix finishes.
 
 ## Phase Completion Checklist
 
