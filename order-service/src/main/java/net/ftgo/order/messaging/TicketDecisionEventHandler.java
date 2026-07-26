@@ -5,13 +5,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.eventuate.tram.sagas.orchestration.SagaInstanceFactory;
 import net.ftgo.common.channels.ChannelNames;
 import net.ftgo.common.messaging.OutboxEventPayloadReader;
+import net.ftgo.common.orderflow.events.TicketAcceptanceRequestedEvent;
 import net.ftgo.common.orderflow.events.TicketAcceptanceTimedOutEvent;
 import net.ftgo.common.orderflow.events.TicketAcceptedEvent;
 import net.ftgo.common.orderflow.events.TicketRejectedEvent;
 import net.ftgo.order.domain.Order;
 import net.ftgo.order.repository.OrderRepository;
-import net.ftgo.order.saga.ConfirmOrderSaga;
-import net.ftgo.order.saga.ConfirmOrderSagaData;
+import net.ftgo.order.saga.CapturePaymentSaga;
+import net.ftgo.order.saga.CapturePaymentSagaData;
 import net.ftgo.order.saga.RejectOrderSaga;
 import net.ftgo.order.saga.RejectOrderSagaData;
 import org.slf4j.Logger;
@@ -27,13 +28,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.Objects;
 import java.util.Optional;
 
-/**
- * Converts kitchen acceptance decisions into order-level decision sagas.
- *
- * <p>The order row is locked before claiming the event. The first valid event
- * wins; duplicates, stale events and the losing side of an accept/timeout race
- * are acknowledged as no-ops.</p>
- */
+/** Converts kitchen acceptance decisions into order-level sagas. */
 @Component
 @Profile("!test")
 public class TicketDecisionEventHandler {
@@ -42,20 +37,20 @@ public class TicketDecisionEventHandler {
 
     private final OrderRepository orderRepository;
     private final SagaInstanceFactory sagaInstanceFactory;
-    private final ConfirmOrderSaga confirmOrderSaga;
+    private final CapturePaymentSaga capturePaymentSaga;
     private final RejectOrderSaga rejectOrderSaga;
     private final ObjectMapper objectMapper;
 
     public TicketDecisionEventHandler(
         OrderRepository orderRepository,
         SagaInstanceFactory sagaInstanceFactory,
-        ConfirmOrderSaga confirmOrderSaga,
+        CapturePaymentSaga capturePaymentSaga,
         RejectOrderSaga rejectOrderSaga,
         ObjectMapper objectMapper
     ) {
         this.orderRepository = orderRepository;
         this.sagaInstanceFactory = sagaInstanceFactory;
-        this.confirmOrderSaga = confirmOrderSaga;
+        this.capturePaymentSaga = capturePaymentSaga;
         this.rejectOrderSaga = rejectOrderSaga;
         this.objectMapper = objectMapper;
     }
@@ -78,6 +73,13 @@ public class TicketDecisionEventHandler {
 
         try {
             switch (eventType) {
+                case "TicketAcceptanceRequestedEvent" -> handleAcceptanceRequested(
+                    OutboxEventPayloadReader.read(
+                        objectMapper,
+                        payload,
+                        TicketAcceptanceRequestedEvent.class
+                    )
+                );
                 case "TicketAcceptedEvent" -> handleAccepted(
                     OutboxEventPayloadReader.read(objectMapper, payload, TicketAcceptedEvent.class)
                 );
@@ -92,43 +94,42 @@ public class TicketDecisionEventHandler {
                     )
                 );
                 default -> logger.debug(
-                    "Ignoring non-decision ticket event: key={}, eventType={}",
-                    key,
-                    eventType
-                );
+                    "Ignoring non-decision ticket event: key={}, eventType={}", key, eventType);
             }
         } catch (JsonProcessingException e) {
             throw new IllegalArgumentException(
-                "Unable to deserialize ticket decision event " + eventType,
-                e
-            );
+                "Unable to deserialize ticket decision event " + eventType, e);
         }
     }
 
-    public void handleAccepted(TicketAcceptedEvent event) {
+    public void handleAcceptanceRequested(TicketAcceptanceRequestedEvent event) {
         Optional<Order> optionalOrder = matchingOrder(event.getOrderId(), event.getTicketId());
-        if (optionalOrder.isEmpty()) {
-            return;
-        }
+        if (optionalOrder.isEmpty()) return;
 
         Order order = optionalOrder.get();
-        if (!order.claimRestaurantAcceptance()) {
+        if (!order.beginPaymentCapture(event.getAcceptanceRequestId())) {
             logger.info(
-                "Ignoring duplicate or stale acceptance: eventId={}, orderId={}, state={}",
-                event.getEventId(),
-                event.getOrderId(),
-                order.getState()
-            );
+                "Ignoring duplicate acceptance request: eventId={}, orderId={}, paymentState={}",
+                event.getEventId(), event.getOrderId(), order.getPaymentState());
             return;
         }
 
         orderRepository.save(order);
-        sagaInstanceFactory.create(confirmOrderSaga, new ConfirmOrderSagaData(
+        sagaInstanceFactory.create(capturePaymentSaga, new CapturePaymentSagaData(
             order.getId(),
             order.getConsumerId(),
+            order.getTicketId(),
             order.getAuthorizationId(),
-            order.getCreditReservationId()
+            order.getCreditReservationId(),
+            event.getAcceptanceRequestId()
         ));
+    }
+
+    /** Final ticket acceptance is emitted by the saga after capture confirmation. */
+    public void handleAccepted(TicketAcceptedEvent event) {
+        logger.debug(
+            "Observed final ticket acceptance: eventId={}, orderId={}, ticketId={}",
+            event.getEventId(), event.getOrderId(), event.getTicketId());
     }
 
     public void handleRejected(TicketRejectedEvent event) {
@@ -159,18 +160,13 @@ public class TicketDecisionEventHandler {
         String failureMessage
     ) {
         Optional<Order> optionalOrder = matchingOrder(orderId, ticketId);
-        if (optionalOrder.isEmpty()) {
-            return;
-        }
+        if (optionalOrder.isEmpty()) return;
 
         Order order = optionalOrder.get();
         if (!order.claimRestaurantRejection(failureCode, failureMessage)) {
             logger.info(
                 "Ignoring duplicate or stale rejection: eventId={}, orderId={}, state={}",
-                eventId,
-                orderId,
-                order.getState()
-            );
+                eventId, orderId, order.getState());
             return;
         }
 
@@ -188,10 +184,7 @@ public class TicketDecisionEventHandler {
     private Optional<Order> matchingOrder(Long orderId, Long ticketId) {
         if (orderId == null || ticketId == null) {
             logger.warn(
-                "Ignoring malformed ticket decision: orderId={}, ticketId={}",
-                orderId,
-                ticketId
-            );
+                "Ignoring malformed ticket decision: orderId={}, ticketId={}", orderId, ticketId);
             return Optional.empty();
         }
 
@@ -205,10 +198,7 @@ public class TicketDecisionEventHandler {
         if (!Objects.equals(ticketId, order.getTicketId())) {
             logger.warn(
                 "Ignoring ticket decision with mismatched ticket: orderId={}, expected={}, actual={}",
-                orderId,
-                order.getTicketId(),
-                ticketId
-            );
+                orderId, order.getTicketId(), ticketId);
             return Optional.empty();
         }
         return optionalOrder;

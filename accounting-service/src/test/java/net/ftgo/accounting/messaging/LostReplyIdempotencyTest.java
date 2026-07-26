@@ -5,7 +5,7 @@ import io.eventuate.tram.messaging.common.Message;
 import net.ftgo.accounting.domain.Account;
 import net.ftgo.accounting.domain.Authorization;
 import net.ftgo.accounting.payment.PaymentAuthorizationDecision;
-import net.ftgo.accounting.payment.PaymentAuthorizationGateway;
+import net.ftgo.accounting.payment.PaymentProvider;
 import net.ftgo.accounting.repository.AccountRepository;
 import net.ftgo.common.Money;
 import net.ftgo.common.messaging.IdempotentCommandExecutor;
@@ -42,7 +42,7 @@ class LostReplyIdempotencyTest {
     private DomainEventPublisher eventPublisher;
 
     @Mock
-    private PaymentAuthorizationGateway paymentAuthorizationGateway;
+    private PaymentProvider paymentProvider;
 
     @Test
     void duplicateAuthorizeCommandReplaysEstablishedAuthorizationReply() {
@@ -61,8 +61,11 @@ class LostReplyIdempotencyTest {
         Message replayed = handlers.handleAuthorizeCard(message);
 
         IdempotentCommandContract.assertByteEquivalentReply(first, replayed);
-        verify(paymentAuthorizationGateway, times(1))
-            .authorize("tok_phase03", new Money("42.50"));
+        verify(paymentProvider, times(1)).authorize(
+            "tok_phase03",
+            new Money("42.50"),
+            "authorization-request-101"
+        );
         verify(accountRepository, times(1)).findByConsumerId(202L);
         verify(accountRepository, times(2)).saveAndFlush(any(Account.class));
     }
@@ -97,7 +100,7 @@ class LostReplyIdempotencyTest {
         return new AccountingServiceCommandHandlers(
             accountRepository,
             eventPublisher,
-            paymentAuthorizationGateway,
+            paymentProvider,
             executor
         );
     }
@@ -125,8 +128,11 @@ class LostReplyIdempotencyTest {
     }
 
     private void stubSuccessfulAuthorization() {
-        when(paymentAuthorizationGateway.authorize("tok_phase03", new Money("42.50")))
-            .thenReturn(PaymentAuthorizationDecision.allow());
+        when(paymentProvider.authorize(
+            "tok_phase03",
+            new Money("42.50"),
+            "authorization-request-101"
+        )).thenReturn(PaymentAuthorizationDecision.allow("pa_authorization_request_101"));
         when(accountRepository.findByConsumerId(202L)).thenReturn(Optional.empty());
         when(accountRepository.saveAndFlush(any(Account.class))).thenAnswer(invocation -> {
             Account account = invocation.getArgument(0);

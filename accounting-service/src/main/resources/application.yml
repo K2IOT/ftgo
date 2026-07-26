@@ -37,6 +37,11 @@ eventuatelocal:
 ftgo:
   accounting:
     declined-payment-tokens: ${FTGO_ACCOUNTING_DECLINED_PAYMENT_TOKENS:}
+    payment-webhook-secrets: sandbox=${FTGO_ACCOUNTING_SANDBOX_WEBHOOK_SECRET:change-me}
+    webhook-replay-window-seconds: ${FTGO_ACCOUNTING_WEBHOOK_REPLAY_WINDOW_SECONDS:300}
+    # Finite provider retry schedule in milliseconds. The initial call is followed
+    # by retries after 1s, 5s and 30s before returning a deterministic failure.
+    payment-provider-retry-delays-ms: ${FTGO_ACCOUNTING_PAYMENT_PROVIDER_RETRY_DELAYS_MS:1000,5000,30000}
 
 server:
   port: 8085

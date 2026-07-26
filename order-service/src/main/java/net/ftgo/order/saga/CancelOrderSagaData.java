@@ -1,86 +1,84 @@
 package net.ftgo.order.saga;
 
-/**
- * Saga data for CancelOrderSaga.
- * 
- * This class holds all the state needed throughout the saga execution,
- * including identifiers for the order and related resources that need to be cancelled.
- * 
- * The saga data is persisted in the saga_instance table in MySQL, allowing
- * the saga to resume after service restarts or failures.
- * 
- * Saga Flow:
- * 1. beginCancel (local) - transitions order to CANCEL_PENDING state
- * 2. beginCancelTicket - initiates ticket cancellation in Kitchen Service
- * 3. reverseAuthorization - reverses payment authorization (PIVOT POINT)
- * 4. confirmCancelTicket - confirms ticket cancellation (retriable)
- * 5. confirmCancel (local) - transitions order to CANCELLED state (retriable)
- */
+import net.ftgo.common.Money;
+import net.ftgo.order.domain.OrderPaymentState;
+
+/** Serializable state for cancellation and financial settlement. */
 public class CancelOrderSagaData {
-    
+
     private Long orderId;
     private Long consumerId;
     private Long ticketId;
     private Long authorizationId;
-    
-    /**
-     * Default constructor for serialization.
-     */
+    private Long captureId;
+    private Money orderTotal;
+    private OrderPaymentState paymentState;
+
     public CancelOrderSagaData() {
     }
-    
-    /**
-     * Creates saga data for order cancellation.
-     * 
-     * @param orderId the order ID to cancel
-     * @param consumerId the consumer ID (needed for accounting commands)
-     * @param ticketId the ticket ID to cancel
-     * @param authorizationId the authorization ID to reverse
-     */
-    public CancelOrderSagaData(Long orderId, Long consumerId, Long ticketId, Long authorizationId) {
+
+    /** Rolling compatibility for in-flight Phase 02 saga callers. */
+    public CancelOrderSagaData(
+        Long orderId,
+        Long consumerId,
+        Long ticketId,
+        Long authorizationId
+    ) {
+        this(
+            orderId,
+            consumerId,
+            ticketId,
+            authorizationId,
+            null,
+            Money.ZERO,
+            OrderPaymentState.AUTHORIZED
+        );
+    }
+
+    public CancelOrderSagaData(
+        Long orderId,
+        Long consumerId,
+        Long ticketId,
+        Long authorizationId,
+        Long captureId,
+        Money orderTotal,
+        OrderPaymentState paymentState
+    ) {
         this.orderId = orderId;
         this.consumerId = consumerId;
         this.ticketId = ticketId;
         this.authorizationId = authorizationId;
+        this.captureId = captureId;
+        this.orderTotal = orderTotal;
+        this.paymentState = paymentState;
     }
-    
-    // Getters and setters
-    
-    public Long getOrderId() {
-        return orderId;
-    }
-    
-    public void setOrderId(Long orderId) {
-        this.orderId = orderId;
-    }
-    
-    public Long getConsumerId() {
-        return consumerId;
-    }
-    
-    public void setConsumerId(Long consumerId) {
-        this.consumerId = consumerId;
-    }
-    
-    public Long getTicketId() {
-        return ticketId;
-    }
-    
-    public void setTicketId(Long ticketId) {
-        this.ticketId = ticketId;
-    }
-    
-    public Long getAuthorizationId() {
-        return authorizationId;
-    }
-    
+
+    public Long getOrderId() { return orderId; }
+    public void setOrderId(Long orderId) { this.orderId = orderId; }
+    public Long getConsumerId() { return consumerId; }
+    public void setConsumerId(Long consumerId) { this.consumerId = consumerId; }
+    public Long getTicketId() { return ticketId; }
+    public void setTicketId(Long ticketId) { this.ticketId = ticketId; }
+    public Long getAuthorizationId() { return authorizationId; }
     public void setAuthorizationId(Long authorizationId) {
         this.authorizationId = authorizationId;
     }
-    
+    public Long getCaptureId() { return captureId; }
+    public void setCaptureId(Long captureId) { this.captureId = captureId; }
+    public Money getOrderTotal() { return orderTotal; }
+    public void setOrderTotal(Money orderTotal) { this.orderTotal = orderTotal; }
+    public OrderPaymentState getPaymentState() { return paymentState; }
+    public void setPaymentState(OrderPaymentState paymentState) {
+        this.paymentState = paymentState;
+    }
+
     @Override
     public String toString() {
-        return String.format("CancelOrderSagaData{orderId=%d, consumerId=%d, ticketId=%d, authorizationId=%d}",
-            orderId, consumerId, ticketId, authorizationId);
+        return "CancelOrderSagaData{orderId=" + orderId
+            + ", consumerId=" + consumerId
+            + ", ticketId=" + ticketId
+            + ", authorizationId=" + authorizationId
+            + ", captureId=" + captureId
+            + ", paymentState=" + paymentState + "}";
     }
 }

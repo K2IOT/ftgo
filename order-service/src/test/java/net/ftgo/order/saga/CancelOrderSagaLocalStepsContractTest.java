@@ -52,12 +52,15 @@ class CancelOrderSagaLocalStepsContractTest {
         order.beginCancel();
         assertEquals(OrderState.CANCEL_PENDING, order.getState());
 
-        when(orderRepository.findById(101L)).thenReturn(Optional.of(order));
+        when(orderRepository.findByIdWithLock(101L)).thenReturn(Optional.of(order));
 
         localSteps.undoCancelOrder(101L);
 
         assertEquals(OrderState.APPROVED, order.getState());
-        verify(eventPublisher, never()).publishOrderEvent(org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.any());
+        verify(eventPublisher, never()).publishOrderEvent(
+            org.mockito.ArgumentMatchers.anyLong(),
+            org.mockito.ArgumentMatchers.any()
+        );
     }
 
     private void setOrderId(Order order, Long orderId) {

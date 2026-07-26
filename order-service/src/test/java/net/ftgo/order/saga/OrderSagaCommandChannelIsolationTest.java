@@ -35,12 +35,18 @@ class OrderSagaCommandChannelIsolationTest {
             orderRepository, eventPublisher, meterRegistry);
         ReviseOrderSagaLocalSteps reviseSteps = new ReviseOrderSagaLocalSteps(
             orderRepository, eventPublisher, meterRegistry);
+        CapturePaymentSagaLocalSteps capturePaymentSteps = mock(
+            CapturePaymentSagaLocalSteps.class);
 
         CommandHandlers commandHandlers = new OrderSagaCommandHandlers(
-            createSteps, cancelSteps, reviseSteps).commandHandlers();
+            createSteps,
+            cancelSteps,
+            reviseSteps,
+            capturePaymentSteps
+        ).commandHandlers();
         List<CommandHandler> handlers = extractHandlers(commandHandlers);
 
-        assertThat(handlers).hasSize(8);
+        assertThat(handlers).hasSize(10);
         assertThat(handlers)
             .extracting(CommandHandler::getChannel)
             .containsOnly(ChannelNames.ORDER_SERVICE_COMMAND_CHANNEL);

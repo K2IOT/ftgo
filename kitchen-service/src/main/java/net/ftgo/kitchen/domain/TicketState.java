@@ -1,14 +1,10 @@
 package net.ftgo.kitchen.domain;
 
-/**
- * State machine for a kitchen ticket.
- *
- * <p>Restaurant acceptance has exactly one terminal decision:
- * ACCEPTED, REJECTED_BY_RESTAURANT, or REJECTED_TIMEOUT.</p>
- */
+/** State machine for a kitchen ticket. */
 public enum TicketState {
     CREATE_PENDING,
     AWAITING_ACCEPTANCE,
+    ACCEPTANCE_PENDING_PAYMENT,
     ACCEPTED,
     REJECTED_BY_RESTAURANT,
     REJECTED_TIMEOUT,

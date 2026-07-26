@@ -1,6 +1,6 @@
 package net.ftgo.kitchen.service;
 
-import net.ftgo.common.orderflow.events.TicketAcceptedEvent;
+import net.ftgo.common.orderflow.events.TicketAcceptanceRequestedEvent;
 import net.ftgo.common.orderflow.events.TicketRejectedEvent;
 import net.ftgo.kitchen.domain.Ticket;
 import net.ftgo.kitchen.domain.TicketLineItem;
@@ -56,12 +56,12 @@ class KitchenServiceTest {
 
         Ticket updatedTicket = kitchenService.acceptTicket(1L);
 
-        assertEquals(TicketState.ACCEPTED, updatedTicket.getState());
+        assertEquals(TicketState.ACCEPTANCE_PENDING_PAYMENT, updatedTicket.getState());
         verify(ticketRepository).saveAndFlush(ticket);
         verify(eventPublisher).publishTicketEvent(
             eq(ticket.getId()),
             eq(ticket.getVersion()),
-            any(TicketAcceptedEvent.class)
+            any(TicketAcceptanceRequestedEvent.class)
         );
     }
 
@@ -98,7 +98,7 @@ class KitchenServiceTest {
     void testMarkPreparing() {
         ticket.approve();
         ticket.accept();
-        when(ticketRepository.findById(1L)).thenReturn(Optional.of(ticket));
+        when(ticketRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(ticket));
 
         Ticket updatedTicket = kitchenService.markPreparing(1L);
 
@@ -116,7 +116,7 @@ class KitchenServiceTest {
         ticket.approve();
         ticket.accept();
         ticket.preparing();
-        when(ticketRepository.findById(1L)).thenReturn(Optional.of(ticket));
+        when(ticketRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(ticket));
 
         Ticket updatedTicket = kitchenService.markReady(1L);
 

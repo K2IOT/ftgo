@@ -8,6 +8,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import net.ftgo.order.messaging.DomainEventPublisher;
 import net.ftgo.order.repository.OrderRepository;
 import net.ftgo.order.saga.CancelOrderSagaLocalSteps;
+import net.ftgo.order.saga.CapturePaymentSagaLocalSteps;
 import net.ftgo.order.saga.CreateOrderSaga;
 import net.ftgo.order.saga.CreateOrderSagaLocalSteps;
 import net.ftgo.order.saga.OrderSagaCommandHandlers;
@@ -18,9 +19,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 import org.springframework.transaction.PlatformTransactionManager;
 
-/**
- * CreateOrderSaga definition and the consolidated local Order saga participant.
- */
+/** CreateOrderSaga definition and the consolidated local Order saga participant. */
 @Configuration
 @Import(SagaParticipantConfiguration.class)
 public class CreateOrderSagaConfiguration {
@@ -49,9 +48,15 @@ public class CreateOrderSagaConfiguration {
     public OrderSagaCommandHandlers orderSagaCommandHandlerRegistry(
         CreateOrderSagaLocalSteps createOrderSteps,
         CancelOrderSagaLocalSteps cancelOrderSteps,
-        ReviseOrderSagaLocalSteps reviseOrderSteps
+        ReviseOrderSagaLocalSteps reviseOrderSteps,
+        CapturePaymentSagaLocalSteps capturePaymentSteps
     ) {
-        return new OrderSagaCommandHandlers(createOrderSteps, cancelOrderSteps, reviseOrderSteps);
+        return new OrderSagaCommandHandlers(
+            createOrderSteps,
+            cancelOrderSteps,
+            reviseOrderSteps,
+            capturePaymentSteps
+        );
     }
 
     @Bean(name = {

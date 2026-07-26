@@ -1,30 +1,34 @@
 package net.ftgo.accounting.repository;
 
+import jakarta.persistence.LockModeType;
 import net.ftgo.accounting.domain.Authorization;
+import net.ftgo.accounting.domain.AuthorizationStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.Optional;
 
-/**
- * Repository for Authorization entity persistence.
- */
 @Repository
 public interface AuthorizationRepository extends JpaRepository<Authorization, Long> {
-    
-    /**
-     * Finds an authorization by request ID (idempotency key).
-     * 
-     * @param requestId the request ID to search for
-     * @return an Optional containing the authorization if found, empty otherwise
-     */
+
     Optional<Authorization> findByRequestId(String requestId);
-    
-    /**
-     * Checks if an authorization exists with the given request ID.
-     * 
-     * @param requestId the request ID to check
-     * @return true if an authorization exists with the request ID, false otherwise
-     */
+
     boolean existsByRequestId(String requestId);
+
+    Optional<Authorization> findByProviderAuthorizationId(String providerAuthorizationId);
+
+    List<Authorization> findTop100ByStatusInOrderByCreatedAtAsc(
+        List<AuthorizationStatus> statuses
+    );
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select authorization from Authorization authorization "
+        + "where authorization.providerAuthorizationId = :providerAuthorizationId")
+    Optional<Authorization> findByProviderAuthorizationIdForUpdate(
+        @Param("providerAuthorizationId") String providerAuthorizationId
+    );
 }

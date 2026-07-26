@@ -12,9 +12,12 @@ import net.ftgo.common.orderflow.commands.BeginReviseTicketCommand;
 import net.ftgo.common.orderflow.commands.CancelTicketCommand;
 import net.ftgo.common.orderflow.commands.ConfirmCancelTicketCommand;
 import net.ftgo.common.orderflow.commands.ConfirmReviseTicketCommand;
+import net.ftgo.common.orderflow.commands.ConfirmTicketAcceptanceCommand;
 import net.ftgo.common.orderflow.commands.CreateTicketCommand;
 import net.ftgo.common.orderflow.commands.UndoCancelTicketCommand;
 import net.ftgo.common.orderflow.commands.UndoReviseTicketCommand;
+import net.ftgo.common.orderflow.commands.UndoTicketAcceptanceCommand;
+import net.ftgo.common.orderflow.events.TicketAcceptedEvent;
 import net.ftgo.common.orderflow.replies.TicketCancellationRefused;
 import net.ftgo.common.orderflow.replies.TicketCreated;
 import net.ftgo.common.orderflow.replies.TicketRevisionRefused;
@@ -59,6 +62,8 @@ public class KitchenServiceCommandHandlers {
             .fromChannel(ChannelNames.KITCHEN_SERVICE_COMMAND_CHANNEL)
             .onMessage(CreateTicketCommand.class, this::handleCreateTicket)
             .onMessage(ApproveTicketCommand.class, this::handleApproveTicket)
+            .onMessage(ConfirmTicketAcceptanceCommand.class, this::handleConfirmTicketAcceptance)
+            .onMessage(UndoTicketAcceptanceCommand.class, this::handleUndoTicketAcceptance)
             .onMessage(CancelTicketCommand.class, this::handleCancelTicket)
             .onMessage(BeginCancelTicketCommand.class, this::handleBeginCancelTicket)
             .onMessage(ConfirmCancelTicketCommand.class, this::handleConfirmCancelTicket)
@@ -71,74 +76,61 @@ public class KitchenServiceCommandHandlers {
 
     public Message handleCreateTicket(CommandMessage<CreateTicketCommand> message) {
         return idempotentCommandExecutor.execute(
-            CONSUMER_NAME,
-            message,
-            () -> createTicketOnce(message.getCommand())
-        );
+            CONSUMER_NAME, message, () -> createTicketOnce(message.getCommand()));
     }
 
     public Message handleApproveTicket(CommandMessage<ApproveTicketCommand> message) {
         return idempotentCommandExecutor.execute(
-            CONSUMER_NAME,
-            message,
-            () -> approveTicketOnce(message.getCommand())
-        );
+            CONSUMER_NAME, message, () -> approveTicketOnce(message.getCommand()));
+    }
+
+    public Message handleConfirmTicketAcceptance(
+        CommandMessage<ConfirmTicketAcceptanceCommand> message
+    ) {
+        return idempotentCommandExecutor.execute(
+            CONSUMER_NAME, message, () -> confirmTicketAcceptanceOnce(message.getCommand()));
+    }
+
+    public Message handleUndoTicketAcceptance(
+        CommandMessage<UndoTicketAcceptanceCommand> message
+    ) {
+        return idempotentCommandExecutor.execute(
+            CONSUMER_NAME, message, () -> undoTicketAcceptanceOnce(message.getCommand()));
     }
 
     public Message handleCancelTicket(CommandMessage<CancelTicketCommand> message) {
         return idempotentCommandExecutor.execute(
-            CONSUMER_NAME,
-            message,
-            () -> cancelTicketOnce(message.getCommand())
-        );
+            CONSUMER_NAME, message, () -> cancelTicketOnce(message.getCommand()));
     }
 
     public Message handleBeginCancelTicket(CommandMessage<BeginCancelTicketCommand> message) {
         return idempotentCommandExecutor.execute(
-            CONSUMER_NAME,
-            message,
-            () -> beginCancelTicketOnce(message.getCommand())
-        );
+            CONSUMER_NAME, message, () -> beginCancelTicketOnce(message.getCommand()));
     }
 
     public Message handleConfirmCancelTicket(CommandMessage<ConfirmCancelTicketCommand> message) {
         return idempotentCommandExecutor.execute(
-            CONSUMER_NAME,
-            message,
-            () -> confirmCancelTicketOnce(message.getCommand())
-        );
+            CONSUMER_NAME, message, () -> confirmCancelTicketOnce(message.getCommand()));
     }
 
     public Message handleUndoCancelTicket(CommandMessage<UndoCancelTicketCommand> message) {
         return idempotentCommandExecutor.execute(
-            CONSUMER_NAME,
-            message,
-            () -> undoCancelTicketOnce(message.getCommand())
-        );
+            CONSUMER_NAME, message, () -> undoCancelTicketOnce(message.getCommand()));
     }
 
     public Message handleBeginReviseTicket(CommandMessage<BeginReviseTicketCommand> message) {
         return idempotentCommandExecutor.execute(
-            CONSUMER_NAME,
-            message,
-            () -> beginReviseTicketOnce(message.getCommand())
-        );
+            CONSUMER_NAME, message, () -> beginReviseTicketOnce(message.getCommand()));
     }
 
     public Message handleConfirmReviseTicket(CommandMessage<ConfirmReviseTicketCommand> message) {
         return idempotentCommandExecutor.execute(
-            CONSUMER_NAME,
-            message,
-            () -> confirmReviseTicketOnce(message.getCommand())
-        );
+            CONSUMER_NAME, message, () -> confirmReviseTicketOnce(message.getCommand()));
     }
 
     public Message handleUndoReviseTicket(CommandMessage<UndoReviseTicketCommand> message) {
         return idempotentCommandExecutor.execute(
-            CONSUMER_NAME,
-            message,
-            () -> undoReviseTicketOnce(message.getCommand())
-        );
+            CONSUMER_NAME, message, () -> undoReviseTicketOnce(message.getCommand()));
     }
 
     private Message createTicketOnce(CreateTicketCommand command) {
@@ -150,19 +142,12 @@ public class KitchenServiceCommandHandlers {
                 }
                 return withSuccess(new TicketCreated(existing.getId()));
             }
-
             List<TicketLineItem> lineItems = command.getLineItems().stream()
                 .map(item -> new TicketLineItem(
-                    item.getMenuItemId(),
-                    item.getName(),
-                    item.getQuantity()
-                ))
+                    item.getMenuItemId(), item.getName(), item.getQuantity()))
                 .toList();
             Ticket ticket = ticketRepository.save(new Ticket(
-                command.getRestaurantId(),
-                command.getOrderId(),
-                lineItems
-            ));
+                command.getRestaurantId(), command.getOrderId(), lineItems));
             return withSuccess(new TicketCreated(ticket.getId()));
         } catch (IllegalArgumentException | IllegalStateException e) {
             return withFailure(e.getMessage());
@@ -182,11 +167,8 @@ public class KitchenServiceCommandHandlers {
                 }
                 return withFailure("Ticket is already awaiting another acceptance deadline");
             }
-            if (deadline == null) {
-                ticket.approve();
-            } else {
-                ticket.approve(deadline);
-            }
+            if (deadline == null) ticket.approve();
+            else ticket.approve(deadline);
             ticketRepository.save(ticket);
             return withSuccess();
         } catch (IllegalArgumentException | IllegalStateException e) {
@@ -197,19 +179,49 @@ public class KitchenServiceCommandHandlers {
         }
     }
 
+    private Message confirmTicketAcceptanceOnce(ConfirmTicketAcceptanceCommand command) {
+        try {
+            Ticket ticket = requireForUpdate(command.getTicketId());
+            if (ticket.confirmAcceptance(command.getCaptureRequestId())) {
+                ticketRepository.saveAndFlush(ticket);
+                eventPublisher.publishTicketEvent(
+                    ticket.getId(),
+                    ticket.getVersion(),
+                    new TicketAcceptedEvent(
+                        ticket.getDecisionEventId(),
+                        ticket.getId(),
+                        ticket.getOrderId(),
+                        ticket.getDecisionAt()
+                    )
+                );
+            }
+            return withSuccess();
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return withFailure(e.getMessage());
+        }
+    }
+
+    private Message undoTicketAcceptanceOnce(UndoTicketAcceptanceCommand command) {
+        try {
+            Ticket ticket = requireForUpdate(command.getTicketId());
+            if (ticket.undoAcceptance(command.getReason())) {
+                ticketRepository.save(ticket);
+            }
+            return withSuccess();
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return withFailure(e.getMessage());
+        }
+    }
+
     private Message cancelTicketOnce(CancelTicketCommand command) {
         try {
             Ticket ticket = requireForUpdate(command.getTicketId());
-            if (ticket.getState() == TicketState.CANCELLED) {
-                return withSuccess();
-            }
+            if (ticket.getState() == TicketState.CANCELLED) return withSuccess();
             ticket.cancel();
             ticketRepository.saveAndFlush(ticket);
             eventPublisher.publishTicketEvent(
-                ticket.getId(),
-                ticket.getVersion(),
-                new TicketCancelledEvent(ticket.getId(), ticket.getOrderId())
-            );
+                ticket.getId(), ticket.getVersion(),
+                new TicketCancelledEvent(ticket.getId(), ticket.getOrderId()));
             return withSuccess();
         } catch (IllegalArgumentException | IllegalStateException e) {
             return withFailure(e.getMessage());
@@ -222,18 +234,14 @@ public class KitchenServiceCommandHandlers {
     private Message beginCancelTicketOnce(BeginCancelTicketCommand command) {
         try {
             Ticket ticket = requireForUpdate(command.getTicketId());
-            if (ticket.getState() == TicketState.CANCEL_PENDING) {
-                return withSuccess();
-            }
+            if (ticket.getState() == TicketState.CANCEL_PENDING) return withSuccess();
             ticket.beginCancel();
             ticketRepository.save(ticket);
             return withSuccess();
         } catch (IllegalStateException e) {
             if ("Cannot cancel ticket after preparation has begun".equals(e.getMessage())) {
                 return withFailure(new TicketCancellationRefused(
-                    TicketCancellationRefused.PREPARATION_ALREADY_STARTED,
-                    e.getMessage()
-                ));
+                    TicketCancellationRefused.PREPARATION_ALREADY_STARTED, e.getMessage()));
             }
             return withFailure(e.getMessage());
         } catch (IllegalArgumentException e) {
@@ -244,16 +252,12 @@ public class KitchenServiceCommandHandlers {
     private Message confirmCancelTicketOnce(ConfirmCancelTicketCommand command) {
         try {
             Ticket ticket = requireForUpdate(command.getTicketId());
-            if (ticket.getState() == TicketState.CANCELLED) {
-                return withSuccess();
-            }
+            if (ticket.getState() == TicketState.CANCELLED) return withSuccess();
             ticket.confirmCancel();
             ticketRepository.saveAndFlush(ticket);
             eventPublisher.publishTicketEvent(
-                ticket.getId(),
-                ticket.getVersion(),
-                new TicketCancelledEvent(ticket.getId(), ticket.getOrderId())
-            );
+                ticket.getId(), ticket.getVersion(),
+                new TicketCancelledEvent(ticket.getId(), ticket.getOrderId()));
             return withSuccess();
         } catch (IllegalArgumentException | IllegalStateException e) {
             return withFailure(e.getMessage());
@@ -274,15 +278,10 @@ public class KitchenServiceCommandHandlers {
     private Message beginReviseTicketOnce(BeginReviseTicketCommand command) {
         try {
             Ticket ticket = requireForUpdate(command.getTicketId());
-            if (ticket.getState() == TicketState.REVISION_PENDING) {
-                return withSuccess();
-            }
+            if (ticket.getState() == TicketState.REVISION_PENDING) return withSuccess();
             List<TicketLineItem> revisedLineItems = command.getRevisedLineItems().stream()
                 .map(item -> new TicketLineItem(
-                    item.getMenuItemId(),
-                    item.getName(),
-                    item.getQuantity()
-                ))
+                    item.getMenuItemId(), item.getName(), item.getQuantity()))
                 .toList();
             ticket.beginRevise(revisedLineItems);
             ticketRepository.save(ticket);
@@ -290,9 +289,7 @@ public class KitchenServiceCommandHandlers {
         } catch (IllegalStateException e) {
             if ("Cannot revise ticket after preparation has begun".equals(e.getMessage())) {
                 return withFailure(new TicketRevisionRefused(
-                    TicketRevisionRefused.PREPARATION_ALREADY_STARTED,
-                    e.getMessage()
-                ));
+                    TicketRevisionRefused.PREPARATION_ALREADY_STARTED, e.getMessage()));
             }
             return withFailure(e.getMessage());
         } catch (IllegalArgumentException e) {
