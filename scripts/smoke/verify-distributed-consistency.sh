@@ -193,7 +193,7 @@ wait_for_url() {
 }
 
 initialize_scylla() {
-  "${COMPOSE[@]}" exec -T scylla cqlsh -e \
+  "${COMPOSE[@]}" exec -T scylla cqlsh scylla 9042 -e \
     "CREATE KEYSPACE IF NOT EXISTS ftgo_order_history WITH replication = {'class':'SimpleStrategy','replication_factor':1};"
 }
 
