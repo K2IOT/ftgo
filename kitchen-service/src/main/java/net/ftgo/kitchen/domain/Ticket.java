@@ -157,7 +157,7 @@ public class Ticket {
         }
         if (state != TicketState.AWAITING_ACCEPTANCE) {
             throw new IllegalStateException(
-                "Cannot request acceptance in state " + state + ". Expected AWAITING_ACCEPTANCE.");
+                "Cannot accept ticket in state " + state + ". Expected AWAITING_ACCEPTANCE.");
         }
         acceptanceRequestId = requestId;
         acceptanceRequestedAt = LocalDateTime.now();
