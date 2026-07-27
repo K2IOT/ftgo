@@ -32,6 +32,12 @@ spring:
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.apache.kafka.common.serialization.StringSerializer
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${FTGO_SECURITY_ISSUER_URI:http://localhost:9000/realms/ftgo}
+          jwk-set-uri: ${FTGO_SECURITY_JWK_SET_URI:http://localhost:9000/realms/ftgo/protocol/openid-connect/certs}
 
 eventuate:
   database:
@@ -45,6 +51,11 @@ eventuatelocal:
     reader:
       name: MySqlReader
 
+ftgo:
+  security:
+    public-audience: ${FTGO_SECURITY_PUBLIC_AUDIENCE:ftgo-api}
+    internal-audience: ${FTGO_SECURITY_INTERNAL_AUDIENCE:ftgo-internal}
+
 server:
   port: 8081
 
@@ -55,7 +66,9 @@ management:
         include: health,info,prometheus
   endpoint:
     health:
-      show-details: always
+      show-details: when_authorized
+      probes:
+        enabled: true
   metrics:
     export:
       prometheus:
