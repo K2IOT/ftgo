@@ -1,0 +1,28 @@
+CREATE TABLE settlement_discrepancies (
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    authorization_id BIGINT NOT NULL,
+    order_id BIGINT NULL,
+    discrepancy_type VARCHAR(48) NOT NULL,
+    status VARCHAR(32) NOT NULL,
+    fingerprint VARCHAR(191) NOT NULL,
+    local_state VARCHAR(255) NOT NULL,
+    provider_state VARCHAR(255) NOT NULL,
+    details VARCHAR(1000) NOT NULL,
+    repair_action VARCHAR(48) NULL,
+    repair_request_id VARCHAR(191) NULL,
+    repair_reason VARCHAR(500) NULL,
+    failure_details VARCHAR(1000) NULL,
+    first_detected_at TIMESTAMP(6) NOT NULL,
+    last_detected_at TIMESTAMP(6) NOT NULL,
+    resolved_at TIMESTAMP(6) NULL,
+    updated_at TIMESTAMP(6) NOT NULL,
+    version BIGINT NOT NULL DEFAULT 0,
+    PRIMARY KEY (id),
+    CONSTRAINT uk_settlement_discrepancy_fingerprint UNIQUE (fingerprint),
+    CONSTRAINT uk_settlement_repair_request UNIQUE (repair_request_id),
+    INDEX idx_settlement_discrepancy_authorization (authorization_id, first_detected_at),
+    INDEX idx_settlement_discrepancy_order (order_id, first_detected_at),
+    INDEX idx_settlement_discrepancy_status (status, updated_at),
+    CONSTRAINT fk_settlement_discrepancy_authorization
+        FOREIGN KEY (authorization_id) REFERENCES authorizations(id)
+);

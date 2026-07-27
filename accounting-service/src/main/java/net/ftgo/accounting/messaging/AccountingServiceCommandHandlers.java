@@ -6,9 +6,14 @@ import io.eventuate.tram.messaging.common.Message;
 import io.eventuate.tram.sagas.participant.SagaCommandHandlersBuilder;
 import net.ftgo.accounting.domain.Account;
 import net.ftgo.accounting.domain.Authorization;
+import net.ftgo.accounting.domain.AuthorizationStatus;
 import net.ftgo.accounting.payment.PaymentAuthorizationDecision;
 import net.ftgo.accounting.payment.PaymentAuthorizationGateway;
 import net.ftgo.accounting.repository.AccountRepository;
+import net.ftgo.accounting.settlement.PaymentLedgerEntry;
+import net.ftgo.accounting.settlement.PaymentLedgerService;
+import net.ftgo.accounting.settlement.SettlementDecision;
+import net.ftgo.accounting.settlement.SettlementGateway;
 import net.ftgo.common.Money;
 import net.ftgo.common.channels.ChannelNames;
 import net.ftgo.common.messaging.IdempotentCommandExecutor;
@@ -39,17 +44,23 @@ public class AccountingServiceCommandHandlers {
     private final AccountRepository accountRepository;
     private final DomainEventPublisher eventPublisher;
     private final PaymentAuthorizationGateway paymentAuthorizationGateway;
+    private final SettlementGateway settlementGateway;
+    private final PaymentLedgerService paymentLedgerService;
     private final IdempotentCommandExecutor idempotentCommandExecutor;
 
     public AccountingServiceCommandHandlers(
         AccountRepository accountRepository,
         DomainEventPublisher eventPublisher,
         PaymentAuthorizationGateway paymentAuthorizationGateway,
+        SettlementGateway settlementGateway,
+        PaymentLedgerService paymentLedgerService,
         IdempotentCommandExecutor idempotentCommandExecutor
     ) {
         this.accountRepository = accountRepository;
         this.eventPublisher = eventPublisher;
         this.paymentAuthorizationGateway = paymentAuthorizationGateway;
+        this.settlementGateway = settlementGateway;
+        this.paymentLedgerService = paymentLedgerService;
         this.idempotentCommandExecutor = idempotentCommandExecutor;
     }
 
@@ -115,52 +126,75 @@ public class AccountingServiceCommandHandlers {
 
     private Message authorizeCardOnce(AuthorizeCardCommand command) {
         try {
-            PaymentAuthorizationDecision decision = paymentAuthorizationGateway.authorize(
+            PaymentAuthorizationDecision authorizationDecision = paymentAuthorizationGateway.authorize(
                 command.getPaymentToken(),
                 command.getAmount()
             );
-            if (!decision.approved()) {
+            if (!authorizationDecision.approved()) {
                 return withFailure(new CardAuthorizationDenied(
                     command.getOrderId(),
-                    decision.reason()
+                    authorizationDecision.reason()
                 ));
             }
 
             Account account = accountRepository.findByConsumerId(command.getConsumerId())
                 .orElseGet(() -> accountRepository.saveAndFlush(new Account(command.getConsumerId())));
 
-            Authorization existing = account.findAuthorizationByRequestId(command.getRequestId());
-            if (existing != null) {
-                if (command.getOrderId() != null
-                    && !existing.matches(command.getOrderId(), command.getAmount())) {
-                    return withFailure(new CardAuthorizationDenied(
-                        command.getOrderId(),
-                        "Request ID conflict"
-                    ));
-                }
-                return withSuccess(new CardAuthorized(existing.getId(), command.getOrderId()));
-            }
-
-            Authorization authorization = command.getOrderId() == null
-                ? account.authorize(command.getRequestId(), command.getAmount())
-                : account.authorize(
+            Authorization authorization = account.findAuthorizationByRequestId(command.getRequestId());
+            boolean created = authorization == null;
+            if (authorization != null
+                && command.getOrderId() != null
+                && !authorization.matches(command.getOrderId(), command.getAmount())) {
+                return withFailure(new CardAuthorizationDenied(
                     command.getOrderId(),
-                    command.getRequestId(),
-                    command.getAmount()
-                );
+                    "Request ID conflict"
+                ));
+            }
+            if (authorization == null) {
+                authorization = command.getOrderId() == null
+                    ? account.authorize(command.getRequestId(), command.getAmount())
+                    : account.authorize(
+                        command.getOrderId(),
+                        command.getRequestId(),
+                        command.getAmount()
+                    );
+            }
             accountRepository.saveAndFlush(account);
 
-            eventPublisher.publishAccountEvent(
-                account.getId(),
-                account.getVersion(),
-                new CardAuthorizedEvent(
-                    account.getId(),
-                    authorization.getId(),
-                    authorization.getRequestId(),
-                    authorization.getAmount().getAmount(),
-                    authorization.getCreatedAt()
-                )
+            SettlementDecision settlement = settlementGateway.authorize(
+                authorization.getId(),
+                command.getOrderId(),
+                authorization.getAmount(),
+                command.getRequestId()
             );
+            if (!settlement.approved()) {
+                throw new IllegalStateException(
+                    "Provider authorization state was rejected: " + settlement.reason()
+                );
+            }
+            paymentLedgerService.append(
+                account.getId(),
+                command.getOrderId(),
+                authorization.getId(),
+                PaymentLedgerEntry.OperationType.AUTHORIZE,
+                command.getRequestId(),
+                authorization.getAmount().getAmount(),
+                settlement.providerReference()
+            );
+
+            if (created) {
+                eventPublisher.publishAccountEvent(
+                    account.getId(),
+                    account.getVersion(),
+                    new CardAuthorizedEvent(
+                        account.getId(),
+                        authorization.getId(),
+                        authorization.getRequestId(),
+                        authorization.getAmount().getAmount(),
+                        authorization.getCreatedAt()
+                    )
+                );
+            }
             return withSuccess(new CardAuthorized(authorization.getId(), command.getOrderId()));
         } catch (IllegalArgumentException e) {
             if (command.getOrderId() != null) {
@@ -173,12 +207,29 @@ public class AccountingServiceCommandHandlers {
     private Message captureAuthorizationOnce(CaptureAuthorizationCommand command) {
         try {
             Account account = requireAccount(command.getAuthorizationId());
+            Authorization authorization = requireAuthorization(account, command.getAuthorizationId());
+            SettlementDecision settlement = settlementGateway.capture(
+                command.getAuthorizationId(),
+                command.getOrderId(),
+                command.getRequestId()
+            );
+            if (!settlement.approved()) return withFailure(settlement.reason());
+
             boolean changed = account.captureAuthorization(
                 command.getOrderId(),
                 command.getAuthorizationId(),
                 command.getRequestId()
             );
-            accountRepository.saveAndFlush(account);
+            if (changed) accountRepository.saveAndFlush(account);
+            paymentLedgerService.append(
+                account.getId(),
+                command.getOrderId(),
+                command.getAuthorizationId(),
+                PaymentLedgerEntry.OperationType.CAPTURE,
+                command.getRequestId(),
+                authorization.getAmount().getAmount(),
+                settlement.providerReference()
+            );
             if (changed) {
                 eventPublisher.publishAccountEvent(
                     account.getId(),
@@ -205,13 +256,30 @@ public class AccountingServiceCommandHandlers {
     private Message voidAuthorizationOnce(VoidAuthorizationCommand command) {
         try {
             Account account = requireAccount(command.getAuthorizationId());
+            Authorization authorization = requireAuthorization(account, command.getAuthorizationId());
+            SettlementDecision settlement = settlementGateway.voidAuthorization(
+                command.getAuthorizationId(),
+                command.getOrderId(),
+                command.getRequestId()
+            );
+            if (!settlement.approved()) return withFailure(settlement.reason());
+
             boolean changed = account.voidAuthorization(
                 command.getOrderId(),
                 command.getAuthorizationId(),
                 command.getReason(),
                 command.getRequestId()
             );
-            accountRepository.saveAndFlush(account);
+            if (changed) accountRepository.saveAndFlush(account);
+            paymentLedgerService.append(
+                account.getId(),
+                command.getOrderId(),
+                command.getAuthorizationId(),
+                PaymentLedgerEntry.OperationType.VOID,
+                command.getRequestId(),
+                authorization.getAmount().getAmount(),
+                settlement.providerReference()
+            );
             if (changed) {
                 eventPublisher.publishAccountEvent(
                     account.getId(),
@@ -238,6 +306,14 @@ public class AccountingServiceCommandHandlers {
     private Message refundPaymentOnce(RefundPaymentCommand command) {
         try {
             Account account = requireAccount(command.getCaptureId());
+            SettlementDecision settlement = settlementGateway.refund(
+                command.getCaptureId(),
+                command.getOrderId(),
+                command.getAmount(),
+                command.getRequestId()
+            );
+            if (!settlement.approved()) return withFailure(settlement.reason());
+
             boolean changed = account.refundPayment(
                 command.getOrderId(),
                 command.getCaptureId(),
@@ -245,7 +321,16 @@ public class AccountingServiceCommandHandlers {
                 command.getReason(),
                 command.getRequestId()
             );
-            accountRepository.saveAndFlush(account);
+            if (changed) accountRepository.saveAndFlush(account);
+            paymentLedgerService.append(
+                account.getId(),
+                command.getOrderId(),
+                command.getCaptureId(),
+                PaymentLedgerEntry.OperationType.REFUND,
+                command.getRequestId(),
+                command.getAmount().getAmount(),
+                settlement.providerReference()
+            );
             if (changed) {
                 eventPublisher.publishAccountEvent(
                     account.getId(),
@@ -276,18 +361,123 @@ public class AccountingServiceCommandHandlers {
                 .orElseThrow(() -> new IllegalArgumentException(
                     "Account not found for consumer " + command.getConsumerId()
                 ));
-            account.reverseAuthorization(command.getAuthorizationId());
-            accountRepository.saveAndFlush(account);
-            eventPublisher.publishAccountEvent(
-                account.getId(),
-                account.getVersion(),
-                new CardReversed(
-                    account.getId(),
-                    command.getAuthorizationId(),
-                    LocalDateTime.now()
-                )
+            Authorization authorization = requireAuthorization(
+                account,
+                command.getAuthorizationId()
             );
-            return withSuccess(new AuthorizationReversed(command.getAuthorizationId()));
+
+            if (command.getOrderId() == null || command.getRequestId() == null) {
+                account.reverseAuthorization(command.getAuthorizationId());
+                accountRepository.saveAndFlush(account);
+                eventPublisher.publishAccountEvent(
+                    account.getId(),
+                    account.getVersion(),
+                    new CardReversed(
+                        account.getId(),
+                        command.getAuthorizationId(),
+                        LocalDateTime.now()
+                    )
+                );
+                return withSuccess(new AuthorizationReversed(command.getAuthorizationId()));
+            }
+
+            if (authorization.getStatus() == AuthorizationStatus.AUTHORIZED
+                || authorization.getStatus() == AuthorizationStatus.APPROVED) {
+                SettlementDecision settlement = settlementGateway.voidAuthorization(
+                    authorization.getId(),
+                    command.getOrderId(),
+                    command.getRequestId()
+                );
+                if (!settlement.approved()) return withFailure(settlement.reason());
+
+                boolean changed = account.voidAuthorization(
+                    command.getOrderId(),
+                    authorization.getId(),
+                    "ORDER_CANCELLED",
+                    command.getRequestId()
+                );
+                if (changed) accountRepository.saveAndFlush(account);
+                paymentLedgerService.append(
+                    account.getId(),
+                    command.getOrderId(),
+                    authorization.getId(),
+                    PaymentLedgerEntry.OperationType.VOID,
+                    command.getRequestId(),
+                    authorization.getAmount().getAmount(),
+                    settlement.providerReference()
+                );
+                if (changed) {
+                    eventPublisher.publishAccountEvent(
+                        account.getId(),
+                        account.getVersion(),
+                        new AuthorizationVoidedEvent(
+                            account.getId(),
+                            command.getOrderId(),
+                            authorization.getId(),
+                            "ORDER_CANCELLED",
+                            command.getRequestId(),
+                            LocalDateTime.now()
+                        )
+                    );
+                }
+                return withSuccess(new AuthorizationReversed(authorization.getId()));
+            }
+
+            if (authorization.getStatus() == AuthorizationStatus.CAPTURED
+                || authorization.getStatus() == AuthorizationStatus.PARTIALLY_REFUNDED) {
+                Money remaining = authorization.getRefundableAmount();
+                SettlementDecision settlement = settlementGateway.refund(
+                    authorization.getId(),
+                    command.getOrderId(),
+                    remaining,
+                    command.getRequestId()
+                );
+                if (!settlement.approved()) return withFailure(settlement.reason());
+
+                boolean changed = account.refundPayment(
+                    command.getOrderId(),
+                    authorization.getId(),
+                    remaining,
+                    "ORDER_CANCELLED",
+                    command.getRequestId()
+                );
+                if (changed) accountRepository.saveAndFlush(account);
+                paymentLedgerService.append(
+                    account.getId(),
+                    command.getOrderId(),
+                    authorization.getId(),
+                    PaymentLedgerEntry.OperationType.REFUND,
+                    command.getRequestId(),
+                    remaining.getAmount(),
+                    settlement.providerReference()
+                );
+                if (changed) {
+                    eventPublisher.publishAccountEvent(
+                        account.getId(),
+                        account.getVersion(),
+                        new PaymentRefundedEvent(
+                            account.getId(),
+                            command.getOrderId(),
+                            authorization.getId(),
+                            "ORDER_CANCELLED",
+                            command.getRequestId(),
+                            LocalDateTime.now()
+                        )
+                    );
+                }
+                return withSuccess(new AuthorizationReversed(authorization.getId()));
+            }
+
+            if (authorization.getStatus() == AuthorizationStatus.VOIDED
+                || authorization.getStatus() == AuthorizationStatus.REVERSED
+                || authorization.getStatus() == AuthorizationStatus.REFUNDED) {
+                return withSuccess(new AuthorizationReversed(authorization.getId()));
+            }
+
+            return withFailure(
+                "Cannot settle cancellation in authorization state "
+                    + authorization.getStatus()
+            );
         } catch (IllegalArgumentException | IllegalStateException e) {
             return withFailure(e.getMessage());
         }
@@ -316,5 +506,15 @@ public class AccountingServiceCommandHandlers {
             .orElseThrow(() -> new IllegalArgumentException(
                 "Account not found for authorization " + authorizationId
             ));
+    }
+
+    private Authorization requireAuthorization(Account account, Long authorizationId) {
+        Authorization authorization = account.findAuthorizationById(authorizationId);
+        if (authorization == null) {
+            throw new IllegalArgumentException(
+                "Authorization with ID " + authorizationId + " not found"
+            );
+        }
+        return authorization;
     }
 }

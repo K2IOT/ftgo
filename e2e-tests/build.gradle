@@ -11,3 +11,10 @@ jar {
 dependencies {
     testImplementation 'org.apache.kafka:kafka-clients'
 }
+
+tasks.named('test') {
+    onlyIf {
+        System.getenv('FTGO_E2E_ENABLED') == 'true'
+            || System.getenv('FTGO_PHASE02B_E2E_ENABLED') == 'true'
+    }
+}

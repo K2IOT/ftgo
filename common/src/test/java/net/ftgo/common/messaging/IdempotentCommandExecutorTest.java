@@ -12,6 +12,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static io.eventuate.tram.commands.consumer.CommandHandlerReplyBuilder.withFailure;
 import static io.eventuate.tram.commands.consumer.CommandHandlerReplyBuilder.withSuccess;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class IdempotentCommandExecutorTest {
 
@@ -53,6 +54,39 @@ class IdempotentCommandExecutorTest {
         assertSameReply(first, duplicate);
     }
 
+    @Test
+    void failedCommandReleasesClaimForSameMessageIdRetry() {
+        InMemoryStore store = new InMemoryStore();
+        IdempotentCommandExecutor executor = new IdempotentCommandExecutor(store);
+        AtomicInteger calls = new AtomicInteger();
+
+        assertThrows(IllegalStateException.class, () -> executor.execute(
+            "accounting-service",
+            "command-timeout-789",
+            () -> {
+                calls.incrementAndGet();
+                throw new IllegalStateException("temporary provider timeout");
+            }
+        ));
+
+        Message retry = executor.execute(
+            "accounting-service",
+            "command-timeout-789",
+            () -> {
+                calls.incrementAndGet();
+                return withSuccess(new TestReply("capture-789"));
+            }
+        );
+        Message replay = executor.execute(
+            "accounting-service",
+            "command-timeout-789",
+            () -> withSuccess(new TestReply("must-not-run"))
+        );
+
+        assertEquals(2, calls.get());
+        assertSameReply(retry, replay);
+    }
+
     private void assertSameReply(Message expected, Message actual) {
         assertEquals(expected.getPayload(), actual.getPayload());
         assertEquals(
@@ -84,6 +118,12 @@ class IdempotentCommandExecutorTest {
             ProcessedCommandResult result
         ) {
             completed.put(key(consumerName, commandId), result);
+        }
+
+        @Override
+        public void abort(String consumerName, String commandId) {
+            String key = key(consumerName, commandId);
+            if (!completed.containsKey(key)) claimed.remove(key);
         }
 
         @Override

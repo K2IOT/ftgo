@@ -7,6 +7,8 @@ import net.ftgo.accounting.messaging.AccountingServiceCommandHandlers;
 import net.ftgo.accounting.messaging.DomainEventPublisher;
 import net.ftgo.accounting.payment.PaymentAuthorizationGateway;
 import net.ftgo.accounting.repository.AccountRepository;
+import net.ftgo.accounting.settlement.PaymentLedgerService;
+import net.ftgo.accounting.settlement.SettlementGateway;
 import net.ftgo.common.Money;
 import net.ftgo.common.channels.ChannelNames;
 import net.ftgo.common.messaging.IdempotentCommandExecutor;
@@ -44,6 +46,8 @@ class PaymentAuthorizationSharedContractTest {
             mock(AccountRepository.class),
             mock(DomainEventPublisher.class),
             mock(PaymentAuthorizationGateway.class),
+            mock(SettlementGateway.class),
+            mock(PaymentLedgerService.class),
             mock(IdempotentCommandExecutor.class)
         ).commandHandlers();
 

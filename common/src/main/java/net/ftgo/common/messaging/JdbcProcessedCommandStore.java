@@ -60,6 +60,21 @@ public class JdbcProcessedCommandStore implements ProcessedCommandStore {
     }
 
     @Override
+    public void abort(String consumerName, String commandId) {
+        jdbcTemplate.update(
+            """
+            DELETE FROM processed_commands
+             WHERE consumer_name = ?
+               AND command_id = ?
+               AND outcome = ?
+            """,
+            consumerName,
+            commandId,
+            PROCESSING
+        );
+    }
+
+    @Override
     public Optional<ProcessedCommandResult> findCompleted(
         String consumerName,
         String commandId

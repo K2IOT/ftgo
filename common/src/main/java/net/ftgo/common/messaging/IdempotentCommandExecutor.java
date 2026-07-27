@@ -40,13 +40,18 @@ public class IdempotentCommandExecutor {
         Objects.requireNonNull(handler, "handler");
 
         if (store.tryStart(consumerName, commandId)) {
-            Message reply = Objects.requireNonNull(
-                handler.get(),
-                "Participant command handler returned no reply"
-            );
-            ProcessedCommandResult result = ProcessedCommandResult.from(reply);
-            store.complete(consumerName, commandId, result);
-            return reply;
+            try {
+                Message reply = Objects.requireNonNull(
+                    handler.get(),
+                    "Participant command handler returned no reply"
+                );
+                ProcessedCommandResult result = ProcessedCommandResult.from(reply);
+                store.complete(consumerName, commandId, result);
+                return reply;
+            } catch (RuntimeException | Error failure) {
+                store.abort(consumerName, commandId);
+                throw failure;
+            }
         }
 
         return store.findCompleted(consumerName, commandId)

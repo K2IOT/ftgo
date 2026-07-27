@@ -6,6 +6,8 @@ import net.ftgo.accounting.domain.Authorization;
 import net.ftgo.accounting.domain.AuthorizationStatus;
 import net.ftgo.accounting.payment.PaymentAuthorizationDecision;
 import net.ftgo.accounting.repository.AccountRepository;
+import net.ftgo.accounting.settlement.PaymentLedgerService;
+import net.ftgo.accounting.settlement.SettlementGateway;
 import net.ftgo.common.Money;
 import net.ftgo.common.messaging.IdempotentCommandExecutor;
 import net.ftgo.common.messaging.ProcessedCommandResult;
@@ -39,6 +41,8 @@ class AccountingServiceCommandHandlersContractTest {
             accountRepository,
             eventPublisher,
             (paymentToken, amount) -> PaymentAuthorizationDecision.allow(),
+            mock(SettlementGateway.class),
+            mock(PaymentLedgerService.class),
             new IdempotentCommandExecutor(new InMemoryProcessedCommandStore())
         );
     }

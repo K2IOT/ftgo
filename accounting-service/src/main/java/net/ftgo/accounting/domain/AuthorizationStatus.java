@@ -4,6 +4,7 @@ public enum AuthorizationStatus {
     AUTHORIZED,
     DENIED,
     CAPTURED,
+    PARTIALLY_REFUNDED,
     VOIDED,
     REFUNDED,
 

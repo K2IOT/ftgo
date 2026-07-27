@@ -28,6 +28,14 @@ public final class InMemoryProcessedCommandStore implements ProcessedCommandStor
     }
 
     @Override
+    public synchronized void abort(String consumerName, String commandId) {
+        String key = key(consumerName, commandId);
+        if (!completed.containsKey(key)) {
+            claimed.remove(key);
+        }
+    }
+
+    @Override
     public synchronized Optional<ProcessedCommandResult> findCompleted(
         String consumerName,
         String commandId

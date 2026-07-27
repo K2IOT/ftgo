@@ -15,54 +15,19 @@ import static io.eventuate.tram.commands.consumer.CommandWithDestinationBuilder.
 
 /**
  * CancelOrderSaga orchestrates the distributed transaction for order cancellation.
- * 
- * This saga coordinates order cancellation across multiple services:
- * - Order Service: Manages order state transitions
- * - Kitchen Service: Cancels kitchen ticket
- * - Accounting Service: Reverses payment authorization
- * 
- * Saga Steps:
- * 1. beginCancel (local) - Transitions order to CANCEL_PENDING state
- * 2. beginCancelTicket - Initiates ticket cancellation in Kitchen Service
- * 3. reverseAuthorization - Reverses payment authorization (PIVOT POINT - first non-compensatable step)
- * 4. confirmCancelTicket - Confirms ticket cancellation (retriable)
- * 5. confirmCancel (local) - Transitions order to CANCELLED state (retriable)
- * 
- * Compensation Logic:
- * - If saga fails before pivot (steps 1-2): Execute compensations in reverse order
- *   - undoCancelTicket (if ticket cancellation was initiated)
- *   - undoCancel (restore order to APPROVED state)
- * - If saga fails after pivot (steps 3-5): Retry until success (no compensation)
- * 
- * Pivot Point:
- * - Step 3 (reverseAuthorization) is the pivot point
- * - Once payment authorization is reversed, we cannot compensate (money has been released)
- * - All steps after pivot must be retriable and eventually succeed
- * 
- * Semantic Lock:
- * - Order remains in CANCEL_PENDING state during saga execution
- * - Prevents concurrent revise operations
- * - Released when saga completes (CANCELLED or APPROVED if compensation occurs)
- * 
- * Requirements Coverage:
- * - Requirement 2.1: Transition order to CANCEL_PENDING state
- * - Requirement 2.2: Begin ticket cancellation in Kitchen Service
- * - Requirement 2.3: Reverse payment authorization in Accounting Service
- * - Requirement 2.4: Confirm ticket and order cancellation
- * - Requirement 2.5: Execute compensations if saga fails before pivot
- * - Requirement 2.6: Publish OrderCancelled event on success
- * - Requirement 2.7: Enforce semantic lock during cancellation
+ *
+ * <p>The accounting pivot is settlement-aware. An uncaptured authorization is
+ * voided; a captured or partially refunded payment is refunded for the remaining
+ * captured amount. The command carries the order and request identities required
+ * for provider and immutable-ledger idempotency.</p>
  */
 public class CancelOrderSaga implements SimpleSaga<CancelOrderSagaData> {
-    
+
     private static final Logger logger = LoggerFactory.getLogger(CancelOrderSaga.class);
-    
+
     private final CancelOrderSagaLocalSteps localSteps;
     private final SagaDefinition<CancelOrderSagaData> sagaDefinition;
-    
-    /**
-     * Creates the CancelOrderSaga with its step definitions.
-     */
+
     public CancelOrderSaga() {
         this(null);
     }
@@ -83,32 +48,17 @@ public class CancelOrderSaga implements SimpleSaga<CancelOrderSagaData> {
             .invokeParticipant(this::confirmCancelStep)
         .build();
     }
-    
+
     @Override
     public SagaDefinition<CancelOrderSagaData> getSagaDefinition() {
         return sagaDefinition;
     }
-    
-    // Step 1: Begin cancel (local)
-    
-    /**
-     * Begins order cancellation by transitioning to CANCEL_PENDING state.
-     * This local saga step performs the real aggregate transition before
-     * participant work begins.
-     * 
-     * Implements semantic lock to prevent concurrent modifications.
-     * 
-     * @param data the saga data
-     */
+
     private void beginCancel(CancelOrderSagaData data) {
         logger.info("CancelOrderSaga: Step 1 - beginCancel for orderId={}", data.getOrderId());
         requireLocalSteps().beginCancelOrder(data.getOrderId());
     }
-    
-    /**
-     * Compensation for beginCancel: Restores order to APPROVED state.
-     * @param data the saga data
-     */
+
     private void undoCancel(CancelOrderSagaData data) {
         logger.warn("CancelOrderSaga: Compensation - undoCancel for orderId={}", data.getOrderId());
         requireLocalSteps().undoCancelOrder(data.getOrderId());
@@ -116,100 +66,63 @@ public class CancelOrderSaga implements SimpleSaga<CancelOrderSagaData> {
 
     private CancelOrderSagaLocalSteps requireLocalSteps() {
         if (localSteps == null) {
-            throw new IllegalStateException("CancelOrderSagaLocalSteps is required to execute CancelOrderSaga");
+            throw new IllegalStateException(
+                "CancelOrderSagaLocalSteps is required to execute CancelOrderSaga"
+            );
         }
         return localSteps;
     }
-    
-    // Step 2: Begin cancel ticket
-    
-    /**
-     * Sends command to Kitchen Service to begin ticket cancellation.
-     * 
-     * @param data the saga data
-     * @return command to send to Kitchen Service
-     */
+
     private CommandWithDestination beginCancelTicket(CancelOrderSagaData data) {
-        logger.info("CancelOrderSaga: Step 2 - beginCancelTicket for ticketId={}", data.getTicketId());
-        
+        logger.info(
+            "CancelOrderSaga: Step 2 - beginCancelTicket for ticketId={}",
+            data.getTicketId()
+        );
         return send(new BeginCancelTicketCommand(data.getTicketId()))
             .to(ChannelNames.KITCHEN_SERVICE_COMMAND_CHANNEL)
             .build();
     }
-    
-    /**
-     * Compensation for beginCancelTicket: Undoes ticket cancellation.
-     * Sends command to Kitchen Service to restore the ticket.
-     * 
-     * @param data the saga data
-     * @return command to send to Kitchen Service
-     */
+
     private CommandWithDestination undoCancelTicket(CancelOrderSagaData data) {
-        logger.warn("CancelOrderSaga: Compensation - undoCancelTicket for ticketId={}", data.getTicketId());
-        
+        logger.warn(
+            "CancelOrderSaga: Compensation - undoCancelTicket for ticketId={}",
+            data.getTicketId()
+        );
         return send(new UndoCancelTicketCommand(data.getTicketId()))
             .to(ChannelNames.KITCHEN_SERVICE_COMMAND_CHANNEL)
             .build();
     }
-    
-    // Step 3: Reverse authorization (PIVOT POINT)
-    
-    /**
-     * Sends command to Accounting Service to reverse payment authorization.
-     * 
-     * THIS IS THE PIVOT POINT:
-     * - First non-compensatable step
-     * - Once authorization is reversed, saga must complete forward
-     * - All subsequent steps are retriable
-     * 
-     * @param data the saga data
-     * @return command to send to Accounting Service
-     */
+
     private CommandWithDestination reverseAuthorization(CancelOrderSagaData data) {
-        logger.info("CancelOrderSaga: Step 3 (PIVOT) - reverseAuthorization for authorizationId={}",
-            data.getAuthorizationId());
-        
-        return send(new ReverseAuthorizationCommand(data.getConsumerId(), data.getAuthorizationId()))
+        logger.info(
+            "CancelOrderSaga: Step 3 (PIVOT) - settle cancellation for authorizationId={}",
+            data.getAuthorizationId()
+        );
+        return send(new ReverseAuthorizationCommand(
+            data.getConsumerId(),
+            data.getAuthorizationId(),
+            data.getOrderId(),
+            "order-" + data.getOrderId() + "-cancel-settlement"
+        ))
             .to(ChannelNames.ACCOUNTING_SERVICE_COMMAND_CHANNEL)
             .build();
     }
-    
-    // Step 4: Confirm cancel ticket (retriable)
-    
-    /**
-     * Sends command to Kitchen Service to confirm ticket cancellation.
-     * 
-     * This step is RETRIABLE (occurs after pivot point).
-     * If it fails, the saga will retry until success.
-     * 
-     * @param data the saga data
-     * @return command to send to Kitchen Service
-     */
+
     private CommandWithDestination confirmCancelTicket(CancelOrderSagaData data) {
-        logger.info("CancelOrderSaga: Step 4 (retriable) - confirmCancelTicket for ticketId={}",
-            data.getTicketId());
-        
+        logger.info(
+            "CancelOrderSaga: Step 4 (retriable) - confirmCancelTicket for ticketId={}",
+            data.getTicketId()
+        );
         return send(new ConfirmCancelTicketCommand(data.getTicketId()))
             .to(ChannelNames.KITCHEN_SERVICE_COMMAND_CHANNEL)
             .build();
     }
-    
-    // Step 5: Confirm cancel (local, retriable)
-    
-    /**
-     * Confirms order cancellation (transitions to CANCELLED state).
-     * Sends command to Order Service to confirm the cancellation.
-     * 
-     * This step is RETRIABLE (occurs after pivot point).
-     * If it fails, the saga will retry until success.
-     * 
-     * @param data the saga data
-     * @return command to send to Order Service
-     */
+
     private CommandWithDestination confirmCancelStep(CancelOrderSagaData data) {
-        logger.info("CancelOrderSaga: Step 5 (retriable) - confirmCancel for orderId={}",
-            data.getOrderId());
-        
+        logger.info(
+            "CancelOrderSaga: Step 5 (retriable) - confirmCancel for orderId={}",
+            data.getOrderId()
+        );
         return send(new CancelOrderSagaLocalSteps.ConfirmCancelCommand(data.getOrderId()))
             .to(ChannelNames.CANCEL_ORDER_SAGA_COMMAND_CHANNEL)
             .build();
