@@ -1,6 +1,7 @@
 package net.ftgo.order.api;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
@@ -13,11 +14,11 @@ import java.util.List;
 
 /**
  * Request DTO for creating an order from a specific restaurant menu snapshot.
+ * Consumer identity is derived from the authenticated principal and is never
+ * accepted from the request body.
  */
+@JsonIgnoreProperties(value = "consumerId")
 public class CreateOrderRequest {
-
-    @NotNull(message = "Consumer ID is required")
-    private final Long consumerId;
 
     @NotNull(message = "Restaurant ID is required")
     private final Long restaurantId;
@@ -40,11 +41,10 @@ public class CreateOrderRequest {
     private final String paymentToken;
 
     /**
-     * Backward-compatible constructor for existing Java callers. JSON callers
-     * should send expectedMenuVersion from the menu snapshot they rendered.
+     * Backward-compatible constructor for Java callers that do not provide a
+     * menu version. The consumer identity still comes from authentication.
      */
     public CreateOrderRequest(
-        Long consumerId,
         Long restaurantId,
         List<OrderLineItemRequest> lineItems,
         Address deliveryAddress,
@@ -52,7 +52,6 @@ public class CreateOrderRequest {
         String paymentToken
     ) {
         this(
-            consumerId,
             restaurantId,
             0L,
             lineItems,
@@ -64,7 +63,6 @@ public class CreateOrderRequest {
 
     @JsonCreator
     public CreateOrderRequest(
-        @JsonProperty("consumerId") Long consumerId,
         @JsonProperty("restaurantId") Long restaurantId,
         @JsonProperty("expectedMenuVersion") Long expectedMenuVersion,
         @JsonProperty("lineItems") List<OrderLineItemRequest> lineItems,
@@ -72,7 +70,6 @@ public class CreateOrderRequest {
         @JsonProperty("deliveryTime") LocalDateTime deliveryTime,
         @JsonProperty("paymentToken") String paymentToken
     ) {
-        this.consumerId = consumerId;
         this.restaurantId = restaurantId;
         this.expectedMenuVersion = expectedMenuVersion == null ? 0L : expectedMenuVersion;
         this.lineItems = lineItems;
@@ -81,7 +78,6 @@ public class CreateOrderRequest {
         this.paymentToken = paymentToken;
     }
 
-    public Long getConsumerId() { return consumerId; }
     public Long getRestaurantId() { return restaurantId; }
     public Long getExpectedMenuVersion() { return expectedMenuVersion; }
     public List<OrderLineItemRequest> getLineItems() { return lineItems; }
