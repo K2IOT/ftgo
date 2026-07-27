@@ -33,6 +33,7 @@ public class SecurityConfiguration {
                 ).permitAll()
                 .requestMatchers("/internal/**").access(internalServiceAccess(internalAudience))
                 .requestMatchers("/actuator/**").hasAnyRole("ADMIN", "SERVICE")
+                .requestMatchers("/admin/consumers/**").hasRole("ADMIN")
                 .requestMatchers("/consumers/**").hasAnyRole("CONSUMER", "ADMIN")
                 .anyRequest().authenticated()
             )
