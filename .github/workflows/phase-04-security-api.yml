@@ -194,3 +194,25 @@ jobs:
             phase-04-consumer-ownership.log
             consumer-service/build/reports/tests/**
             consumer-service/build/test-results/**
+
+  consumer-test-compile-diagnostic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Print isolated consumer compile failure
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch "${{ github.event.pull_request.head.ref }}" \
+            https://github.com/${{ github.repository }}.git repository >/dev/null 2>&1
+          cd repository
+          export JAVA_HOME="$JAVA_HOME_21_X64"
+          export PATH="$JAVA_HOME/bin:$PATH"
+          if ./gradlew :consumer-service:compileTestJava \
+              --no-daemon --console=plain >/tmp/consumer-compile.log 2>&1; then
+            echo "consumer test compilation passed"
+          else
+            grep -E "(^| )error:|FAILED|FAILURE:|Execution failed|Compilation failed|Could not" \
+              /tmp/consumer-compile.log | tail -n 80
+            exit 1
+          fi
