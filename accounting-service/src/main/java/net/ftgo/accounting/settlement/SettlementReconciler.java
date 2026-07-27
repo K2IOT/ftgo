@@ -115,7 +115,7 @@ public class SettlementReconciler {
         return new SettlementReconciliationReport(authorizations.size(), detected, resolved);
     }
 
-    @Transactional
+    @Transactional(noRollbackFor = RuntimeException.class)
     public SettlementDiscrepancy repair(
         Long discrepancyId,
         SettlementRepairAction action,
