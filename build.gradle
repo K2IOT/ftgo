@@ -79,6 +79,9 @@ configure(subprojects.findAll {
     dependencies {
         implementation project(':common')
         implementation 'org.springframework.boot:spring-boot-starter-web'
+        implementation 'org.springframework.boot:spring-boot-starter-security'
+        implementation 'org.springframework.security:spring-security-oauth2-resource-server'
+        implementation 'org.springframework.security:spring-security-oauth2-jose'
         implementation 'org.springframework.kafka:spring-kafka'
         implementation 'io.eventuate.tram.core:eventuate-tram-spring-messaging'
         implementation 'io.eventuate.tram.core:eventuate-tram-spring-events'
@@ -87,6 +90,7 @@ configure(subprojects.findAll {
         implementation 'io.opentelemetry.instrumentation:opentelemetry-instrumentation-annotations:2.0.0'
         implementation 'net.logstash.logback:logstash-logback-encoder:7.4'
         testImplementation 'org.springframework.kafka:spring-kafka-test'
+        testImplementation 'org.springframework.security:spring-security-test'
     }
 }
 
