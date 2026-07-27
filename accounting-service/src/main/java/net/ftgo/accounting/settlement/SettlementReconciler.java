@@ -130,7 +130,9 @@ public class SettlementReconciler {
             .orElseThrow(() -> new IllegalArgumentException(
                 "Settlement discrepancy not found: " + discrepancyId
             ));
-        if (discrepancy.sameRepairRequest(requestId, action)) {
+        if (discrepancy.sameRepairRequest(requestId, action)
+            && (discrepancy.getStatus() == SettlementDiscrepancyStatus.RESOLVED
+                || discrepancy.getStatus() == SettlementDiscrepancyStatus.ACKNOWLEDGED)) {
             return discrepancy;
         }
 
