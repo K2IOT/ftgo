@@ -14,13 +14,12 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(
-    controllers = SecuritySmokeTest.ProbeController.class,
     properties = {
         "spring.security.oauth2.resourceserver.jwt.issuer-uri=https://identity.example/realms/ftgo",
         "spring.security.oauth2.resourceserver.jwt.jwk-set-uri=https://identity.example/realms/ftgo/protocol/openid-connect/certs"
     }
 )
-@Import(SecurityConfiguration.class)
+@Import({SecurityConfiguration.class, SecuritySmokeTest.ProbeController.class})
 class SecuritySmokeTest {
 
     @Autowired
