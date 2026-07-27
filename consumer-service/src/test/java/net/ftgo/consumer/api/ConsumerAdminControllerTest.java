@@ -48,7 +48,7 @@ class ConsumerAdminControllerTest {
     @Test
     void rejectsConsumerCreditLimitMutation() throws Exception {
         mockMvc.perform(put("/admin/consumers/101/credit-limit")
-                .with(authentication(authentication("consumer-user", "CONSUMER", 101L)))
+                .with(authentication(ftgoAuthentication("consumer-user", "CONSUMER", 101L)))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {"creditLimit": 500.00}
@@ -70,7 +70,7 @@ class ConsumerAdminControllerTest {
             .thenReturn(updated);
 
         mockMvc.perform(put("/admin/consumers/101/credit-limit")
-                .with(authentication(authentication("admin-user", "ADMIN", null)))
+                .with(authentication(ftgoAuthentication("admin-user", "ADMIN", null)))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {"creditLimit": 500.00}
@@ -81,7 +81,7 @@ class ConsumerAdminControllerTest {
         verify(consumerService).updateCreditLimit(101L, new Money("500.00"));
     }
 
-    private AbstractAuthenticationToken authentication(
+    private AbstractAuthenticationToken ftgoAuthentication(
         String subject,
         String role,
         Long consumerId
