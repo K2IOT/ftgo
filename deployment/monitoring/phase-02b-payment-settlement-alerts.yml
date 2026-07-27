@@ -1,0 +1,44 @@
+groups:
+  - name: ftgo-payment-settlement
+    interval: 30s
+    rules:
+      - alert: FtgoPaymentSettlementDiscrepancyOpen
+        expr: ftgo_accounting_settlement_discrepancies_current > 0
+        for: 10m
+        labels:
+          severity: warning
+          service: accounting-service
+          phase: phase-02b
+        annotations:
+          summary: Payment settlement discrepancy remains open
+          description: >-
+            Accounting reconciliation has reported one or more provider,
+            aggregate, or immutable-ledger discrepancies for at least 10 minutes.
+
+      - alert: FtgoPaymentSettlementRepairFailure
+        expr: >-
+          sum(increase(ftgo_accounting_settlement_repairs_total{result="failure"}[10m])) > 0
+        for: 0m
+        labels:
+          severity: critical
+          service: accounting-service
+          phase: phase-02b
+        annotations:
+          summary: Payment settlement repair failed
+          description: >-
+            At least one idempotent payment settlement repair failed during the
+            last 10 minutes. Inspect the discrepancy failureDetails field before retrying.
+
+      - alert: FtgoPaymentSettlementDiscrepancyRate
+        expr: >-
+          sum(increase(ftgo_accounting_settlement_discrepancies_detected_total[15m])) > 5
+        for: 5m
+        labels:
+          severity: warning
+          service: accounting-service
+          phase: phase-02b
+        annotations:
+          summary: Payment settlement discrepancies are accumulating
+          description: >-
+            More than five provider, aggregate, or ledger differences were
+            detected in 15 minutes. Check provider availability and recent deployments.
