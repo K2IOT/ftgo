@@ -36,7 +36,8 @@ jobs:
               --no-daemon --console=plain >/tmp/kitchen-tests.log 2>&1; then
             echo 'kitchen ownership tests passed'
           else
-            grep -R -E '<failure|<error' kitchen-service/build/test-results/test || true
+            grep -R -E 'Caused by:|NoSuchBeanDefinitionException|UnsatisfiedDependencyException|BeanCreationException' \
+              kitchen-service/build/test-results/test | tail -n 120 || true
             grep -E 'FAILED|expected:|but was:|AssertionError|BUILD FAILED' \
               /tmp/kitchen-tests.log | tail -n 120 || true
             exit 1
