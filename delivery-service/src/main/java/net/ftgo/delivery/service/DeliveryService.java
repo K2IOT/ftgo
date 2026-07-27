@@ -29,6 +29,13 @@ public class DeliveryService {
         this.authorizationService = authorizationService;
     }
 
+    @Transactional(readOnly = true)
+    public Delivery getDelivery(Long deliveryId, Authentication authentication) {
+        Delivery delivery = requireDelivery(deliveryId);
+        authorizationService.requireDeliveryAccess(delivery, authentication);
+        return delivery;
+    }
+
     @Transactional
     public Delivery claimDelivery(Long deliveryId, Authentication authentication) {
         Long courierId = authorizationService.requireCourierId(authentication);
@@ -83,6 +90,11 @@ public class DeliveryService {
             )
         );
         return delivery;
+    }
+
+    private Delivery requireDelivery(Long deliveryId) {
+        return deliveryRepository.findById(deliveryId)
+            .orElseThrow(() -> new IllegalArgumentException("Delivery not found: " + deliveryId));
     }
 
     private Delivery requireForUpdate(Long deliveryId) {
