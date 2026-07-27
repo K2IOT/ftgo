@@ -102,13 +102,13 @@ public class SimulatedProviderPayment {
         if (amount == null || amount.isZero()) {
             throw new IllegalArgumentException("Refund amount must be positive");
         }
-        if (status != ProviderSettlementStatus.CAPTURED
-            && status != ProviderSettlementStatus.PARTIALLY_REFUNDED) {
-            throw new IllegalStateException("Cannot refund provider payment in state " + status);
-        }
         BigDecimal next = refundedAmount.add(amount.getAmount());
         if (next.compareTo(capturedAmount) > 0) {
             throw new IllegalArgumentException("Refund total exceeds captured amount");
+        }
+        if (status != ProviderSettlementStatus.CAPTURED
+            && status != ProviderSettlementStatus.PARTIALLY_REFUNDED) {
+            throw new IllegalStateException("Cannot refund provider payment in state " + status);
         }
         refundedAmount = next;
         status = refundedAmount.compareTo(capturedAmount) == 0
