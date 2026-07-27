@@ -5,6 +5,7 @@ import net.ftgo.accounting.domain.Authorization;
 import net.ftgo.accounting.domain.AuthorizationStatus;
 import net.ftgo.accounting.repository.AuthorizationRepository;
 import net.ftgo.common.Money;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,6 +18,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @Service
 public class SettlementReconciler {
@@ -33,7 +35,9 @@ public class SettlementReconciler {
     private final PaymentLedgerEntryRepository ledgerRepository;
     private final MeterRegistry meterRegistry;
     private final Clock clock;
+    private final AtomicInteger currentDiscrepancies = new AtomicInteger();
 
+    @Autowired
     public SettlementReconciler(
         AuthorizationRepository authorizationRepository,
         SettlementGateway settlementGateway,
@@ -65,6 +69,10 @@ public class SettlementReconciler {
         this.ledgerRepository = ledgerRepository;
         this.meterRegistry = meterRegistry;
         this.clock = clock;
+        meterRegistry.gauge(
+            "ftgo.accounting.settlement.discrepancies.current",
+            currentDiscrepancies
+        );
     }
 
     @Transactional
@@ -103,10 +111,7 @@ public class SettlementReconciler {
             }
         }
 
-        meterRegistry.gauge(
-            "ftgo.accounting.settlement.discrepancies.current",
-            detected
-        );
+        currentDiscrepancies.set(detected);
         return new SettlementReconciliationReport(authorizations.size(), detected, resolved);
     }
 
