@@ -1,0 +1,41 @@
+name: Phase 04 Kitchen Diagnostic
+
+on:
+  pull_request:
+    branches: [dev]
+    paths:
+      - 'kitchen-service/**'
+      - '.github/workflows/phase-04-kitchen-diagnostic.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: phase-04-kitchen-diagnostic-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compile-kitchen-ownership-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - name: Set up Java 21
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Print kitchen test compiler failure
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ./gradlew :kitchen-service:compileTestJava --no-daemon --console=plain \
+              >/tmp/kitchen-compile.log 2>&1; then
+            echo 'kitchen test compilation passed'
+          else
+            grep -E '(^| )error:|FAILED|FAILURE:|Execution failed|Compilation failed|Could not' \
+              /tmp/kitchen-compile.log | tail -n 120
+            exit 1
+          fi
