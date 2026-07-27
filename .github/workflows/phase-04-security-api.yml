@@ -153,12 +153,14 @@ jobs:
         run: |
           ./gradlew :kitchen-service:test \
             --tests '*TicketAuthorizationServiceTest' \
+            --tests '*KitchenServiceAuthorizationTest' \
             --no-daemon --stacktrace
 
       - name: Verify restaurant claim scope
         run: |
           ./gradlew :restaurant-service:test \
             --tests '*RestaurantAuthorizationServiceTest' \
+            --tests '*RestaurantControllerAuthorizationTest' \
             --no-daemon --stacktrace
 
       - name: Verify order ownership and trusted identity
