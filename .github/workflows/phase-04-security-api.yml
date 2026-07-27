@@ -28,7 +28,7 @@ concurrency:
 jobs:
   shared-security-contract:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
@@ -45,6 +45,20 @@ jobs:
 
       - name: Verify resource server architecture contract
         run: python -m unittest deployment.tests.test_phase04_resource_server_contract -v
+
+      - name: Compile gateway and every HTTP service
+        run: |
+          ./gradlew \
+            :common:compileJava \
+            :api-gateway:compileJava \
+            :order-service:compileJava \
+            :consumer-service:compileJava \
+            :restaurant-service:compileJava \
+            :kitchen-service:compileJava \
+            :accounting-service:compileJava \
+            :delivery-service:compileJava \
+            :order-history-service:compileJava \
+            --no-daemon --stacktrace
 
       - name: Verify shared JWT principal contract
         run: ./gradlew :common:test --tests '*FtgoJwtAuthenticationConverterTest' --no-daemon --stacktrace
