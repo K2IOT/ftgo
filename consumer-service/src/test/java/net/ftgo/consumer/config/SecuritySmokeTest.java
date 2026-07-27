@@ -66,7 +66,7 @@ class SecuritySmokeTest {
     }
 
     @RestController
-    static class ProbeController {
+    public static class ProbeController {
 
         @GetMapping("/consumers/security-probe")
         String consumerProbe() {
