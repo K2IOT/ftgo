@@ -1,6 +1,18 @@
 ALTER TABLE authorizations
     ADD COLUMN refunded_amount DECIMAL(19, 2) NOT NULL DEFAULT 0.00 AFTER refund_reason;
 
+ALTER TABLE authorizations
+    MODIFY COLUMN status ENUM(
+        'APPROVED',
+        'DENIED',
+        'REVERSED',
+        'AUTHORIZED',
+        'CAPTURED',
+        'PARTIALLY_REFUNDED',
+        'VOIDED',
+        'REFUNDED'
+    ) NOT NULL;
+
 CREATE TABLE payment_refunds (
     id BIGINT NOT NULL AUTO_INCREMENT,
     authorization_id BIGINT NOT NULL,
