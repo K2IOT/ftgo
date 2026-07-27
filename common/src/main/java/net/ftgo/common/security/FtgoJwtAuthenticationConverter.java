@@ -8,7 +8,6 @@ import org.springframework.security.oauth2.jwt.BadJwtException;
 import org.springframework.security.oauth2.jwt.Jwt;
 
 import java.math.BigDecimal;
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -20,6 +19,7 @@ import java.util.Set;
 public final class FtgoJwtAuthenticationConverter implements Converter<Jwt, AbstractAuthenticationToken> {
 
     private static final String ROLE_PREFIX = "ROLE_";
+    private static final String AUDIENCE_PREFIX = "AUD_";
 
     private final String requiredAudience;
 
@@ -55,9 +55,11 @@ public final class FtgoJwtAuthenticationConverter implements Converter<Jwt, Abst
             audiences
         );
 
-        List<GrantedAuthority> authorities = roles.stream()
-            .sorted()
-            .map(role -> new SimpleGrantedAuthority(ROLE_PREFIX + role))
+        List<GrantedAuthority> authorities = new LinkedHashSet<String>() {{
+            roles.stream().sorted().map(role -> ROLE_PREFIX + role).forEach(this::add);
+            audiences.stream().sorted().map(audience -> AUDIENCE_PREFIX + audience).forEach(this::add);
+        }}.stream()
+            .map(SimpleGrantedAuthority::new)
             .map(GrantedAuthority.class::cast)
             .toList();
 
