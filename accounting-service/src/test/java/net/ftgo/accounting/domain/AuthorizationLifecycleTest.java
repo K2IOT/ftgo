@@ -67,17 +67,29 @@ class AuthorizationLifecycleTest {
         assertThat(authorization.getStatus()).isEqualTo(AuthorizationStatus.REFUNDED);
         assertThat(authorization.getRefundRequestId()).isEqualTo("order-101-refund-1");
         assertThat(authorization.getRefundedAt()).isNotNull();
+        assertThat(authorization.getRefunds()).hasSize(1);
     }
 
     @Test
-    void partialOrMismatchedRefundIsRejected() {
+    void partialRefundIsAcceptedButConflictingOrExcessiveRefundIsRejected() {
         Authorization authorization = authorized(101L, "order-101-authorize");
         authorization.capture("order-101-capture");
 
+        assertThat(authorization.refund(
+            new Money("10.00"), "PARTIAL", "order-101-refund-1"
+        )).isTrue();
+        assertThat(authorization.getStatus()).isEqualTo(AuthorizationStatus.PARTIALLY_REFUNDED);
+        assertThat(authorization.getRefundableAmount()).isEqualTo(new Money("15.00"));
+
         assertThatThrownBy(() -> authorization.refund(
-            new Money("10.00"), "PARTIAL", "order-101-refund-1"))
-            .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("full authorization amount");
+            new Money("11.00"), "CONFLICT", "order-101-refund-1"
+        )).isInstanceOf(IllegalArgumentException.class)
+          .hasMessageContaining("reused");
+
+        assertThatThrownBy(() -> authorization.refund(
+            new Money("16.00"), "EXCESS", "order-101-refund-2"
+        )).isInstanceOf(IllegalArgumentException.class)
+          .hasMessageContaining("exceeds captured amount");
     }
 
     private Authorization authorized(Long orderId, String requestId) {
