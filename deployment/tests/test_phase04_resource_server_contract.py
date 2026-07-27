@@ -69,6 +69,19 @@ class Phase04ResourceServerContractTest(unittest.TestCase):
         self.assertIn("public-audience:", configuration)
         self.assertIn("internal-audience:", configuration)
 
+    def test_gateway_routes_admin_consumer_operations_before_public_consumer_route(self):
+        configuration = (ROOT / "api-gateway/src/main/resources/application.yml").read_text(
+            encoding="utf-8"
+        )
+        admin_route = "Path=/admin/consumers/**"
+        public_route = "Path=/consumers/**"
+        self.assertIn(admin_route, configuration)
+        self.assertLess(
+            configuration.index(admin_route),
+            configuration.index(public_route),
+            "Admin consumer route must be evaluated before the general consumer route",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
