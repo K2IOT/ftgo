@@ -28,7 +28,7 @@ concurrency:
 jobs:
   shared-security-contract:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
@@ -60,6 +60,19 @@ jobs:
             :order-history-service:compileJava \
             --no-daemon --stacktrace
 
+      - name: Verify downstream security smoke tests
+        run: |
+          ./gradlew \
+            :order-service:test \
+            :consumer-service:test \
+            :restaurant-service:test \
+            :kitchen-service:test \
+            :accounting-service:test \
+            :delivery-service:test \
+            :order-history-service:test \
+            --tests '*SecuritySmokeTest' \
+            --no-daemon --stacktrace
+
       - name: Verify shared JWT principal contract
         run: ./gradlew :common:test --tests '*FtgoJwtAuthenticationConverterTest' --no-daemon --stacktrace
 
@@ -72,3 +85,17 @@ jobs:
           path: |
             common/build/reports/tests/**
             common/build/test-results/**
+            order-service/build/reports/tests/**
+            order-service/build/test-results/**
+            consumer-service/build/reports/tests/**
+            consumer-service/build/test-results/**
+            restaurant-service/build/reports/tests/**
+            restaurant-service/build/test-results/**
+            kitchen-service/build/reports/tests/**
+            kitchen-service/build/test-results/**
+            accounting-service/build/reports/tests/**
+            accounting-service/build/test-results/**
+            delivery-service/build/reports/tests/**
+            delivery-service/build/test-results/**
+            order-history-service/build/reports/tests/**
+            order-history-service/build/test-results/**
