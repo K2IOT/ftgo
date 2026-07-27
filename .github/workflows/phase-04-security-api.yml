@@ -155,6 +155,7 @@ jobs:
             --tests '*DeliveryAuthorizationServiceTest' \
             --tests '*DeliveryServiceAuthorizationTest' \
             --tests '*DeliveryControllerIdentityTest' \
+            --tests '*DeliveryClaimConcurrencyTest' \
             --no-daemon --stacktrace
 
       - name: Verify persisted ticket ownership
