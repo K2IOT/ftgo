@@ -6,6 +6,8 @@ import io.eventuate.tram.commands.consumer.CommandWithDestination;
 import net.ftgo.accounting.messaging.AccountingServiceCommandHandlers;
 import net.ftgo.accounting.payment.PaymentAuthorizationGateway;
 import net.ftgo.accounting.repository.AccountRepository;
+import net.ftgo.accounting.settlement.PaymentLedgerService;
+import net.ftgo.accounting.settlement.SettlementGateway;
 import net.ftgo.common.Money;
 import net.ftgo.common.channels.ChannelNames;
 import net.ftgo.common.messaging.IdempotentCommandExecutor;
@@ -63,6 +65,8 @@ class CreateOrderSagaSharedContractTest {
             mock(AccountRepository.class),
             mock(net.ftgo.accounting.messaging.DomainEventPublisher.class),
             mock(PaymentAuthorizationGateway.class),
+            mock(SettlementGateway.class),
+            mock(PaymentLedgerService.class),
             mock(IdempotentCommandExecutor.class)
         ).commandHandlers();
 
