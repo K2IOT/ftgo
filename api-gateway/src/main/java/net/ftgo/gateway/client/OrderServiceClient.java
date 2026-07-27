@@ -1,11 +1,11 @@
 package net.ftgo.gateway.client;
 
+import net.ftgo.common.security.FtgoJwtAuthenticationToken;
 import net.ftgo.gateway.dto.OrderResponse;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.context.ReactiveSecurityContextHolder;
-import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
@@ -33,20 +33,16 @@ public class OrderServiceClient {
     public Mono<OrderResponse> getOrder(Long orderId) {
         return ReactiveSecurityContextHolder.getContext()
                 .map(context -> context.getAuthentication())
-                .filter(authentication -> authentication instanceof JwtAuthenticationToken)
-                .map(authentication -> ((JwtAuthenticationToken) authentication).getToken().getTokenValue())
-                .defaultIfEmpty("")
+                .filter(authentication -> authentication instanceof FtgoJwtAuthenticationToken)
+                .map(authentication -> ((FtgoJwtAuthenticationToken) authentication).tokenValue())
+                .switchIfEmpty(Mono.error(new IllegalStateException("Verified FTGO JWT is required")))
                 .flatMap(token -> fetchOrder(orderId, token));
     }
 
     private Mono<OrderResponse> fetchOrder(Long orderId, String token) {
         return webClient.get()
                 .uri("/orders/{orderId}", orderId)
-                .headers(headers -> {
-                    if (!token.isBlank()) {
-                        headers.set(HttpHeaders.AUTHORIZATION, "Bearer " + token);
-                    }
-                })
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
                 .exchangeToMono(response -> {
                     if (response.statusCode().is2xxSuccessful()) {
                         return response.bodyToMono(OrderResponse.class);
