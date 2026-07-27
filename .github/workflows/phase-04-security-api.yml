@@ -154,6 +154,7 @@ jobs:
           ./gradlew :kitchen-service:test \
             --tests '*TicketAuthorizationServiceTest' \
             --tests '*KitchenServiceAuthorizationTest' \
+            --tests '*KitchenControllerAuthorizationTest' \
             --no-daemon --stacktrace
 
       - name: Verify restaurant claim scope
