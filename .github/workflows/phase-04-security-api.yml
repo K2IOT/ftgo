@@ -134,7 +134,7 @@ jobs:
 
   ownership-contracts:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
@@ -148,6 +148,13 @@ jobs:
 
       - name: Verify Gradle wrapper
         run: bash scripts/ci/verify-gradle-wrapper.sh
+
+      - name: Verify courier claim and delivery ownership
+        run: |
+          ./gradlew :delivery-service:test \
+            --tests '*DeliveryAuthorizationServiceTest' \
+            --tests '*DeliveryServiceAuthorizationTest' \
+            --no-daemon --stacktrace
 
       - name: Verify persisted ticket ownership
         run: |
@@ -186,6 +193,8 @@ jobs:
           name: phase-04-ownership-diagnostics
           if-no-files-found: warn
           path: |
+            delivery-service/build/reports/tests/**
+            delivery-service/build/test-results/**
             order-service/build/reports/tests/**
             order-service/build/test-results/**
             consumer-service/build/reports/tests/**
