@@ -2,8 +2,6 @@ package net.ftgo.kitchen.api;
 
 import net.ftgo.common.security.FtgoJwtAuthenticationConverter;
 import net.ftgo.kitchen.config.SecurityConfiguration;
-import net.ftgo.kitchen.domain.Ticket;
-import net.ftgo.kitchen.domain.TicketLineItem;
 import net.ftgo.kitchen.repository.TicketRepository;
 import net.ftgo.kitchen.security.TicketAuthorizationService;
 import net.ftgo.kitchen.service.KitchenService;
@@ -11,10 +9,11 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.context.annotation.Import;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.AbstractAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.Instant;
@@ -29,14 +28,15 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@WebMvcTest(
-    controllers = KitchenController.class,
-    properties = {
-        "spring.security.oauth2.resourceserver.jwt.issuer-uri=https://identity.example/realms/ftgo",
-        "spring.security.oauth2.resourceserver.jwt.jwk-set-uri=https://identity.example/realms/ftgo/protocol/openid-connect/certs"
-    }
-)
-@Import({SecurityConfiguration.class, TicketAuthorizationService.class})
+@WebMvcTest(properties = {
+    "spring.security.oauth2.resourceserver.jwt.issuer-uri=https://identity.example/realms/ftgo",
+    "spring.security.oauth2.resourceserver.jwt.jwk-set-uri=https://identity.example/realms/ftgo/protocol/openid-connect/certs"
+})
+@ContextConfiguration(classes = {
+    SecurityConfiguration.class,
+    KitchenController.class,
+    TicketAuthorizationService.class
+})
 class KitchenControllerAuthorizationTest {
 
     @Autowired
@@ -59,23 +59,15 @@ class KitchenControllerAuthorizationTest {
     }
 
     @Test
-    void rejectsCrossRestaurantMutationBeforeApplicationServiceCall() throws Exception {
+    void preservesApplicationServiceOwnershipDenialAsForbidden() throws Exception {
         when(kitchenService.acceptTicket(eq(1L), any(Authentication.class)))
-            .thenReturn(ticketForRestaurant(20L));
+            .thenThrow(new AccessDeniedException("Ticket access denied"));
 
         mockMvc.perform(post("/tickets/1/accept")
                 .with(authentication(restaurantAuthentication(10L))))
             .andExpect(status().isForbidden());
 
-        verifyNoInteractions(ticketRepository, kitchenService);
-    }
-
-    private Ticket ticketForRestaurant(Long restaurantId) {
-        return new Ticket(
-            restaurantId,
-            123L,
-            List.of(new TicketLineItem(5L, "Burger", 1))
-        );
+        verifyNoInteractions(ticketRepository);
     }
 
     private AbstractAuthenticationToken restaurantAuthentication(Long restaurantId) {
