@@ -1,6 +1,8 @@
 package net.ftgo.order.api;
 
 import jakarta.validation.Valid;
+import net.ftgo.common.security.FtgoPrincipal;
+import net.ftgo.common.security.PrincipalAccess;
 import net.ftgo.order.domain.DeliveryInfo;
 import net.ftgo.order.domain.Order;
 import net.ftgo.order.domain.OrderLineItem;
@@ -12,6 +14,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -50,7 +54,8 @@ public class OrderController {
 
     @PostMapping
     public ResponseEntity<CreateOrderResponse> createOrder(
-        @Valid @RequestBody CreateOrderRequest request
+        @Valid @RequestBody CreateOrderRequest request,
+        Authentication authentication
     ) {
         if (!phase2Enabled) {
             throw new OrderFlowDisabledException(
@@ -58,9 +63,13 @@ public class OrderController {
             );
         }
 
+        FtgoPrincipal principal = PrincipalAccess.require(authentication);
+        Long consumerId = requireConsumerId(principal);
+
         logger.info(
-            "POST /orders - Creating order: consumerId={}, restaurantId={}, expectedMenuVersion={}",
-            request.getConsumerId(),
+            "POST /orders - Creating order: actorSubject={}, consumerId={}, restaurantId={}, expectedMenuVersion={}",
+            principal.subject(),
+            consumerId,
             request.getRestaurantId(),
             request.getExpectedMenuVersion()
         );
@@ -82,7 +91,7 @@ public class OrderController {
             PaymentInfo paymentInfo = new PaymentInfo(request.getPaymentToken());
 
             Long orderId = orderService.createOrder(
-                request.getConsumerId(),
+                consumerId,
                 request.getRestaurantId(),
                 request.getExpectedMenuVersion(),
                 lineItems,
@@ -101,19 +110,35 @@ public class OrderController {
     }
 
     @GetMapping("/{orderId}")
-    public ResponseEntity<OrderResponse> getOrder(@PathVariable Long orderId) {
-        logger.info("GET /orders/{} - Retrieving order", orderId);
-        Order order = orderService.getOrder(orderId);
+    public ResponseEntity<OrderResponse> getOrder(
+        @PathVariable Long orderId,
+        Authentication authentication
+    ) {
+        FtgoPrincipal principal = PrincipalAccess.require(authentication);
+        logger.info(
+            "GET /orders/{} - Retrieving order for actorSubject={}",
+            orderId,
+            principal.subject()
+        );
+        Order order = orderService.getOrder(orderId, principal);
         OrderResponse response = OrderResponse.fromOrder(order);
         logger.debug("Order retrieved: orderId={}, state={}", orderId, order.getState());
         return ResponseEntity.ok(response);
     }
 
     @PostMapping("/{orderId}/cancel")
-    public ResponseEntity<Void> cancelOrder(@PathVariable Long orderId) {
-        logger.info("POST /orders/{}/cancel - Cancelling order", orderId);
+    public ResponseEntity<Void> cancelOrder(
+        @PathVariable Long orderId,
+        Authentication authentication
+    ) {
+        FtgoPrincipal principal = PrincipalAccess.require(authentication);
+        logger.info(
+            "POST /orders/{}/cancel - Cancelling order for actorSubject={}",
+            orderId,
+            principal.subject()
+        );
         try {
-            orderService.cancelOrder(orderId);
+            orderService.cancelOrder(orderId, principal);
             logger.info("Order cancellation initiated: orderId={}", orderId);
             return ResponseEntity.ok().build();
         } catch (IllegalStateException e) {
@@ -125,12 +150,15 @@ public class OrderController {
     @PostMapping("/{orderId}/revise")
     public ResponseEntity<Void> reviseOrder(
         @PathVariable Long orderId,
-        @Valid @RequestBody ReviseOrderRequest request
+        @Valid @RequestBody ReviseOrderRequest request,
+        Authentication authentication
     ) {
+        FtgoPrincipal principal = PrincipalAccess.require(authentication);
         logger.info(
-            "POST /orders/{}/revise - Revising order with {} line items",
+            "POST /orders/{}/revise - Revising order with {} line items for actorSubject={}",
             orderId,
-            request.getRevisedLineItems().size()
+            request.getRevisedLineItems().size(),
+            principal.subject()
         );
 
         try {
@@ -143,7 +171,7 @@ public class OrderController {
                 ))
                 .collect(Collectors.toList());
 
-            orderService.reviseOrder(orderId, revisedLineItems);
+            orderService.reviseOrder(orderId, revisedLineItems, principal);
             logger.info("Order revision initiated: orderId={}", orderId);
             return ResponseEntity.ok().build();
         } catch (IllegalStateException e) {
@@ -157,6 +185,17 @@ public class OrderController {
             );
             throw e;
         }
+    }
+
+    private Long requireConsumerId(FtgoPrincipal principal) {
+        if (principal.consumerId() == null) {
+            logger.warn(
+                "Create order denied because consumer identity is missing: actorSubject={}",
+                principal.subject()
+            );
+            throw new AccessDeniedException("Authenticated consumer identity is required");
+        }
+        return principal.consumerId();
     }
 
     @ExceptionHandler(OrderNotFoundException.class)
@@ -173,6 +212,14 @@ public class OrderController {
         return ResponseEntity
             .status(HttpStatus.SERVICE_UNAVAILABLE)
             .body(new ErrorResponse("ORDER_FLOW_DISABLED", e.getMessage()));
+    }
+
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ErrorResponse> handleAccessDenied(AccessDeniedException e) {
+        logger.warn("Order access denied: {}", e.getMessage());
+        return ResponseEntity
+            .status(HttpStatus.FORBIDDEN)
+            .body(new ErrorResponse("ACCESS_DENIED", "Order access denied"));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
