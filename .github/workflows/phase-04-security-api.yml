@@ -14,6 +14,7 @@ on:
       - 'delivery-service/**'
       - 'order-history-service/**'
       - 'e2e-tests/**'
+      - 'deployment/tests/test_phase04_*.py'
       - '.github/workflows/phase-04-security-api.yml'
   workflow_dispatch:
 
@@ -41,6 +42,9 @@ jobs:
 
       - name: Verify Gradle wrapper
         run: bash scripts/ci/verify-gradle-wrapper.sh
+
+      - name: Verify resource server architecture contract
+        run: python -m unittest deployment.tests.test_phase04_resource_server_contract -v
 
       - name: Verify shared JWT principal contract
         run: ./gradlew :common:test --tests '*FtgoJwtAuthenticationConverterTest' --no-daemon --stacktrace
