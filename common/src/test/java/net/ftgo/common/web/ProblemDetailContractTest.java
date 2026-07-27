@@ -8,8 +8,8 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -54,7 +54,7 @@ class ProblemDetailContractTest {
             .andExpect(jsonPath("$.errorCode").value("INTERNAL_ERROR"))
             .andExpect(jsonPath("$.detail").value("An unexpected error occurred"))
             .andExpect(content().string(not(containsString("database-password"))))
-            .andExpect(content().string(not(containsString("IllegalStateException"))));
+            .andExpect(content().string(not(containsString("RuntimeException"))));
     }
 
     @Test
@@ -76,7 +76,7 @@ class ProblemDetailContractTest {
 
         @GetMapping("/problem/unexpected")
         void unexpected() {
-            throw new IllegalStateException("database-password");
+            throw new RuntimeException("database-password");
         }
     }
 }
