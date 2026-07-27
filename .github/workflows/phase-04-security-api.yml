@@ -103,7 +103,13 @@ jobs:
         run: bash scripts/ci/verify-gradle-wrapper.sh
 
       - name: Verify resource server behavior
-        run: ./gradlew :${{ matrix.service }}:test --tests '*SecuritySmokeTest' --no-daemon --stacktrace
+        shell: bash
+        run: |
+          set -o pipefail
+          ./gradlew :${{ matrix.service }}:test \
+            --tests '*SecuritySmokeTest' \
+            --no-daemon --console=plain --stacktrace \
+            2>&1 | tee phase-04-${{ matrix.service }}-security.log
 
       - name: Upload service security diagnostics
         if: always()
@@ -112,6 +118,7 @@ jobs:
           name: phase-04-${{ matrix.service }}-security-diagnostics
           if-no-files-found: warn
           path: |
+            phase-04-${{ matrix.service }}-security.log
             ${{ matrix.service }}/build/reports/tests/**
             ${{ matrix.service }}/build/test-results/**
 
@@ -167,12 +174,15 @@ jobs:
         run: bash scripts/ci/verify-gradle-wrapper.sh
 
       - name: Verify consumer ownership and privileged credit policy
+        shell: bash
         run: |
+          set -o pipefail
           ./gradlew :consumer-service:test \
             --tests '*ConsumerAuthorizationServiceTest' \
             --tests '*ConsumerControllerAuthorizationTest' \
             --tests '*ConsumerAdminControllerTest' \
-            --no-daemon --stacktrace
+            --no-daemon --console=plain --stacktrace \
+            2>&1 | tee phase-04-consumer-ownership.log
 
       - name: Upload consumer ownership diagnostics
         if: always()
@@ -181,5 +191,6 @@ jobs:
           name: phase-04-consumer-ownership-diagnostics
           if-no-files-found: warn
           path: |
+            phase-04-consumer-ownership.log
             consumer-service/build/reports/tests/**
             consumer-service/build/test-results/**
