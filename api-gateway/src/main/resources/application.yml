@@ -42,6 +42,38 @@ spring:
                   factor: 2
                   basedOnPreviousValue: false
 
+        - id: consumer-admin
+          uri: ${services.consumer-service.url:http://localhost:8082}
+          predicates:
+            - Path=/admin/consumers/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: consumerServiceCircuitBreaker
+                fallbackUri: forward:/fallback/consumers
+                statusCodes:
+                  - 500
+                  - 502
+                  - 503
+                  - 504
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 5
+                redis-rate-limiter.burstCapacity: 10
+                redis-rate-limiter.requestedTokens: 1
+                key-resolver: "#{@userKeyResolver}"
+                deny-empty-key: true
+            - name: Retry
+              args:
+                retries: 2
+                statuses: BAD_GATEWAY,SERVICE_UNAVAILABLE,GATEWAY_TIMEOUT
+                methods: GET
+                backoff:
+                  firstBackoff: 500ms
+                  maxBackoff: 1500ms
+                  factor: 2
+                  basedOnPreviousValue: false
+
         - id: consumer-service
           uri: ${services.consumer-service.url:http://localhost:8082}
           predicates:
