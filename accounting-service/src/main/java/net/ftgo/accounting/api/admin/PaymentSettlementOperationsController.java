@@ -1,9 +1,11 @@
 package net.ftgo.accounting.api.admin;
 
+import net.ftgo.accounting.settlement.ManualPaymentSettlementService;
 import net.ftgo.accounting.settlement.SettlementDiscrepancy;
 import net.ftgo.accounting.settlement.SettlementReconciler;
 import net.ftgo.accounting.settlement.SettlementReconciliationReport;
 import net.ftgo.accounting.settlement.SettlementRepairAction;
+import net.ftgo.common.Money;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -19,9 +21,14 @@ import java.util.List;
 public class PaymentSettlementOperationsController {
 
     private final SettlementReconciler reconciler;
+    private final ManualPaymentSettlementService manualSettlementService;
 
-    public PaymentSettlementOperationsController(SettlementReconciler reconciler) {
+    public PaymentSettlementOperationsController(
+        SettlementReconciler reconciler,
+        ManualPaymentSettlementService manualSettlementService
+    ) {
         this.reconciler = reconciler;
+        this.manualSettlementService = manualSettlementService;
     }
 
     @GetMapping("/discrepancies")
@@ -34,6 +41,19 @@ public class PaymentSettlementOperationsController {
         @PathVariable Long authorizationId
     ) {
         return reconciler.findByAuthorization(authorizationId);
+    }
+
+    @PostMapping("/authorizations/{authorizationId}/refunds")
+    public ResponseEntity<ManualPaymentSettlementService.RefundResult> refund(
+        @PathVariable Long authorizationId,
+        @RequestBody RefundRequest request
+    ) {
+        return ResponseEntity.ok(manualSettlementService.refund(
+            authorizationId,
+            request.amount(),
+            request.reason(),
+            request.idempotencyKey()
+        ));
     }
 
     @PostMapping("/reconcile")
@@ -52,6 +72,13 @@ public class PaymentSettlementOperationsController {
             request.idempotencyKey(),
             request.reason()
         ));
+    }
+
+    public record RefundRequest(
+        Money amount,
+        String reason,
+        String idempotencyKey
+    ) {
     }
 
     public record RepairRequest(
