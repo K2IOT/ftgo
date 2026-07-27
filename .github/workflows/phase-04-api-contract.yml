@@ -39,10 +39,11 @@ jobs:
           cache: gradle
       - name: Verify Gradle wrapper
         run: bash scripts/ci/verify-gradle-wrapper.sh
-      - name: Verify shared RFC 9457 contract
+      - name: Verify shared RFC 9457 and auto-configuration contracts
         run: |
           ./gradlew :common:test \
             --tests '*ProblemDetailContractTest' \
+            --tests '*FtgoWebAutoConfigurationTest' \
             --no-daemon --console=plain --stacktrace
       - name: Upload API contract diagnostics
         if: always()
