@@ -149,6 +149,18 @@ jobs:
       - name: Verify Gradle wrapper
         run: bash scripts/ci/verify-gradle-wrapper.sh
 
+      - name: Verify persisted ticket ownership
+        run: |
+          ./gradlew :kitchen-service:test \
+            --tests '*TicketAuthorizationServiceTest' \
+            --no-daemon --stacktrace
+
+      - name: Verify restaurant claim scope
+        run: |
+          ./gradlew :restaurant-service:test \
+            --tests '*RestaurantAuthorizationServiceTest' \
+            --no-daemon --stacktrace
+
       - name: Verify order ownership and trusted identity
         run: |
           ./gradlew :order-service:test \
@@ -162,18 +174,6 @@ jobs:
             --tests '*ConsumerAuthorizationServiceTest' \
             --tests '*ConsumerControllerAuthorizationTest' \
             --tests '*ConsumerAdminControllerTest' \
-            --no-daemon --stacktrace
-
-      - name: Verify restaurant claim scope
-        run: |
-          ./gradlew :restaurant-service:test \
-            --tests '*RestaurantAuthorizationServiceTest' \
-            --no-daemon --stacktrace
-
-      - name: Verify persisted ticket ownership
-        run: |
-          ./gradlew :kitchen-service:test \
-            --tests '*TicketAuthorizationServiceTest' \
             --no-daemon --stacktrace
 
       - name: Upload ownership diagnostics
