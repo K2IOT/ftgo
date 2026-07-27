@@ -1,5 +1,6 @@
 package net.ftgo.accounting.messaging;
 
+import io.eventuate.tram.commands.common.Command;
 import io.eventuate.tram.commands.consumer.CommandMessage;
 import io.eventuate.tram.messaging.common.Message;
 import net.ftgo.accounting.domain.Account;
@@ -266,7 +267,7 @@ class AccountingSettlementCommandHandlersTest {
         return account;
     }
 
-    private <T> CommandMessage<T> message(String id, T command) {
+    private <T extends Command> CommandMessage<T> message(String id, T command) {
         return new CommandMessage<>(id, command, Map.of(), org.mockito.Mockito.mock(Message.class));
     }
 }
