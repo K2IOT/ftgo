@@ -7,6 +7,10 @@ import net.ftgo.accounting.domain.Authorization;
 import net.ftgo.accounting.payment.PaymentAuthorizationDecision;
 import net.ftgo.accounting.payment.PaymentAuthorizationGateway;
 import net.ftgo.accounting.repository.AccountRepository;
+import net.ftgo.accounting.settlement.PaymentLedgerEntry;
+import net.ftgo.accounting.settlement.PaymentLedgerService;
+import net.ftgo.accounting.settlement.SettlementDecision;
+import net.ftgo.accounting.settlement.SettlementGateway;
 import net.ftgo.common.Money;
 import net.ftgo.common.messaging.IdempotentCommandExecutor;
 import net.ftgo.common.orderflow.commands.AuthorizeCardCommand;
@@ -44,6 +48,12 @@ class LostReplyIdempotencyTest {
     @Mock
     private PaymentAuthorizationGateway paymentAuthorizationGateway;
 
+    @Mock
+    private SettlementGateway settlementGateway;
+
+    @Mock
+    private PaymentLedgerService paymentLedgerService;
+
     @Test
     void duplicateAuthorizeCommandReplaysEstablishedAuthorizationReply() {
         IdempotentCommandExecutor executor = new IdempotentCommandExecutor(
@@ -63,6 +73,21 @@ class LostReplyIdempotencyTest {
         IdempotentCommandContract.assertByteEquivalentReply(first, replayed);
         verify(paymentAuthorizationGateway, times(1))
             .authorize("tok_phase03", new Money("42.50"));
+        verify(settlementGateway, times(1)).authorize(
+            701L,
+            101L,
+            new Money("42.50"),
+            "authorization-request-101"
+        );
+        verify(paymentLedgerService, times(1)).append(
+            501L,
+            101L,
+            701L,
+            PaymentLedgerEntry.OperationType.AUTHORIZE,
+            "authorization-request-101",
+            new Money("42.50").getAmount(),
+            "provider-authorization-101"
+        );
         verify(accountRepository, times(1)).findByConsumerId(202L);
         verify(accountRepository, times(2)).saveAndFlush(any(Account.class));
     }
@@ -98,6 +123,8 @@ class LostReplyIdempotencyTest {
             accountRepository,
             eventPublisher,
             paymentAuthorizationGateway,
+            settlementGateway,
+            paymentLedgerService,
             executor
         );
     }
@@ -141,5 +168,11 @@ class LostReplyIdempotencyTest {
             }
             return account;
         });
+        when(settlementGateway.authorize(
+            701L,
+            101L,
+            new Money("42.50"),
+            "authorization-request-101"
+        )).thenReturn(SettlementDecision.approved("provider-authorization-101"));
     }
 }
