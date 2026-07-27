@@ -38,6 +38,7 @@ public class SecurityConfiguration {
                 .pathMatchers(HttpMethod.POST, "/orders/*/cancel").hasRole("CONSUMER")
                 .pathMatchers(HttpMethod.POST, "/orders/*/revise").hasRole("CONSUMER")
 
+                .pathMatchers("/admin/consumers/**").hasRole("ADMIN")
                 .pathMatchers(HttpMethod.POST, "/consumers").hasAnyRole("CONSUMER", "ADMIN")
                 .pathMatchers(HttpMethod.GET, "/consumers/**").hasAnyRole("CONSUMER", "ADMIN")
                 .pathMatchers(HttpMethod.PUT, "/consumers/**").hasAnyRole("CONSUMER", "ADMIN")
