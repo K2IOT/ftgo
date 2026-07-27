@@ -1,0 +1,81 @@
+package net.ftgo.delivery.config;
+
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.context.annotation.Import;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+@WebMvcTest(
+    controllers = SecuritySmokeTest.ProbeController.class,
+    properties = {
+        "spring.security.oauth2.resourceserver.jwt.issuer-uri=https://identity.example/realms/ftgo",
+        "spring.security.oauth2.resourceserver.jwt.jwk-set-uri=https://identity.example/realms/ftgo/protocol/openid-connect/certs"
+    }
+)
+@Import(SecurityConfiguration.class)
+class SecuritySmokeTest {
+
+    @Autowired
+    private MockMvc mockMvc;
+
+    @Test
+    void rejectsDirectDeliveryRequestWithoutToken() throws Exception {
+        mockMvc.perform(get("/deliveries/security-probe"))
+            .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void rejectsAuthenticatedUserWithoutCourierRole() throws Exception {
+        mockMvc.perform(get("/deliveries/security-probe").with(jwt().authorities(
+                new SimpleGrantedAuthority("ROLE_CONSUMER"),
+                new SimpleGrantedAuthority("AUD_ftgo-api")
+            )))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void permitsCourierTokenForDeliveryEndpoint() throws Exception {
+        mockMvc.perform(get("/deliveries/security-probe").with(jwt().authorities(
+                new SimpleGrantedAuthority("ROLE_COURIER"),
+                new SimpleGrantedAuthority("AUD_ftgo-api")
+            )))
+            .andExpect(status().isOk());
+    }
+
+    @Test
+    void internalEndpointRequiresServiceRoleAndInternalAudience() throws Exception {
+        mockMvc.perform(get("/internal/security-probe").with(jwt().authorities(
+                new SimpleGrantedAuthority("ROLE_SERVICE"),
+                new SimpleGrantedAuthority("AUD_ftgo-api")
+            )))
+            .andExpect(status().isForbidden());
+
+        mockMvc.perform(get("/internal/security-probe").with(jwt().authorities(
+                new SimpleGrantedAuthority("ROLE_SERVICE"),
+                new SimpleGrantedAuthority("AUD_ftgo-internal")
+            )))
+            .andExpect(status().isOk());
+    }
+
+    @RestController
+    static class ProbeController {
+
+        @GetMapping("/deliveries/security-probe")
+        String deliveryProbe() {
+            return "ok";
+        }
+
+        @GetMapping("/internal/security-probe")
+        String internalProbe() {
+            return "ok";
+        }
+    }
+}
