@@ -37,6 +37,14 @@ eventuatelocal:
 ftgo:
   accounting:
     declined-payment-tokens: ${FTGO_ACCOUNTING_DECLINED_PAYMENT_TOKENS:}
+    settlement:
+      deny-request-ids: ${FTGO_ACCOUNTING_SETTLEMENT_DENY_REQUEST_IDS:}
+      timeout-once-request-ids: ${FTGO_ACCOUNTING_SETTLEMENT_TIMEOUT_ONCE_REQUEST_IDS:}
+      timeout-always-request-ids: ${FTGO_ACCOUNTING_SETTLEMENT_TIMEOUT_ALWAYS_REQUEST_IDS:}
+      reconciliation:
+        enabled: ${FTGO_ACCOUNTING_SETTLEMENT_RECONCILIATION_ENABLED:true}
+        interval-ms: ${FTGO_ACCOUNTING_SETTLEMENT_RECONCILIATION_INTERVAL_MS:60000}
+        initial-delay-ms: ${FTGO_ACCOUNTING_SETTLEMENT_RECONCILIATION_INITIAL_DELAY_MS:30000}
 
 server:
   port: 8085
