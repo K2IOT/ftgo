@@ -50,6 +50,8 @@ ftgo:
   security:
     public-audience: ${FTGO_SECURITY_PUBLIC_AUDIENCE:ftgo-api}
     internal-audience: ${FTGO_SECURITY_INTERNAL_AUDIENCE:ftgo-internal}
+  consumer:
+    registration-credit-limit: ${FTGO_CONSUMER_REGISTRATION_CREDIT_LIMIT:100.00}
 
 server:
   port: 8082
