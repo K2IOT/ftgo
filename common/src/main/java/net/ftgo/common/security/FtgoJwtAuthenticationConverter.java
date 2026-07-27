@@ -55,10 +55,10 @@ public final class FtgoJwtAuthenticationConverter implements Converter<Jwt, Abst
             audiences
         );
 
-        List<GrantedAuthority> authorities = new LinkedHashSet<String>() {{
-            roles.stream().sorted().map(role -> ROLE_PREFIX + role).forEach(this::add);
-            audiences.stream().sorted().map(audience -> AUDIENCE_PREFIX + audience).forEach(this::add);
-        }}.stream()
+        LinkedHashSet<String> authorityNames = new LinkedHashSet<>();
+        roles.stream().sorted().map(role -> ROLE_PREFIX + role).forEach(authorityNames::add);
+        audiences.stream().sorted().map(audience -> AUDIENCE_PREFIX + audience).forEach(authorityNames::add);
+        List<GrantedAuthority> authorities = authorityNames.stream()
             .map(SimpleGrantedAuthority::new)
             .map(GrantedAuthority.class::cast)
             .toList();
