@@ -1,6 +1,11 @@
 package net.ftgo.accounting.settlement;
 
-public class SettlementRetryExhaustedException extends IllegalStateException {
+/**
+ * Terminal transient-provider failure after the configured finite retry budget.
+ * It extends IllegalArgumentException so Eventuate participant handlers convert
+ * it to a failure reply instead of throwing and leaving the saga without a reply.
+ */
+public class SettlementRetryExhaustedException extends IllegalArgumentException {
 
     public SettlementRetryExhaustedException(
         String operation,
