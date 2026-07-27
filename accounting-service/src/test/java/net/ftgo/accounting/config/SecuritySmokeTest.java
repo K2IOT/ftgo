@@ -3,8 +3,8 @@ package net.ftgo.accounting.config;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.context.annotation.Import;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -19,7 +19,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "spring.security.oauth2.resourceserver.jwt.jwk-set-uri=https://identity.example/realms/ftgo/protocol/openid-connect/certs"
     }
 )
-@Import({SecurityConfiguration.class, SecuritySmokeTest.ProbeController.class})
+@ContextConfiguration(classes = {
+    SecurityConfiguration.class,
+    SecuritySmokeTest.ProbeController.class
+})
 class SecuritySmokeTest {
 
     @Autowired
