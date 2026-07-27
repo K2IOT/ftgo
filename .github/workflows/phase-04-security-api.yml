@@ -1,0 +1,56 @@
+name: Phase 04 Security and API
+
+on:
+  pull_request:
+    branches: [dev]
+    paths:
+      - 'common/**'
+      - 'api-gateway/**'
+      - 'order-service/**'
+      - 'consumer-service/**'
+      - 'restaurant-service/**'
+      - 'kitchen-service/**'
+      - 'accounting-service/**'
+      - 'delivery-service/**'
+      - 'order-history-service/**'
+      - 'e2e-tests/**'
+      - '.github/workflows/phase-04-security-api.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: phase-04-security-api-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  shared-security-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - name: Set up Java 21
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+
+      - name: Verify Gradle wrapper
+        run: bash scripts/ci/verify-gradle-wrapper.sh
+
+      - name: Verify shared JWT principal contract
+        run: ./gradlew :common:test --tests '*FtgoJwtAuthenticationConverterTest' --no-daemon --stacktrace
+
+      - name: Upload security diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: phase-04-shared-security-diagnostics
+          if-no-files-found: warn
+          path: |
+            common/build/reports/tests/**
+            common/build/test-results/**
