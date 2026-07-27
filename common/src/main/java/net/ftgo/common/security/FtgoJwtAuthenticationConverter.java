@@ -63,7 +63,7 @@ public final class FtgoJwtAuthenticationConverter implements Converter<Jwt, Abst
             .map(GrantedAuthority.class::cast)
             .toList();
 
-        return new FtgoAuthenticationToken(principal, authorities);
+        return new FtgoJwtAuthenticationToken(principal, jwt, authorities);
     }
 
     private Set<String> normalizeAudiences(Collection<String> values) {
@@ -180,35 +180,6 @@ public final class FtgoJwtAuthenticationConverter implements Converter<Jwt, Abst
             return parsed;
         } catch (ArithmeticException | NumberFormatException error) {
             throw new BadJwtException("Invalid " + claimName + " claim", error);
-        }
-    }
-
-    private static final class FtgoAuthenticationToken extends AbstractAuthenticationToken {
-
-        private final FtgoPrincipal principal;
-
-        private FtgoAuthenticationToken(
-            FtgoPrincipal principal,
-            Collection<? extends GrantedAuthority> authorities
-        ) {
-            super(authorities);
-            this.principal = principal;
-            setAuthenticated(true);
-        }
-
-        @Override
-        public Object getCredentials() {
-            return "";
-        }
-
-        @Override
-        public FtgoPrincipal getPrincipal() {
-            return principal;
-        }
-
-        @Override
-        public String getName() {
-            return principal.subject();
         }
     }
 }
