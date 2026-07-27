@@ -1,6 +1,7 @@
 package net.ftgo.accounting.api.admin;
 
 import net.ftgo.accounting.settlement.SettlementGatewayTimeoutException;
+import net.ftgo.accounting.settlement.SettlementRetryExhaustedException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -21,10 +22,11 @@ public class PaymentSettlementExceptionHandler {
         return response(HttpStatus.CONFLICT, error);
     }
 
-    @ExceptionHandler(SettlementGatewayTimeoutException.class)
-    public ResponseEntity<ErrorResponse> providerUnavailable(
-        SettlementGatewayTimeoutException error
-    ) {
+    @ExceptionHandler({
+        SettlementGatewayTimeoutException.class,
+        SettlementRetryExhaustedException.class
+    })
+    public ResponseEntity<ErrorResponse> providerUnavailable(RuntimeException error) {
         return response(HttpStatus.SERVICE_UNAVAILABLE, error);
     }
 
