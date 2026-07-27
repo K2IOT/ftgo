@@ -154,6 +154,7 @@ jobs:
           ./gradlew :delivery-service:test \
             --tests '*DeliveryAuthorizationServiceTest' \
             --tests '*DeliveryServiceAuthorizationTest' \
+            --tests '*DeliveryControllerIdentityTest' \
             --no-daemon --stacktrace
 
       - name: Verify persisted ticket ownership
