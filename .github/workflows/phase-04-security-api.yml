@@ -43,7 +43,7 @@ jobs:
       - name: Verify Gradle wrapper
         run: bash scripts/ci/verify-gradle-wrapper.sh
 
-      - name: Verify resource server architecture contract
+      - name: Verify resource server and gateway architecture contracts
         run: python -m unittest deployment.tests.test_phase04_resource_server_contract -v
 
       - name: Compile gateway and every HTTP service
@@ -74,20 +74,8 @@ jobs:
             common/build/test-results/**
 
   service-security-smoke:
-    name: service-security-smoke (${{ matrix.service }})
     runs-on: ubuntu-latest
-    timeout-minutes: 25
-    strategy:
-      fail-fast: false
-      matrix:
-        service:
-          - order-service
-          - consumer-service
-          - restaurant-service
-          - kitchen-service
-          - accounting-service
-          - delivery-service
-          - order-history-service
+    timeout-minutes: 40
     steps:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
@@ -102,29 +90,51 @@ jobs:
       - name: Verify Gradle wrapper
         run: bash scripts/ci/verify-gradle-wrapper.sh
 
-      - name: Verify resource server behavior
+      - name: Verify every downstream resource server
         shell: bash
         run: |
-          set -o pipefail
-          ./gradlew :${{ matrix.service }}:test \
-            --tests '*SecuritySmokeTest' \
-            --no-daemon --console=plain --stacktrace \
-            2>&1 | tee phase-04-${{ matrix.service }}-security.log
+          set -euo pipefail
+          for service in \
+            order-service \
+            consumer-service \
+            restaurant-service \
+            kitchen-service \
+            accounting-service \
+            delivery-service \
+            order-history-service
+          do
+            ./gradlew ":${service}:test" \
+              --tests '*SecuritySmokeTest' \
+              --no-daemon --console=plain --stacktrace \
+              2>&1 | tee "phase-04-${service}-security.log"
+          done
 
       - name: Upload service security diagnostics
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: phase-04-${{ matrix.service }}-security-diagnostics
+          name: phase-04-service-security-diagnostics
           if-no-files-found: warn
           path: |
-            phase-04-${{ matrix.service }}-security.log
-            ${{ matrix.service }}/build/reports/tests/**
-            ${{ matrix.service }}/build/test-results/**
+            phase-04-*-security.log
+            order-service/build/reports/tests/**
+            order-service/build/test-results/**
+            consumer-service/build/reports/tests/**
+            consumer-service/build/test-results/**
+            restaurant-service/build/reports/tests/**
+            restaurant-service/build/test-results/**
+            kitchen-service/build/reports/tests/**
+            kitchen-service/build/test-results/**
+            accounting-service/build/reports/tests/**
+            accounting-service/build/test-results/**
+            delivery-service/build/reports/tests/**
+            delivery-service/build/test-results/**
+            order-history-service/build/reports/tests/**
+            order-history-service/build/test-results/**
 
-  order-ownership-contract:
+  ownership-contracts:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 35
     steps:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
@@ -139,59 +149,30 @@ jobs:
       - name: Verify Gradle wrapper
         run: bash scripts/ci/verify-gradle-wrapper.sh
 
-      - name: Verify order ownership and trusted consumer identity
+      - name: Verify order ownership and trusted identity
         run: |
           ./gradlew :order-service:test \
             --tests '*OrderAuthorizationServiceTest' \
             --tests '*OrderControllerIdentityTest' \
             --no-daemon --stacktrace
 
-      - name: Upload order ownership diagnostics
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: phase-04-order-ownership-diagnostics
-          if-no-files-found: warn
-          path: |
-            order-service/build/reports/tests/**
-            order-service/build/test-results/**
-
-  consumer-ownership-contract:
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    steps:
-      - name: Checkout
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
-
-      - name: Set up Java 21
-        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
-        with:
-          distribution: temurin
-          java-version: '21'
-          cache: gradle
-
-      - name: Verify Gradle wrapper
-        run: bash scripts/ci/verify-gradle-wrapper.sh
-
       - name: Verify consumer ownership and privileged credit policy
-        shell: bash
         run: |
-          set -o pipefail
           ./gradlew :consumer-service:test \
             --tests '*ConsumerAuthorizationServiceTest' \
             --tests '*ConsumerControllerAuthorizationTest' \
             --tests '*ConsumerAdminControllerTest' \
-            --no-daemon --console=plain --stacktrace \
-            2>&1 | tee phase-04-consumer-ownership.log
+            --no-daemon --stacktrace
 
-      - name: Upload consumer ownership diagnostics
+      - name: Upload ownership diagnostics
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: phase-04-consumer-ownership-diagnostics
+          name: phase-04-ownership-diagnostics
           if-no-files-found: warn
           path: |
-            phase-04-consumer-ownership.log
+            order-service/build/reports/tests/**
+            order-service/build/test-results/**
             consumer-service/build/reports/tests/**
             consumer-service/build/test-results/**
 
@@ -227,25 +208,3 @@ jobs:
           path: |
             api-gateway/build/reports/tests/**
             api-gateway/build/test-results/**
-
-  consumer-test-compile-diagnostic:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - name: Print isolated consumer compile failure
-        shell: bash
-        run: |
-          set -euo pipefail
-          git clone --depth 1 --branch "${{ github.event.pull_request.head.ref }}" \
-            https://github.com/${{ github.repository }}.git repository >/dev/null 2>&1
-          cd repository
-          export JAVA_HOME="$JAVA_HOME_21_X64"
-          export PATH="$JAVA_HOME/bin:$PATH"
-          if ./gradlew :consumer-service:compileTestJava \
-              --no-daemon --console=plain >/tmp/consumer-compile.log 2>&1; then
-            echo "consumer test compilation passed"
-          else
-            grep -E "(^| )error:|FAILED|FAILURE:|Execution failed|Compilation failed|Could not" \
-              /tmp/consumer-compile.log | tail -n 80
-            exit 1
-          fi
