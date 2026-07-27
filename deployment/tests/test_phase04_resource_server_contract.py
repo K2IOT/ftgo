@@ -59,8 +59,11 @@ class Phase04ResourceServerContractTest(unittest.TestCase):
         configuration = (ROOT / "api-gateway/src/main/resources/application.yml").read_text(
             encoding="utf-8"
         )
-        route_count = configuration.count("- TokenRelay")
-        self.assertGreaterEqual(route_count, len(SERVICES), configuration)
+        default_filters = configuration[
+            configuration.index("default-filters:"):configuration.index("routes:")
+        ]
+        self.assertIn("- TokenRelay", default_filters)
+        self.assertIn("Path=/api/admin/payment-settlement/**", configuration)
         self.assertIn("/realms/ftgo", configuration)
         self.assertIn("jwk-set-uri:", configuration)
         self.assertIn("public-audience:", configuration)
