@@ -20,6 +20,7 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -167,8 +168,10 @@ class SettlementReconcilerTest {
         ReflectionTestUtils.setField(discrepancy, "id", 9001L);
         when(discrepancyRepository.findById(9001L)).thenReturn(Optional.of(discrepancy));
         when(authorizationRepository.findById(704L)).thenReturn(Optional.of(authorization));
-        when(settlementGateway.synchronize(any(SettlementTarget.class), "repair-704-1"))
-            .thenReturn(SettlementDecision.approved("provider-repair-704"));
+        when(settlementGateway.synchronize(
+            any(SettlementTarget.class),
+            eq("repair-704-1")
+        )).thenReturn(SettlementDecision.approved("provider-repair-704"));
         when(discrepancyRepository.saveAndFlush(discrepancy)).thenReturn(discrepancy);
 
         SettlementDiscrepancy first = reconciler.repair(
@@ -187,8 +190,10 @@ class SettlementReconcilerTest {
         assertThat(first).isSameAs(replay);
         assertThat(discrepancy.getStatus()).isEqualTo(SettlementDiscrepancyStatus.RESOLVED);
         assertThat(discrepancy.getRepairRequestId()).isEqualTo("repair-704-1");
-        verify(settlementGateway, times(1))
-            .synchronize(any(SettlementTarget.class), "repair-704-1");
+        verify(settlementGateway, times(1)).synchronize(
+            any(SettlementTarget.class),
+            eq("repair-704-1")
+        );
     }
 
     @Test
