@@ -186,6 +186,7 @@ JSON
 build_artifacts() {
   chmod +x "${ROOT_DIR}/gradlew"
   "${ROOT_DIR}/gradlew" --no-daemon clean \
+    :api-gateway:bootJar \
     :order-service:bootJar \
     :consumer-service:bootJar \
     :restaurant-service:bootJar \
@@ -196,10 +197,10 @@ build_artifacts() {
 
 run_cycle() {
   local run="$1"
-  echo "=== Core order flow E2E run ${run}/${RUNS} ==="
+  echo "=== Secured core order flow E2E run ${run}/${RUNS} ==="
   stop_services
   "${COMPOSE[@]}" --profile relays down --volumes --remove-orphans >/dev/null 2>&1 || true
-  "${COMPOSE[@]}" up --detach --wait --wait-timeout 300 mysql zookeeper kafka connect
+  "${COMPOSE[@]}" up --detach --wait --wait-timeout 300 mysql redis zookeeper kafka connect
 
   start_service "${run}" restaurant-service 8083 ftgo_restaurant
   start_service "${run}" consumer-service 8082 ftgo_consumer
@@ -208,6 +209,14 @@ run_cycle() {
   start_service "${run}" accounting-service 8085 ftgo_accounting \
     FTGO_ACCOUNTING_DECLINED_PAYMENT_TOKENS=tok_e2e_decline
   start_service "${run}" order-service 8081 ftgo_order
+  start_service "${run}" api-gateway 8080 ftgo_gateway \
+    REDIS_HOST=localhost \
+    REDIS_PORT=36379 \
+    ORDER_SERVICE_URL=http://localhost:8081 \
+    CONSUMER_SERVICE_URL=http://localhost:8082 \
+    RESTAURANT_SERVICE_URL=http://localhost:8083 \
+    KITCHEN_SERVICE_URL=http://localhost:8084 \
+    ACCOUNTING_SERVICE_URL=http://localhost:8085
 
   "${COMPOSE[@]}" --profile relays up --detach eventuate-cdc
   wait_for_url "Eventuate CDC" "http://localhost:18099/actuator/health"
@@ -215,9 +224,13 @@ run_cycle() {
   register_kitchen_outbox_connector
 
   FTGO_E2E_ENABLED=true \
+  FTGO_E2E_GATEWAY_URL=http://localhost:8080 \
   FTGO_E2E_JDBC_URL=jdbc:mysql://localhost:33306 \
   "${ROOT_DIR}/gradlew" --no-daemon :e2e-tests:test \
-    --tests 'net.ftgo.e2e.CoreOrderFlowTest' --rerun-tasks --stacktrace
+    --tests 'net.ftgo.e2e.CoreOrderFlowTest' \
+    --tests 'net.ftgo.e2e.SecurityAuthorizationTest' \
+    --tests 'net.ftgo.e2e.ApiAbuseTest' \
+    --rerun-tasks --stacktrace
 
   "${COMPOSE[@]}" --profile relays logs --no-color >"${LOG_ROOT}/run-${run}/compose.log" 2>&1
   stop_services
@@ -234,7 +247,7 @@ main() {
   for run in $(seq 1 "${RUNS}"); do
     run_cycle "${run}"
   done
-  echo "Core order flow E2E passed ${RUNS} clean-state run(s)"
+  echo "Secured core order flow E2E passed ${RUNS} clean-state run(s)"
 }
 
 main "$@"
