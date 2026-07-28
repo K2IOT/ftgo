@@ -119,6 +119,32 @@ class Phase04ResourceServerContractTest(unittest.TestCase):
         self.assertIn("successor-version", version_filter)
         self.assertNotIn("/api/admin/payment-settlement", version_filter)
 
+    def test_mvc_controllers_do_not_define_local_exception_handlers(self):
+        violations = []
+        for service in SERVICES:
+            source_root = ROOT / service / "src/main/java"
+            for controller in source_root.glob("**/*Controller.java"):
+                source = controller.read_text(encoding="utf-8")
+                if "@ExceptionHandler" in source:
+                    violations.append(str(controller.relative_to(ROOT)))
+        self.assertEqual(
+            [],
+            violations,
+            "Controller-local handlers shadow centralized RFC 9457 advice",
+        )
+
+    def test_domain_advices_use_shared_problem_response_factory(self):
+        advice_files = (
+            "order-service/src/main/java/net/ftgo/order/api/OrderApiExceptionHandler.java",
+            "consumer-service/src/main/java/net/ftgo/consumer/api/ConsumerApiExceptionHandler.java",
+            "restaurant-service/src/main/java/net/ftgo/restaurant/api/RestaurantApiExceptionHandler.java",
+            "delivery-service/src/main/java/net/ftgo/delivery/api/DeliveryApiExceptionHandler.java",
+        )
+        for relative in advice_files:
+            source = (ROOT / relative).read_text(encoding="utf-8")
+            self.assertIn("FtgoProblemResponses.response", source, relative)
+            self.assertIn("@RestControllerAdvice", source, relative)
+
 
 if __name__ == "__main__":
     unittest.main()
