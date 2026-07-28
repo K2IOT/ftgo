@@ -26,7 +26,7 @@ public final class ConsumerApiExceptionHandler {
             HttpStatus.FORBIDDEN,
             "forbidden",
             "Access denied",
-            "Consumer access is forbidden",
+            "Consumer access denied",
             "FORBIDDEN",
             request
         );
@@ -42,9 +42,14 @@ public final class ConsumerApiExceptionHandler {
             HttpStatus.BAD_REQUEST,
             "invalid-request",
             "Invalid request",
-            "Invalid consumer request",
+            safeDetail(error, "Invalid consumer request"),
             "INVALID_REQUEST",
             request
         );
+    }
+
+    private String safeDetail(IllegalArgumentException error, String fallback) {
+        String detail = error.getMessage();
+        return detail == null || detail.isBlank() ? fallback : detail;
     }
 }
