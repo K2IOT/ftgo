@@ -40,6 +40,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @ContextConfiguration(classes = {
     SecurityConfiguration.class,
     ConsumerController.class,
+    ConsumerApiExceptionHandler.class,
     ConsumerAuthorizationService.class
 })
 class ConsumerControllerAuthorizationTest {
