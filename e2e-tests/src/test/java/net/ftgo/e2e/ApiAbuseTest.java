@@ -10,8 +10,11 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -58,32 +61,72 @@ class ApiAbuseTest {
     }
 
     @Test
-    void oversizedMutationIsRejectedBeforeReachingOrderService() {
+    void oversizedVersionedMutationIsRejectedBeforeReachingOrderService() {
         String oversizedJson = "{\"padding\":\"" + "x".repeat(300 * 1024) + "\"}";
         HttpResponse<String> response = send(
             "POST",
-            GATEWAY_URL + "/orders",
+            GATEWAY_URL + "/api/v1/orders",
             oversizedJson,
             consumerToken,
-            null
+            null,
+            "application/json"
         );
 
         assertThat(response.statusCode())
             .withFailMessage("Oversized response status=%s body=%s", response.statusCode(), response.body())
             .isEqualTo(413);
+        assertThat(response.headers().firstValue("X-API-Version")).contains("1");
     }
 
     @Test
-    void malformedBearerTokenIsRejected() {
+    void malformedBearerTokenIsRejectedOnVersionedApi() {
         HttpResponse<String> response = send(
             "GET",
-            GATEWAY_URL + "/orders/1",
+            GATEWAY_URL + "/api/v1/orders/1",
             null,
             "not-a-jwt",
-            null
+            null,
+            "application/json"
         );
 
         assertThat(response.statusCode()).isEqualTo(401);
+    }
+
+    @Test
+    void unsignedJwtIsRejected() {
+        String header = base64Url("{\"alg\":\"none\",\"typ\":\"JWT\"}");
+        String payload = base64Url("""
+            {"sub":"forged-admin","aud":["ftgo-api"],"roles":["ADMIN"],"exp":%d}
+            """.formatted(Instant.now().plusSeconds(300).getEpochSecond()).trim());
+        String unsignedToken = header + "." + payload + ".";
+
+        HttpResponse<String> response = send(
+            "GET",
+            GATEWAY_URL + "/api/v1/orders/1",
+            null,
+            unsignedToken,
+            null,
+            "application/json"
+        );
+
+        assertThat(response.statusCode()).isEqualTo(401);
+    }
+
+    @Test
+    void unsupportedContentTypeReturnsStableClientError() {
+        HttpResponse<String> response = send(
+            "POST",
+            GATEWAY_URL + "/api/v1/orders",
+            "not-json",
+            consumerToken,
+            null,
+            "text/plain"
+        );
+
+        assertThat(response.statusCode())
+            .withFailMessage("Unsupported content response status=%s body=%s", response.statusCode(), response.body())
+            .isEqualTo(415);
+        assertThat(response.body()).contains("UNSUPPORTED_MEDIA_TYPE");
     }
 
     @Test
@@ -93,7 +136,8 @@ class ApiAbuseTest {
             GATEWAY_URL + "/api/admin/payment-settlement/non-existent",
             null,
             consumerToken,
-            null
+            null,
+            "application/json"
         );
 
         assertThat(response.statusCode()).isEqualTo(403);
@@ -108,7 +152,8 @@ class ApiAbuseTest {
                 GATEWAY_URL + "/api/admin/payment-settlement/non-existent",
                 null,
                 adminToken,
-                "198.51.100." + (index + 1)
+                "198.51.100." + (index + 1),
+                "application/json"
             );
             requests.add(HTTP.sendAsync(request, HttpResponse.BodyHandlers.ofString()));
         }
@@ -129,11 +174,12 @@ class ApiAbuseTest {
         String url,
         String body,
         String token,
-        String forwardedFor
+        String forwardedFor,
+        String contentType
     ) {
         try {
             return HTTP.send(
-                request(method, url, body, token, forwardedFor),
+                request(method, url, body, token, forwardedFor, contentType),
                 HttpResponse.BodyHandlers.ofString()
             );
         } catch (Exception error) {
@@ -146,11 +192,12 @@ class ApiAbuseTest {
         String url,
         String body,
         String token,
-        String forwardedFor
+        String forwardedFor,
+        String contentType
     ) {
         HttpRequest.Builder request = HttpRequest.newBuilder(URI.create(url))
             .timeout(Duration.ofSeconds(20))
-            .header("Content-Type", "application/json");
+            .header("Content-Type", contentType);
         if (token != null) {
             request.header("Authorization", "Bearer " + token);
         }
@@ -167,5 +214,10 @@ class ApiAbuseTest {
             );
         }
         return request.build();
+    }
+
+    private static String base64Url(String value) {
+        return Base64.getUrlEncoder().withoutPadding()
+            .encodeToString(value.getBytes(StandardCharsets.UTF_8));
     }
 }
