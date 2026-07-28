@@ -223,10 +223,11 @@ jobs:
       - name: Verify Gradle wrapper
         run: bash scripts/ci/verify-gradle-wrapper.sh
 
-      - name: Verify gateway JWT relay and hardening contracts
+      - name: Verify gateway JWT relay, versioning, and hardening contracts
         run: |
           ./gradlew :api-gateway:test \
             --tests '*DownstreamTokenRelayTest' \
+            --tests '*ApiVersioningFilterTest' \
             --tests '*ForwardedHeaderPolicyTest' \
             --tests '*GatewayHardeningIntegrationTest' \
             --tests '*OrderDetailsControllerTest' \
