@@ -33,7 +33,6 @@ class OrderRequestValidationContractTest {
     @Test
     void requiresPositiveRestaurantId() {
         CreateOrderRequest request = request(0L, List.of(validLineItem()), futureTime(), validAddress());
-
         assertViolation(request, "restaurantId");
     }
 
@@ -45,7 +44,6 @@ class OrderRequestValidationContractTest {
             futureTime(),
             validAddress()
         );
-
         assertViolation(request, "lineItems");
     }
 
@@ -57,7 +55,17 @@ class OrderRequestValidationContractTest {
             LocalDateTime.now().minusMinutes(1),
             validAddress()
         );
+        assertViolation(request, "deliveryTime");
+    }
 
+    @Test
+    void rejectsDeliveryBeyondDefaultSevenDayWindow() {
+        CreateOrderRequest request = request(
+            1L,
+            List.of(validLineItem()),
+            LocalDateTime.now().plusDays(8),
+            validAddress()
+        );
         assertViolation(request, "deliveryTime");
     }
 
