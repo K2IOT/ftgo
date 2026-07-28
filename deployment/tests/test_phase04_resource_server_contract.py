@@ -99,6 +99,26 @@ class Phase04ResourceServerContractTest(unittest.TestCase):
         self.assertIn('"/actuator/health/readiness"', security)
         self.assertIn('.pathMatchers("/actuator/**").hasRole("ADMIN")', security)
 
+    def test_gateway_exposes_versioned_public_api_without_duplicating_routes(self):
+        version_filter = (
+            ROOT
+            / "api-gateway/src/main/java/net/ftgo/gateway/filter/ApiVersioningFilter.java"
+        ).read_text(encoding="utf-8")
+        self.assertIn('VERSION_PREFIX = "/api/v1"', version_filter)
+        for path in (
+            "/orders",
+            "/consumers",
+            "/restaurants",
+            "/tickets",
+            "/deliveries",
+            "/order-history",
+            "/order-details",
+        ):
+            self.assertIn(f'"{path}"', version_filter)
+        self.assertIn("Deprecation", version_filter)
+        self.assertIn("successor-version", version_filter)
+        self.assertNotIn("/api/admin/payment-settlement", version_filter)
+
 
 if __name__ == "__main__":
     unittest.main()
