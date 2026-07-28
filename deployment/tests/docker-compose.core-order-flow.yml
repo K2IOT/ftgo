@@ -20,6 +20,17 @@ services:
       retries: 40
       start_period: 20s
 
+  redis:
+    image: redis:7.2-alpine
+    ports:
+      - "36379:6379"
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
   scylla:
     image: scylladb/scylla:5.4
     ports:
