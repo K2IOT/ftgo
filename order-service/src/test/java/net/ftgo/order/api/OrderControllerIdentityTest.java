@@ -14,6 +14,7 @@ import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -32,7 +33,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 })
 @ContextConfiguration(classes = {
     SecurityConfiguration.class,
-    OrderController.class
+    OrderController.class,
+    OrderApiExceptionHandler.class
 })
 class OrderControllerIdentityTest {
 
@@ -53,6 +55,7 @@ class OrderControllerIdentityTest {
             any()
         )).thenReturn(9001L);
 
+        String deliveryTime = LocalDateTime.now().plusHours(1).toString();
         mockMvc.perform(post("/orders")
                 .with(authentication(consumerAuthentication(101L)))
                 .contentType(MediaType.APPLICATION_JSON)
@@ -75,10 +78,10 @@ class OrderControllerIdentityTest {
                         "state": "CA",
                         "zipCode": "94102"
                       },
-                      "deliveryTime": "2030-01-01T12:00:00",
+                      "deliveryTime": "%s",
                       "paymentToken": "tok_test"
                     }
-                    """))
+                    """.formatted(deliveryTime)))
             .andExpect(status().isCreated());
 
         verify(orderService).createOrder(
@@ -92,7 +95,7 @@ class OrderControllerIdentityTest {
     }
 
     private AbstractAuthenticationToken consumerAuthentication(Long consumerId) {
-        Instant now = Instant.parse("2026-07-27T00:00:00Z");
+        Instant now = Instant.now();
         Jwt jwt = Jwt.withTokenValue("consumer-token")
             .header("alg", "RS256")
             .subject("consumer-" + consumerId)
