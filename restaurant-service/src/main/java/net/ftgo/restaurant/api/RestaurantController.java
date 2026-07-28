@@ -4,8 +4,6 @@ import jakarta.validation.Valid;
 import net.ftgo.restaurant.domain.MenuItem;
 import net.ftgo.restaurant.domain.Restaurant;
 import net.ftgo.restaurant.security.RestaurantAuthorizationService;
-import net.ftgo.restaurant.service.MenuItemNotFoundException;
-import net.ftgo.restaurant.service.RestaurantNotFoundException;
 import net.ftgo.restaurant.service.RestaurantService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -13,7 +11,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
-import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -140,56 +137,5 @@ public class RestaurantController {
         );
         restaurantService.deleteMenuItem(restaurantId, menuItemId);
         return ResponseEntity.noContent().build();
-    }
-
-    @ExceptionHandler(RestaurantNotFoundException.class)
-    public ResponseEntity<ErrorResponse> handleRestaurantNotFound(RestaurantNotFoundException ex) {
-        logger.warn("Restaurant not found: {}", ex.getRestaurantId());
-        return ResponseEntity.status(HttpStatus.NOT_FOUND)
-            .body(new ErrorResponse("Restaurant not found", ex.getMessage()));
-    }
-
-    @ExceptionHandler(MenuItemNotFoundException.class)
-    public ResponseEntity<ErrorResponse> handleMenuItemNotFound(MenuItemNotFoundException ex) {
-        logger.warn(
-            "Menu item not found: restaurant={}, menuItem={}",
-            ex.getRestaurantId(),
-            ex.getMenuItemId()
-        );
-        return ResponseEntity.status(HttpStatus.NOT_FOUND)
-            .body(new ErrorResponse("Menu item not found", ex.getMessage()));
-    }
-
-    @ExceptionHandler(IllegalArgumentException.class)
-    public ResponseEntity<ErrorResponse> handleIllegalArgument(IllegalArgumentException ex) {
-        logger.warn("Invalid request: {}", ex.getMessage());
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-            .body(new ErrorResponse("Invalid request", ex.getMessage()));
-    }
-
-    public static class ErrorResponse {
-        private String error;
-        private String message;
-
-        public ErrorResponse(String error, String message) {
-            this.error = error;
-            this.message = message;
-        }
-
-        public String getError() {
-            return error;
-        }
-
-        public void setError(String error) {
-            this.error = error;
-        }
-
-        public String getMessage() {
-            return message;
-        }
-
-        public void setMessage(String message) {
-            this.message = message;
-        }
     }
 }
