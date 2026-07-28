@@ -13,6 +13,7 @@ on:
       - 'accounting-service/**'
       - 'delivery-service/**'
       - 'order-history-service/**'
+      - 'e2e-tests/**'
       - 'deployment/tests/test_phase04_*.py'
       - '.github/workflows/phase-04-api-contract.yml'
   workflow_dispatch:
@@ -25,7 +26,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  problem-detail-contract:
+  api-contracts:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -45,6 +46,13 @@ jobs:
             --tests '*ProblemDetailContractTest' \
             --tests '*FtgoWebAutoConfigurationTest' \
             --no-daemon --console=plain --stacktrace
+      - name: Verify live test identity provider contract
+        env:
+          FTGO_E2E_ENABLED: 'true'
+        run: |
+          ./gradlew :e2e-tests:test \
+            --tests '*TestIdentityProviderTest' \
+            --no-daemon --console=plain --stacktrace
       - name: Upload API contract diagnostics
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -54,3 +62,5 @@ jobs:
           path: |
             common/build/reports/tests/**
             common/build/test-results/**
+            e2e-tests/build/reports/tests/**
+            e2e-tests/build/test-results/**
