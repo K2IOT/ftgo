@@ -2,7 +2,6 @@ package net.ftgo.gateway.security;
 
 import net.ftgo.gateway.config.GatewayConfiguration;
 import org.junit.jupiter.api.Test;
-import org.springframework.http.HttpHeaders;
 import org.springframework.mock.http.server.reactive.MockServerHttpRequest;
 import org.springframework.mock.web.server.MockServerWebExchange;
 import org.springframework.security.authentication.TestingAuthenticationToken;
@@ -35,7 +34,7 @@ class ForwardedHeaderPolicyTest {
 
         assertThat(filtered.get()).isNotNull();
         assertThat(filtered.get().getRequest().getHeaders().getFirst("X-Forwarded-For")).isNull();
-        assertThat(filtered.get().getRequest().getHeaders().getFirst(HttpHeaders.FORWARDED)).isNull();
+        assertThat(filtered.get().getRequest().getHeaders().getFirst("Forwarded")).isNull();
     }
 
     @Test
@@ -93,7 +92,7 @@ class ForwardedHeaderPolicyTest {
         MockServerHttpRequest request = MockServerHttpRequest.get("/restaurants")
             .remoteAddress(new InetSocketAddress(remoteAddress, 12345))
             .header("X-Forwarded-For", forwardedFor)
-            .header(HttpHeaders.FORWARDED, "for=\"198.51.100.7\"")
+            .header("Forwarded", "for=\"198.51.100.7\"")
             .build();
         return MockServerWebExchange.from(request);
     }
