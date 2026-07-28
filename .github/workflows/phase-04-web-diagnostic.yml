@@ -8,6 +8,7 @@ on:
       - 'api-gateway/**'
       - 'consumer-service/**'
       - 'restaurant-service/**'
+      - 'delivery-service/**'
       - 'scripts/ci/summarize-junit-failures.py'
       - '.github/workflows/phase-04-web-diagnostic.yml'
   workflow_dispatch:
@@ -23,7 +24,7 @@ jobs:
   regression-failure-summary:
     name: regression-failure-summary (${{ matrix.module }})
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -31,6 +32,7 @@ jobs:
           - common
           - consumer-service
           - restaurant-service
+          - delivery-service
           - api-gateway
     steps:
       - name: Run isolated module and print concise failures
@@ -46,12 +48,7 @@ jobs:
           set +e
           case "${{ matrix.module }}" in
             common)
-              ./gradlew :common:test --tests '*ProblemDetailContractTest' \
-                --no-daemon --console=plain >/tmp/module-test.log 2>&1
-              ;;
-            api-gateway)
-              ./gradlew :api-gateway:test --tests '*OrderDetailsControllerTest' \
-                --no-daemon --console=plain >/tmp/module-test.log 2>&1
+              ./gradlew :common:test --no-daemon --console=plain >/tmp/module-test.log 2>&1
               ;;
             *)
               ./gradlew :${{ matrix.module }}:test \
@@ -64,8 +61,9 @@ jobs:
           echo "GRADLE_EXIT $status"
           python3 scripts/ci/summarize-junit-failures.py "${{ matrix.module }}" || true
           if [ "$status" -ne 0 ]; then
+            echo 'GRADLE_FAILURE_TAIL'
             grep -E '(^| )error:|FAILED|FAILURE:|Execution failed|Compilation failed|Could not|Caused by:' \
-              /tmp/module-test.log | tail -n 30 || true
+              /tmp/module-test.log | tail -n 80 || true
             exit "$status"
           fi
 
@@ -103,5 +101,36 @@ jobs:
           if [ "$status" -ne 0 ]; then
             grep -E '(^| )error:|FAILED|FAILURE:|Execution failed|Compilation failed|Could not|Caused by:' \
               /tmp/gateway-test.log | tail -n 50 || true
+            exit "$status"
+          fi
+
+  full-clean-summary:
+    name: full-clean-summary
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - name: Run full clean test and print every failing test
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch "${{ github.event.pull_request.head.ref }}" \
+            https://github.com/${{ github.repository }}.git repository >/dev/null 2>&1
+          cd repository
+          export JAVA_HOME="$JAVA_HOME_21_X64"
+          export PATH="$JAVA_HOME/bin:$PATH"
+
+          set +e
+          ./gradlew clean test --no-daemon --console=plain >/tmp/full-clean.log 2>&1
+          status=$?
+          set -e
+
+          echo "GRADLE_EXIT $status"
+          for module in common order-service consumer-service restaurant-service kitchen-service accounting-service delivery-service order-history-service api-gateway e2e-tests; do
+            python3 scripts/ci/summarize-junit-failures.py "$module" || true
+          done
+          if [ "$status" -ne 0 ]; then
+            echo 'FULL_CLEAN_FAILURE_TAIL'
+            grep -E '(^| )error:|FAILED|FAILURE:|Execution failed|Compilation failed|Could not|Caused by:' \
+              /tmp/full-clean.log | tail -n 120 || true
             exit "$status"
           fi
