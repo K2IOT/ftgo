@@ -62,15 +62,46 @@ jobs:
           set -e
 
           echo "GRADLE_EXIT $status"
-          if [ "$status" -ne 0 ] && [ "${{ matrix.module }}" = "api-gateway" ]; then
-            echo 'GATEWAY_APPLICATION_FAILURES'
-            grep -E 'Circuit breaker fallback|Verified FTGO JWT|Redis|redis|Connection refused|WebClient|ERROR|Exception|Caused by:' \
-              /tmp/module-test.log | tail -n 120 || true
-          fi
-
           python3 scripts/ci/summarize-junit-failures.py "${{ matrix.module }}" || true
           if [ "$status" -ne 0 ]; then
             grep -E '(^| )error:|FAILED|FAILURE:|Execution failed|Compilation failed|Could not|Caused by:' \
               /tmp/module-test.log | tail -n 30 || true
+            exit "$status"
+          fi
+
+  gateway-hardening-summary:
+    name: gateway-hardening-summary (${{ matrix.test }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        test:
+          - DownstreamTokenRelayTest
+          - ForwardedHeaderPolicyTest
+          - GatewayHardeningIntegrationTest
+          - OrderDetailsControllerUnitTest
+    steps:
+      - name: Run focused gateway test and print concise failure
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch "${{ github.event.pull_request.head.ref }}" \
+            https://github.com/${{ github.repository }}.git repository >/dev/null 2>&1
+          cd repository
+          export JAVA_HOME="$JAVA_HOME_21_X64"
+          export PATH="$JAVA_HOME/bin:$PATH"
+
+          set +e
+          ./gradlew :api-gateway:test --tests '*${{ matrix.test }}' \
+            --no-daemon --console=plain >/tmp/gateway-test.log 2>&1
+          status=$?
+          set -e
+
+          echo "GRADLE_EXIT $status"
+          python3 scripts/ci/summarize-junit-failures.py api-gateway || true
+          if [ "$status" -ne 0 ]; then
+            grep -E '(^| )error:|FAILED|FAILURE:|Execution failed|Compilation failed|Could not|Caused by:' \
+              /tmp/gateway-test.log | tail -n 50 || true
             exit "$status"
           fi
