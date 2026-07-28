@@ -11,6 +11,7 @@ import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
 import net.ftgo.common.Address;
+import net.ftgo.common.web.RequestLimits;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -31,7 +32,11 @@ public class CreateOrderRequest {
     private final Long expectedMenuVersion;
 
     @NotNull(message = "Order line items are required")
-    @Size(min = 1, max = 50, message = "Order must contain between 1 and 50 line items")
+    @Size(
+        min = 1,
+        max = RequestLimits.MAX_ORDER_ITEMS,
+        message = "Order must contain between 1 and 50 line items"
+    )
     @Valid
     private final List<OrderLineItemRequest> lineItems;
 
@@ -45,13 +50,9 @@ public class CreateOrderRequest {
     private final LocalDateTime deliveryTime;
 
     @NotBlank(message = "Payment token is required")
-    @Size(max = 255, message = "Payment token must not exceed 255 characters")
+    @Size(max = RequestLimits.MAX_TEXT_LENGTH, message = "Payment token is too long")
     private final String paymentToken;
 
-    /**
-     * Backward-compatible constructor for Java callers that do not provide a
-     * menu version. The consumer identity still comes from authentication.
-     */
     public CreateOrderRequest(
         Long restaurantId,
         List<OrderLineItemRequest> lineItems,
