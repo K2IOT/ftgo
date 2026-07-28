@@ -81,8 +81,8 @@ jobs:
             echo 'CORE_E2E_RUNNER_TAIL'
             tail -n 160 core-order-flow-e2e-logs/runner.log 2>/dev/null || true
             echo 'CORE_E2E_SERVICE_ERRORS'
-            grep -R -E 'ERROR|Exception|Caused by:|401|403|409|500' \
-              core-order-flow-e2e-logs/run-*/*.log 2>/dev/null | tail -n 120 || true
+            grep -R -E 'ERROR|Exception|Caused by:|401|403|409|500|503' \
+              core-order-flow-e2e-logs/run-*/*.log 2>/dev/null | tail -n 160 || true
             echo 'CORE_E2E_COMMAND_TAIL'
             tail -n 160 /tmp/core-order-flow-e2e.log || true
           else
@@ -163,6 +163,25 @@ jobs:
               ]
               for line in interesting[-30:]:
                   print(f"RUNNER {line[:1200]}")
+
+          service_pattern = re.compile(
+              r"ERROR|Exception|Caused by:|Jwt|JWK|Connection refused|Unsupported|\b500\b|\b503\b",
+              re.I,
+          )
+          for service_name in ("order-service.log", "api-gateway.log"):
+              service_logs = sorted(root.rglob(service_name))
+              if not service_logs:
+                  continue
+              path = service_logs[-1]
+              lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+              matches = [line for line in lines if service_pattern.search(line)]
+              print(f"SERVICE_LOG {path}")
+              for line in matches[-40:]:
+                  print(f"SERVICE {line[:1600]}")
+              print(f"SERVICE_TAIL {service_name}")
+              for line in lines[-20:]:
+                  print(f"TAIL {line[:1600]}")
+
           if not found:
               print("NO_JUNIT_FAILURE_FOUND")
           PY
