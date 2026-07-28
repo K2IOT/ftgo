@@ -106,10 +106,12 @@ start_service() {
     SPRING_DATASOURCE_PASSWORD=ftgo_password \
     SPRING_KAFKA_BOOTSTRAP_SERVERS=localhost:29092 \
     EVENTUATELOCAL_KAFKA_BOOTSTRAP_SERVERS=localhost:29092 \
+    FTGO_SECURITY_ISSUER_URI=http://localhost:19000/realms/ftgo \
+    FTGO_SECURITY_JWK_SET_URI=http://localhost:19000/realms/ftgo/protocol/openid-connect/certs \
     "$@" java -jar "${jar}" >"${log_file}" 2>&1 &
   local pid=$!
   SERVICE_PIDS+=("${pid}")
-  wait_for_health "${module}" "http://localhost:${port}/actuator/health" "${pid}" "${log_file}"
+  wait_for_health "${module}" "http://localhost:${port}/actuator/health/liveness" "${pid}" "${log_file}"
 }
 
 wait_for_url() {
