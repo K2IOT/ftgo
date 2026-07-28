@@ -39,6 +39,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -49,7 +50,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 })
 @ContextConfiguration(classes = {
     SecurityConfiguration.class,
-    OrderController.class
+    OrderController.class,
+    OrderApiExceptionHandler.class
 })
 class OrderControllerTest {
 
@@ -292,7 +294,7 @@ class OrderControllerTest {
     }
 
     private AbstractAuthenticationToken consumerAuthentication(Long consumerId) {
-        Instant now = Instant.parse("2026-07-27T00:00:00Z");
+        Instant now = Instant.now();
         Jwt jwt = Jwt.withTokenValue("consumer-token")
             .header("alg", "RS256")
             .subject("consumer-" + consumerId)
