@@ -27,7 +27,7 @@ public final class RestaurantApiExceptionHandler {
             HttpStatus.NOT_FOUND,
             "restaurant-not-found",
             "Restaurant not found",
-            "The requested restaurant does not exist",
+            "Restaurant not found",
             "RESTAURANT_NOT_FOUND",
             request
         );
@@ -47,7 +47,7 @@ public final class RestaurantApiExceptionHandler {
             HttpStatus.NOT_FOUND,
             "menu-item-not-found",
             "Menu item not found",
-            "The requested menu item does not exist",
+            "Menu item not found",
             "MENU_ITEM_NOT_FOUND",
             request
         );
@@ -63,9 +63,14 @@ public final class RestaurantApiExceptionHandler {
             HttpStatus.BAD_REQUEST,
             "invalid-request",
             "Invalid request",
-            "Invalid restaurant request",
+            safeDetail(error, "Invalid restaurant request"),
             "INVALID_REQUEST",
             request
         );
+    }
+
+    private String safeDetail(IllegalArgumentException error, String fallback) {
+        String detail = error.getMessage();
+        return detail == null || detail.isBlank() ? fallback : detail;
     }
 }
