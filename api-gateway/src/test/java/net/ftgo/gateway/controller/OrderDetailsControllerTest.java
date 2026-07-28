@@ -9,14 +9,17 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.web.reactive.server.EntityExchangeResult;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import reactor.core.publisher.Mono;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
 
@@ -55,6 +58,9 @@ class OrderDetailsControllerTest {
             "spring.security.oauth2.resourceserver.jwt.jwk-set-uri",
             () -> "https://identity.example/realms/ftgo/protocol/openid-connect/certs"
         );
+        registry.add("server.error.include-message", () -> "always");
+        registry.add("server.error.include-exception", () -> "true");
+        registry.add("server.error.include-stacktrace", () -> "always");
     }
 
     @BeforeEach
@@ -149,7 +155,17 @@ class OrderDetailsControllerTest {
         orderServiceMock.stubFor(get(urlEqualTo("/orders/" + orderId))
             .willReturn(aResponse().withStatus(404)));
 
-        authenticatedGet(orderId).expectStatus().isNotFound();
+        EntityExchangeResult<byte[]> result = webTestClient.get()
+            .uri("/order-details/{orderId}", orderId)
+            .headers(headers -> headers.setBearerAuth("consumer-token"))
+            .exchange()
+            .expectBody()
+            .returnResult();
+        byte[] responseBody = result.getResponseBody();
+        String body = responseBody == null ? "" : new String(responseBody, StandardCharsets.UTF_8);
+        assertThat(result.getStatus())
+            .withFailMessage("Gateway error response: %s", body)
+            .isEqualTo(HttpStatus.NOT_FOUND);
     }
 
     @Test
