@@ -76,6 +76,24 @@ class SimulatedSettlementGatewayTest {
     }
 
     @Test
+    void rejectsDifferentPayloadForSameRequestIdAsConflict() {
+        gateway.authorize(206L, 106L, new Money("50.00"), "authorize-106");
+        gateway.capture(206L, 106L, "capture-106");
+        gateway.refund(206L, 106L, new Money("10.00"), "refund-106");
+
+        assertThatThrownBy(() -> gateway.refund(
+            206L,
+            106L,
+            new Money("5.00"),
+            "refund-106"
+        )).isInstanceOf(IllegalStateException.class)
+          .hasMessageContaining("request ID conflict");
+
+        assertThat(gateway.find(206L).orElseThrow().refundedAmount())
+            .isEqualTo(new Money("10.00"));
+    }
+
+    @Test
     void configuredDenialDoesNotCaptureProviderPayment() {
         gateway.authorize(202L, 102L, new Money("25.00"), "authorize-102");
 
