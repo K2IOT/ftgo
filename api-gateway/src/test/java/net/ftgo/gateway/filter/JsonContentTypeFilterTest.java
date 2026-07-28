@@ -46,7 +46,7 @@ class JsonContentTypeFilterTest {
         JsonNode problem = objectMapper.readTree(body.getBytes(StandardCharsets.UTF_8));
         assertThat(problem.path("status").asInt()).isEqualTo(415);
         assertThat(problem.path("errorCode").asText()).isEqualTo("UNSUPPORTED_MEDIA_TYPE");
-        assertThat(problem.path("instance").asText()).isEqualTo("/orders");
+        assertThat(problem.path("instance").asText()).isEqualTo("/api/v1/orders");
         assertThat(problem.path("correlationId").asText()).isNotBlank();
     }
 
