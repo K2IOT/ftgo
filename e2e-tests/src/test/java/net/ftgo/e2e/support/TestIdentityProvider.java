@@ -17,7 +17,6 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Date;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -25,17 +24,12 @@ import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-/**
- * Lightweight RS256 identity provider for real-process security verification.
- *
- * <p>It exposes only a JWKS endpoint and signs short-lived tokens with explicit
- * issuer, audience, role, and domain ownership claims. It is deliberately
- * test-only and never participates in production runtime code.
- */
+/** Lightweight RS256 identity provider for real-process security verification. */
 public final class TestIdentityProvider implements AutoCloseable {
 
     private static final String REALM_PATH = "/realms/ftgo";
     private static final String JWKS_PATH = REALM_PATH + "/protocol/openid-connect/certs";
+    private static final RSAKey SHARED_SIGNING_KEY = createSigningKey();
 
     private final HttpServer server;
     private final ExecutorService executor;
@@ -50,9 +44,6 @@ public final class TestIdentityProvider implements AutoCloseable {
     }
 
     public static TestIdentityProvider start(int port) throws Exception {
-        RSAKey signingKey = new RSAKeyGenerator(2048)
-            .keyID("ftgo-e2e-" + UUID.randomUUID())
-            .generate();
         HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", port), 0);
         ExecutorService executor = Executors.newSingleThreadExecutor(runnable -> {
             Thread thread = new Thread(runnable, "ftgo-test-identity-provider");
@@ -61,9 +52,16 @@ public final class TestIdentityProvider implements AutoCloseable {
         });
         server.setExecutor(executor);
 
-        TestIdentityProvider identityProvider = new TestIdentityProvider(server, executor, signingKey);
+        TestIdentityProvider identityProvider = new TestIdentityProvider(
+            server,
+            executor,
+            SHARED_SIGNING_KEY
+        );
         server.createContext(JWKS_PATH, identityProvider::serveJwks);
-        server.createContext(REALM_PATH + "/.well-known/openid-configuration", identityProvider::serveDiscovery);
+        server.createContext(
+            REALM_PATH + "/.well-known/openid-configuration",
+            identityProvider::serveDiscovery
+        );
         server.start();
         return identityProvider;
     }
@@ -122,6 +120,16 @@ public final class TestIdentityProvider implements AutoCloseable {
         executor.shutdownNow();
     }
 
+    private static RSAKey createSigningKey() {
+        try {
+            return new RSAKeyGenerator(2048)
+                .keyID("ftgo-e2e")
+                .generate();
+        } catch (Exception error) {
+            throw new ExceptionInInitializerError(error);
+        }
+    }
+
     private void serveJwks(HttpExchange exchange) throws IOException {
         if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
             writeJson(exchange, 405, "{\"error\":\"method_not_allowed\"}");
@@ -136,10 +144,8 @@ public final class TestIdentityProvider implements AutoCloseable {
             writeJson(exchange, 405, "{\"error\":\"method_not_allowed\"}");
             return;
         }
-        Map<String, String> metadata = new LinkedHashMap<>();
-        metadata.put("issuer", issuer);
-        metadata.put("jwks_uri", jwkSetUri());
-        String body = "{\"issuer\":\"" + issuer + "\",\"jwks_uri\":\"" + jwkSetUri() + "\"}";
+        String body = "{\"issuer\":\"" + issuer + "\",\"jwks_uri\":\""
+            + jwkSetUri() + "\"}";
         writeJson(exchange, 200, body);
     }
 
