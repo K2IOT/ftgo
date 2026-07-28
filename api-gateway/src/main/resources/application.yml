@@ -1,6 +1,8 @@
 spring:
   application:
     name: api-gateway
+  codec:
+    max-in-memory-size: 256KB
   cloud:
     gateway:
       # Global defaults
@@ -8,7 +10,7 @@ spring:
         - TokenRelay
         - name: RequestSize
           args:
-            maxSize: 10MB
+            maxSize: 256KB
       routes:
         - id: order-service
           uri: ${services.order-service.url:http://localhost:8081}
@@ -309,12 +311,15 @@ spring:
           jwk-set-uri: ${FTGO_SECURITY_JWK_SET_URI:http://localhost:9000/realms/ftgo/protocol/openid-connect/certs}
 
 ftgo:
+  gateway:
+    trusted-proxies: ${FTGO_GATEWAY_TRUSTED_PROXIES:}
   security:
     public-audience: ${FTGO_SECURITY_PUBLIC_AUDIENCE:ftgo-api}
     internal-audience: ${FTGO_SECURITY_INTERNAL_AUDIENCE:ftgo-internal}
 
 server:
   port: ${SERVER_PORT:8080}
+  forward-headers-strategy: none
   netty:
     connection-timeout: 5s
     idle-timeout: 30s
