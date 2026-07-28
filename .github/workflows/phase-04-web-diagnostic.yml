@@ -61,14 +61,15 @@ jobs:
           status=$?
           set -e
 
-          python3 scripts/ci/summarize-junit-failures.py "${{ matrix.module }}" || true
           echo "GRADLE_EXIT $status"
+          if [ "$status" -ne 0 ] && [ "${{ matrix.module }}" = "api-gateway" ]; then
+            echo 'GATEWAY_APPLICATION_FAILURES'
+            grep -E 'Circuit breaker fallback|Verified FTGO JWT|Redis|redis|Connection refused|WebClient|ERROR|Exception|Caused by:' \
+              /tmp/module-test.log | tail -n 120 || true
+          fi
+
+          python3 scripts/ci/summarize-junit-failures.py "${{ matrix.module }}" || true
           if [ "$status" -ne 0 ]; then
-            if [ "${{ matrix.module }}" = "api-gateway" ]; then
-              echo 'GATEWAY_APPLICATION_FAILURES'
-              grep -E 'Verified FTGO JWT|Redis|redis|Connection refused|WebClient|ERROR|Exception|Caused by:' \
-                /tmp/module-test.log | tail -n 180 || true
-            fi
             grep -E '(^| )error:|FAILED|FAILURE:|Execution failed|Compilation failed|Could not|Caused by:' \
               /tmp/module-test.log | tail -n 30 || true
             exit "$status"
