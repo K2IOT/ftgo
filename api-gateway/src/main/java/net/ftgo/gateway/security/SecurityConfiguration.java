@@ -5,6 +5,7 @@ import net.ftgo.common.security.FtgoReactiveJwtDecoders;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.config.annotation.web.reactive.EnableWebFluxSecurity;
@@ -13,8 +14,10 @@ import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder;
 import org.springframework.security.web.server.SecurityWebFilterChain;
 import org.springframework.security.web.server.ServerAuthenticationEntryPoint;
 import org.springframework.security.web.server.authorization.ServerAccessDeniedHandler;
+import org.springframework.security.web.server.util.matcher.ServerWebExchangeMatchers;
 import reactor.core.publisher.Mono;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 @Configuration
@@ -22,15 +25,32 @@ import java.util.List;
 public class SecurityConfiguration {
 
     @Bean
-    public SecurityWebFilterChain securityWebFilterChain(ServerHttpSecurity http) {
+    @Order(0)
+    public SecurityWebFilterChain actuatorSecurityWebFilterChain(ServerHttpSecurity http) {
         FtgoJwtAuthenticationConverter converter = new FtgoJwtAuthenticationConverter("");
-        return http
-            .csrf(csrf -> csrf.disable())
+        return configureResourceServer(
+            http.securityMatcher(ServerWebExchangeMatchers.pathMatchers("/actuator/**")),
+            converter
+        )
+            .csrf(ServerHttpSecurity.CsrfSpec::disable)
             .authorizeExchange(exchanges -> exchanges
                 .pathMatchers(
                     "/actuator/health/liveness",
                     "/actuator/health/readiness"
                 ).permitAll()
+                .pathMatchers("/actuator/**").hasRole("ADMIN")
+                .anyExchange().denyAll()
+            )
+            .build();
+    }
+
+    @Bean
+    @Order(1)
+    public SecurityWebFilterChain securityWebFilterChain(ServerHttpSecurity http) {
+        FtgoJwtAuthenticationConverter converter = new FtgoJwtAuthenticationConverter("");
+        return configureResourceServer(http, converter)
+            .csrf(ServerHttpSecurity.CsrfSpec::disable)
+            .authorizeExchange(exchanges -> exchanges
                 .pathMatchers("/fallback/**").permitAll()
 
                 .pathMatchers(HttpMethod.POST, "/orders").hasRole("CONSUMER")
@@ -65,13 +85,7 @@ public class SecurityConfiguration {
                 .pathMatchers(HttpMethod.GET, "/order-history/**").hasAnyRole("CONSUMER", "ADMIN")
                 .pathMatchers(HttpMethod.GET, "/order-details/**").hasAnyRole("CONSUMER", "ADMIN")
 
-                .pathMatchers("/actuator/**").hasRole("ADMIN")
                 .anyExchange().authenticated()
-            )
-            .oauth2ResourceServer(oauth2 -> oauth2
-                .jwt(jwt -> jwt.jwtAuthenticationConverter(token -> Mono.just(converter.convert(token))))
-                .authenticationEntryPoint(jsonAuthenticationEntryPoint())
-                .accessDeniedHandler(jsonAccessDeniedHandler())
             )
             .build();
     }
@@ -90,29 +104,44 @@ public class SecurityConfiguration {
         );
     }
 
+    private ServerHttpSecurity configureResourceServer(
+        ServerHttpSecurity http,
+        FtgoJwtAuthenticationConverter converter
+    ) {
+        return http.oauth2ResourceServer(oauth2 -> oauth2
+            .jwt(jwt -> jwt.jwtAuthenticationConverter(token -> Mono.just(converter.convert(token))))
+            .authenticationEntryPoint(jsonAuthenticationEntryPoint())
+            .accessDeniedHandler(jsonAccessDeniedHandler())
+        );
+    }
+
     private ServerAuthenticationEntryPoint jsonAuthenticationEntryPoint() {
-        return (exchange, ex) -> {
+        return (exchange, error) -> {
             exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
-            exchange.getResponse().getHeaders().add("Content-Type", "application/json");
-            exchange.getResponse().getHeaders().add(
+            exchange.getResponse().getHeaders().set("Content-Type", "application/json");
+            exchange.getResponse().getHeaders().set(
                 "WWW-Authenticate",
                 "Bearer realm=\"ftgo\", error=\"unauthorized\""
             );
-            String body = """
-                {"error":"unauthorized","message":"Authentication required","status":401}""";
-            var buffer = exchange.getResponse().bufferFactory().wrap(body.getBytes());
-            return exchange.getResponse().writeWith(Mono.just(buffer));
+            byte[] body = """
+                {"error":"unauthorized","message":"Authentication required","status":401}"""
+                .getBytes(StandardCharsets.UTF_8);
+            return exchange.getResponse().writeWith(Mono.just(
+                exchange.getResponse().bufferFactory().wrap(body)
+            ));
         };
     }
 
     private ServerAccessDeniedHandler jsonAccessDeniedHandler() {
         return (exchange, denied) -> {
             exchange.getResponse().setStatusCode(HttpStatus.FORBIDDEN);
-            exchange.getResponse().getHeaders().add("Content-Type", "application/json");
-            String body = """
-                {"error":"forbidden","message":"Access denied","status":403}""";
-            var buffer = exchange.getResponse().bufferFactory().wrap(body.getBytes());
-            return exchange.getResponse().writeWith(Mono.just(buffer));
+            exchange.getResponse().getHeaders().set("Content-Type", "application/json");
+            byte[] body = """
+                {"error":"forbidden","message":"Access denied","status":403}"""
+                .getBytes(StandardCharsets.UTF_8);
+            return exchange.getResponse().writeWith(Mono.just(
+                exchange.getResponse().bufferFactory().wrap(body)
+            ));
         };
     }
 }
