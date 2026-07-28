@@ -164,7 +164,7 @@ class OrderDetailsControllerTest {
         byte[] responseBody = result.getResponseBody();
         String body = responseBody == null ? "" : new String(responseBody, StandardCharsets.UTF_8);
         assertThat(result.getStatus())
-            .withFailMessage("Gateway error response: %s", body)
+            .withFailMessage("Gateway status=%s response=%s", result.getStatus(), body)
             .isEqualTo(HttpStatus.NOT_FOUND);
     }
 
