@@ -1,22 +1,23 @@
 package net.ftgo.gateway.controller;
 
 import com.github.tomakehurst.wiremock.WireMockServer;
-import net.ftgo.common.security.FtgoJwtAuthenticationConverter;
 import net.ftgo.gateway.dto.OrderDetails;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
-import org.springframework.security.authentication.AbstractAuthenticationToken;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.reactive.server.EntityExchangeResult;
 import org.springframework.test.web.reactive.server.WebTestClient;
+import reactor.core.publisher.Mono;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -27,7 +28,8 @@ import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.springframework.security.test.web.reactive.server.SecurityMockServerConfigurers.mockAuthentication;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.when;
 
 /** Integration tests for authenticated Order Details API composition. */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -36,7 +38,9 @@ class OrderDetailsControllerTest {
     @Autowired
     private WebTestClient webTestClient;
 
-    private WebTestClient authenticatedClient;
+    @MockBean(name = "jwtDecoder")
+    private ReactiveJwtDecoder jwtDecoder;
+
     private WireMockServer orderServiceMock;
     private WireMockServer kitchenServiceMock;
     private WireMockServer deliveryServiceMock;
@@ -64,7 +68,7 @@ class OrderDetailsControllerTest {
         orderServiceMock.start();
         kitchenServiceMock.start();
         deliveryServiceMock.start();
-        authenticatedClient = webTestClient.mutateWith(mockAuthentication(consumerAuthentication()));
+        when(jwtDecoder.decode(anyString())).thenReturn(Mono.just(consumerJwt()));
     }
 
     @AfterEach
@@ -148,8 +152,9 @@ class OrderDetailsControllerTest {
         orderServiceMock.stubFor(get(urlEqualTo("/orders/" + orderId))
             .willReturn(aResponse().withStatus(404)));
 
-        EntityExchangeResult<byte[]> result = authenticatedClient.get()
+        EntityExchangeResult<byte[]> result = webTestClient.get()
             .uri("/order-details/{orderId}", orderId)
+            .headers(headers -> headers.setBearerAuth("consumer-token"))
             .exchange()
             .expectBody()
             .returnResult();
@@ -180,8 +185,9 @@ class OrderDetailsControllerTest {
     }
 
     private WebTestClient.ResponseSpec authenticatedGet(long orderId) {
-        return authenticatedClient.get()
+        return webTestClient.get()
             .uri("/order-details/{orderId}", orderId)
+            .headers(headers -> headers.setBearerAuth("consumer-token"))
             .exchange();
     }
 
@@ -237,9 +243,9 @@ class OrderDetailsControllerTest {
                     """.formatted(deliveryId, orderId, status, courierField))));
     }
 
-    private AbstractAuthenticationToken consumerAuthentication() {
+    private Jwt consumerJwt() {
         Instant now = Instant.now();
-        Jwt jwt = Jwt.withTokenValue("consumer-token")
+        return Jwt.withTokenValue("consumer-token")
             .header("alg", "RS256")
             .issuer("https://identity.example/realms/ftgo")
             .subject("consumer-100")
@@ -249,7 +255,6 @@ class OrderDetailsControllerTest {
             .claim("roles", List.of("CONSUMER"))
             .claim("consumer_id", 100L)
             .build();
-        return new FtgoJwtAuthenticationConverter("").convert(jwt);
     }
 
     private void stop(WireMockServer server) {
