@@ -25,17 +25,34 @@ public class DeliveryServiceClient {
                 .build();
     }
 
+    /** Context-based compatibility entry point for standalone reactive callers. */
     public Mono<DeliveryResponse> getDeliveryByOrderId(Long orderId) {
+        return verifiedToken().flatMap(token -> getDeliveryByOrderId(orderId, token));
+    }
+
+    /** Explicit token entry point used by API composition across AOP boundaries. */
+    public Mono<DeliveryResponse> getDeliveryByOrderId(Long orderId, String verifiedToken) {
+        return webClient.get()
+                .uri("/deliveries/by-order/{orderId}", orderId)
+                .header(HttpHeaders.AUTHORIZATION, bearer(verifiedToken))
+                .retrieve()
+                .bodyToMono(DeliveryResponse.class)
+                .onErrorResume(WebClientResponseException.NotFound.class, error -> Mono.empty());
+    }
+
+    private Mono<String> verifiedToken() {
         return ReactiveSecurityContextHolder.getContext()
                 .map(context -> context.getAuthentication())
-                .filter(authentication -> authentication instanceof FtgoJwtAuthenticationToken)
-                .map(authentication -> ((FtgoJwtAuthenticationToken) authentication).tokenValue())
-                .switchIfEmpty(Mono.error(new IllegalStateException("Verified FTGO JWT is required")))
-                .flatMap(token -> webClient.get()
-                        .uri("/deliveries/by-order/{orderId}", orderId)
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
-                        .retrieve()
-                        .bodyToMono(DeliveryResponse.class))
-                .onErrorResume(WebClientResponseException.NotFound.class, error -> Mono.empty());
+                .filter(FtgoJwtAuthenticationToken.class::isInstance)
+                .cast(FtgoJwtAuthenticationToken.class)
+                .map(FtgoJwtAuthenticationToken::tokenValue)
+                .switchIfEmpty(Mono.error(new IllegalStateException("Verified FTGO JWT is required")));
+    }
+
+    private String bearer(String token) {
+        if (token == null || token.isBlank()) {
+            throw new IllegalArgumentException("Verified FTGO JWT is required");
+        }
+        return "Bearer " + token;
     }
 }
