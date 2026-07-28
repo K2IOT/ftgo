@@ -130,6 +130,25 @@ class PaymentSettlementTest {
 
         assertThat(firstRefund.path("status").asText()).isEqualTo("PARTIALLY_REFUNDED");
         assertThat(replayedRefund.path("requestId").asText()).isEqualTo(refundRequestId);
+
+        ObjectNode conflictingReplay = refund.deepCopy();
+        conflictingReplay.set("amount", money(new BigDecimal("5.00")));
+        conflictingReplay.put("reason", "changed payload must not replay");
+        HttpResponse<String> conflict = send(
+            "POST",
+            ACCOUNTING_URL + "/api/admin/payment-settlement/authorizations/"
+                + authorizationId + "/refunds",
+            conflictingReplay,
+            adminToken
+        );
+        assertThat(conflict.statusCode())
+            .withFailMessage(
+                "Conflicting idempotency replay status=%s body=%s",
+                conflict.statusCode(),
+                conflict.body()
+            )
+            .isEqualTo(409);
+
         awaitSqlValue(
             "ftgo_accounting",
             "select refunded_amount from authorizations where id = ?",
