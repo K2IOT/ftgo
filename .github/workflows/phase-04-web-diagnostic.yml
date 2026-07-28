@@ -103,34 +103,3 @@ jobs:
               /tmp/gateway-test.log | tail -n 50 || true
             exit "$status"
           fi
-
-  full-clean-summary:
-    name: full-clean-summary
-    runs-on: ubuntu-latest
-    timeout-minutes: 50
-    steps:
-      - name: Run full clean test and print every failing test
-        shell: bash
-        run: |
-          set -euo pipefail
-          git clone --depth 1 --branch "${{ github.event.pull_request.head.ref }}" \
-            https://github.com/${{ github.repository }}.git repository >/dev/null 2>&1
-          cd repository
-          export JAVA_HOME="$JAVA_HOME_21_X64"
-          export PATH="$JAVA_HOME/bin:$PATH"
-
-          set +e
-          ./gradlew clean test --no-daemon --console=plain >/tmp/full-clean.log 2>&1
-          status=$?
-          set -e
-
-          echo "GRADLE_EXIT $status"
-          for module in common order-service consumer-service restaurant-service kitchen-service accounting-service delivery-service order-history-service api-gateway e2e-tests; do
-            python3 scripts/ci/summarize-junit-failures.py "$module" || true
-          done
-          if [ "$status" -ne 0 ]; then
-            echo 'FULL_CLEAN_FAILURE_TAIL'
-            grep -E '(^| )error:|FAILED|FAILURE:|Execution failed|Compilation failed|Could not|Caused by:' \
-              /tmp/full-clean.log | tail -n 120 || true
-            exit "$status"
-          fi
