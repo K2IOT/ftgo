@@ -82,9 +82,28 @@ jobs:
         run: docker compose -f deployment/tests/docker-compose.core-order-flow.yml config --quiet
 
       - name: Run two clean-state payment settlement cycles
+        shell: bash
         run: |
+          set -o pipefail
           chmod +x gradlew scripts/smoke/verify-payment-settlement.sh
-          bash scripts/smoke/verify-payment-settlement.sh --runs 2
+          set +e
+          bash scripts/smoke/verify-payment-settlement.sh --runs 2 \
+            2>&1 | tee /tmp/payment-settlement-e2e.log
+          status=${PIPESTATUS[0]}
+          set -e
+
+          if [ "$status" -ne 0 ]; then
+            echo 'PAYMENT_E2E_JUNIT_FAILURES'
+            python3 scripts/ci/summarize-junit-failures.py e2e-tests || true
+            echo 'PAYMENT_E2E_RUNNER_TAIL'
+            tail -n 160 payment-settlement-e2e-logs/runner.log 2>/dev/null || true
+            echo 'PAYMENT_E2E_SERVICE_ERRORS'
+            grep -R -E 'ERROR|Exception|Caused by:|401|403|409|500' \
+              payment-settlement-e2e-logs/run-*/*.log 2>/dev/null | tail -n 160 || true
+            echo 'PAYMENT_E2E_COMMAND_TAIL'
+            tail -n 160 /tmp/payment-settlement-e2e.log || true
+          fi
+          exit "$status"
 
       - name: Upload settlement diagnostics
         if: always()
