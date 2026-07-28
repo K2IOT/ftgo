@@ -41,6 +41,7 @@ public class CreateOrderRequest {
 
     @NotNull(message = "Delivery time is required")
     @Future(message = "Delivery time must be in the future")
+    @WithinSchedulingWindow
     private final LocalDateTime deliveryTime;
 
     @NotBlank(message = "Payment token is required")
