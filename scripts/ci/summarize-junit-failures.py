@@ -59,6 +59,10 @@ def main() -> int:
     else:
         message = failure.attrib.get("message", "")
         print(f"MESSAGE {message[:2000]}")
+        for line in body_lines[:100]:
+            print(f"DETAIL {line[:2000]}")
+        if len(body_lines) > 100:
+            print("DETAIL ...")
         for line in body_lines[-15:]:
             print(f"STACK {line[:2000]}")
     return 1
