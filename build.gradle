@@ -205,6 +205,7 @@ project(':e2e-tests') {
     }
     tasks.named('test') {
         onlyIf { System.getenv('FTGO_E2E_ENABLED') == 'true' }
+        systemProperty 'ftgo.e2e.gateway-url', System.getenv('FTGO_E2E_GATEWAY_URL') ?: 'http://localhost:8080'
         systemProperty 'ftgo.e2e.order-url', System.getenv('FTGO_E2E_ORDER_URL') ?: 'http://localhost:8081'
         systemProperty 'ftgo.e2e.consumer-url', System.getenv('FTGO_E2E_CONSUMER_URL') ?: 'http://localhost:8082'
         systemProperty 'ftgo.e2e.restaurant-url', System.getenv('FTGO_E2E_RESTAURANT_URL') ?: 'http://localhost:8083'
