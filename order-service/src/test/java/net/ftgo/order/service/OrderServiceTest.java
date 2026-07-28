@@ -4,6 +4,7 @@ import io.eventuate.tram.sagas.orchestration.SagaInstanceFactory;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import net.ftgo.common.Money;
 import net.ftgo.common.orderflow.events.OrderCreated;
+import net.ftgo.common.security.FtgoPrincipal;
 import net.ftgo.order.domain.DeliveryInfo;
 import net.ftgo.order.domain.Order;
 import net.ftgo.order.domain.OrderLineItem;
@@ -26,7 +27,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Optional;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
@@ -40,6 +41,9 @@ class OrderServiceTest {
 
     @Mock
     private OrderRepository orderRepository;
+
+    @Mock
+    private OrderAuthorizationService orderAuthorizationService;
 
     @Mock
     private DomainEventPublisher eventPublisher;
@@ -62,6 +66,7 @@ class OrderServiceTest {
     void setUp() {
         orderService = new OrderService(
             orderRepository,
+            orderAuthorizationService,
             sagaInstanceFactory,
             createOrderSaga,
             cancelOrderSaga,
@@ -124,14 +129,26 @@ class OrderServiceTest {
         order.approve();
         order.setTicketId(999L);
         order.setAuthorizationId(456L);
+        FtgoPrincipal principal = consumerPrincipal(456L);
 
-        when(orderRepository.findById(123L)).thenReturn(Optional.of(order));
+        when(orderAuthorizationService.requireOwner(123L, principal)).thenReturn(order);
 
-        orderService.cancelOrder(123L);
+        orderService.cancelOrder(123L, principal);
 
         ArgumentCaptor<CancelOrderSagaData> dataCaptor = ArgumentCaptor.forClass(CancelOrderSagaData.class);
         verify(sagaInstanceFactory).create(eq(cancelOrderSaga), dataCaptor.capture());
         assertEquals(456L, dataCaptor.getValue().getAuthorizationId());
+    }
+
+    private FtgoPrincipal consumerPrincipal(Long consumerId) {
+        return new FtgoPrincipal(
+            "consumer-" + consumerId,
+            consumerId,
+            Set.of(),
+            null,
+            Set.of("CONSUMER"),
+            Set.of("ftgo-api")
+        );
     }
 
     private void setOrderId(Order order, Long orderId) {

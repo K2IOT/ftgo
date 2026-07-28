@@ -5,6 +5,7 @@ import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import net.ftgo.common.Money;
 import net.ftgo.common.orderflow.events.OrderCreated;
+import net.ftgo.common.security.FtgoPrincipal;
 import net.ftgo.order.domain.DeliveryInfo;
 import net.ftgo.order.domain.Order;
 import net.ftgo.order.domain.OrderLineItem;
@@ -34,6 +35,7 @@ public class OrderService {
     private static final Logger logger = LoggerFactory.getLogger(OrderService.class);
 
     private final OrderRepository orderRepository;
+    private final OrderAuthorizationService orderAuthorizationService;
     private final SagaInstanceFactory sagaInstanceFactory;
     private final CreateOrderSaga createOrderSaga;
     private final CancelOrderSaga cancelOrderSaga;
@@ -43,6 +45,7 @@ public class OrderService {
 
     public OrderService(
         OrderRepository orderRepository,
+        OrderAuthorizationService orderAuthorizationService,
         SagaInstanceFactory sagaInstanceFactory,
         CreateOrderSaga createOrderSaga,
         CancelOrderSaga cancelOrderSaga,
@@ -51,6 +54,7 @@ public class OrderService {
         MeterRegistry meterRegistry
     ) {
         this.orderRepository = orderRepository;
+        this.orderAuthorizationService = orderAuthorizationService;
         this.sagaInstanceFactory = sagaInstanceFactory;
         this.createOrderSaga = createOrderSaga;
         this.cancelOrderSaga = cancelOrderSaga;
@@ -156,15 +160,13 @@ public class OrderService {
     }
 
     @Transactional(readOnly = true)
-    public Order getOrder(Long orderId) {
-        return orderRepository.findById(orderId)
-            .orElseThrow(() -> new OrderNotFoundException("Order not found: " + orderId));
+    public Order getOrder(Long orderId, FtgoPrincipal principal) {
+        return orderAuthorizationService.requireOwner(orderId, principal);
     }
 
     @Transactional
-    public void cancelOrder(Long orderId) {
-        Order order = orderRepository.findById(orderId)
-            .orElseThrow(() -> new OrderNotFoundException("Order not found: " + orderId));
+    public void cancelOrder(Long orderId, FtgoPrincipal principal) {
+        Order order = orderAuthorizationService.requireOwner(orderId, principal);
 
         sagaInstanceFactory.create(cancelOrderSaga, new CancelOrderSagaData(
             order.getId(),
@@ -176,9 +178,12 @@ public class OrderService {
     }
 
     @Transactional
-    public void reviseOrder(Long orderId, List<OrderLineItem> revisedLineItems) {
-        Order order = orderRepository.findById(orderId)
-            .orElseThrow(() -> new OrderNotFoundException("Order not found: " + orderId));
+    public void reviseOrder(
+        Long orderId,
+        List<OrderLineItem> revisedLineItems,
+        FtgoPrincipal principal
+    ) {
+        Order order = orderAuthorizationService.requireOwner(orderId, principal);
 
         Money revisedTotal = revisedLineItems.stream()
             .map(OrderLineItem::getTotal)

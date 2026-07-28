@@ -3,6 +3,7 @@ package net.ftgo.gateway.config;
 import io.netty.channel.ChannelOption;
 import io.netty.handler.timeout.ReadTimeoutHandler;
 import io.netty.handler.timeout.WriteTimeoutHandler;
+import net.ftgo.gateway.security.ForwardedHeaderPolicy;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cloud.gateway.filter.ratelimit.KeyResolver;
 import org.springframework.context.annotation.Bean;
@@ -17,13 +18,7 @@ import reactor.netty.resources.ConnectionProvider;
 import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 
-/**
- * Gateway configuration for rate limiting, WebClient, and other cross-cutting concerns.
- *
- * B5 FIX: Configures WebClient with connect/read timeouts and connection pool limits.
- * M10 PARTIAL: Sets deny-empty-key=false on routes to allow requests through when
- * Redis is unavailable (key resolver returns empty).
- */
+/** Gateway configuration for rate limiting and bounded downstream clients. */
 @Configuration
 public class GatewayConfiguration {
 
@@ -40,30 +35,23 @@ public class GatewayConfiguration {
     private int maxIdleTimeMs;
 
     /**
-     * Key resolver for rate limiting based on authenticated user ID.
-     * Falls back to IP address for unauthenticated requests.
+     * Uses the verified subject for authenticated callers and a sanitized
+     * direct/forwarded client address for anonymous traffic.
      */
     @Bean
-    public KeyResolver userKeyResolver() {
+    public KeyResolver userKeyResolver(ForwardedHeaderPolicy forwardedHeaderPolicy) {
         return exchange -> exchange.getPrincipal()
-            .filter(principal -> principal instanceof Authentication)
-            .map(principal -> ((Authentication) principal).getName())
-            .switchIfEmpty(Mono.justOrEmpty(
-                exchange.getRequest()
-                    .getRemoteAddress()
-            ).map(addr -> addr.getAddress().getHostAddress()));
+            .filter(Authentication.class::isInstance)
+            .cast(Authentication.class)
+            .filter(Authentication::isAuthenticated)
+            .map(Authentication::getName)
+            .filter(name -> name != null && !name.isBlank())
+            .switchIfEmpty(Mono.fromSupplier(() ->
+                forwardedHeaderPolicy.resolveClientAddress(exchange)));
     }
 
-    /**
-     * WebClient builder for service-to-service communication.
-     * Used by service clients for API composition.
-     *
-     * B5 FIX: Configured with proper timeouts and connection pooling to prevent
-     * cascading failures when downstream services are slow or hung.
-     */
     @Bean
     public WebClient.Builder webClientBuilder() {
-        // Connection pool configuration
         ConnectionProvider connectionProvider = ConnectionProvider.builder("gateway-pool")
                 .maxConnections(maxConnections)
                 .maxIdleTime(Duration.ofMillis(maxIdleTimeMs))
@@ -72,10 +60,9 @@ public class GatewayConfiguration {
                 .evictInBackground(Duration.ofSeconds(30))
                 .build();
 
-        // HTTP client with timeouts
         HttpClient httpClient = HttpClient.create(connectionProvider)
                 .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, connectTimeoutMs)
-                .doOnConnected(conn -> conn
+                .doOnConnected(connection -> connection
                         .addHandlerLast(new ReadTimeoutHandler(readTimeoutMs, TimeUnit.MILLISECONDS))
                         .addHandlerLast(new WriteTimeoutHandler(readTimeoutMs, TimeUnit.MILLISECONDS)));
 

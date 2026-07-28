@@ -1,11 +1,11 @@
 package net.ftgo.gateway.client;
 
+import net.ftgo.common.security.FtgoJwtAuthenticationToken;
 import net.ftgo.gateway.dto.OrderResponse;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.context.ReactiveSecurityContextHolder;
-import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
@@ -13,8 +13,8 @@ import reactor.core.publisher.Mono;
 /**
  * Client for calling Order Service.
  *
- * Propagates the caller JWT and preserves an Order Service 404 as an empty
- * result so the API-composition endpoint can return 404 instead of 502/503.
+ * <p>Propagates the verified caller JWT and preserves an Order Service 404 as
+ * an empty result so the API-composition endpoint can return 404.
  */
 @Component
 public class OrderServiceClient {
@@ -30,23 +30,16 @@ public class OrderServiceClient {
                 .build();
     }
 
+    /** Context-based compatibility entry point for standalone reactive callers. */
     public Mono<OrderResponse> getOrder(Long orderId) {
-        return ReactiveSecurityContextHolder.getContext()
-                .map(context -> context.getAuthentication())
-                .filter(authentication -> authentication instanceof JwtAuthenticationToken)
-                .map(authentication -> ((JwtAuthenticationToken) authentication).getToken().getTokenValue())
-                .defaultIfEmpty("")
-                .flatMap(token -> fetchOrder(orderId, token));
+        return verifiedToken().flatMap(token -> getOrder(orderId, token));
     }
 
-    private Mono<OrderResponse> fetchOrder(Long orderId, String token) {
+    /** Explicit token entry point used by API composition across AOP boundaries. */
+    public Mono<OrderResponse> getOrder(Long orderId, String verifiedToken) {
         return webClient.get()
                 .uri("/orders/{orderId}", orderId)
-                .headers(headers -> {
-                    if (!token.isBlank()) {
-                        headers.set(HttpHeaders.AUTHORIZATION, "Bearer " + token);
-                    }
-                })
+                .header(HttpHeaders.AUTHORIZATION, bearer(verifiedToken))
                 .exchangeToMono(response -> {
                     if (response.statusCode().is2xxSuccessful()) {
                         return response.bodyToMono(OrderResponse.class);
@@ -56,5 +49,21 @@ public class OrderServiceClient {
                     }
                     return response.createException().flatMap(Mono::error);
                 });
+    }
+
+    private Mono<String> verifiedToken() {
+        return ReactiveSecurityContextHolder.getContext()
+                .map(context -> context.getAuthentication())
+                .filter(FtgoJwtAuthenticationToken.class::isInstance)
+                .cast(FtgoJwtAuthenticationToken.class)
+                .map(FtgoJwtAuthenticationToken::tokenValue)
+                .switchIfEmpty(Mono.error(new IllegalStateException("Verified FTGO JWT is required")));
+    }
+
+    private String bearer(String token) {
+        if (token == null || token.isBlank()) {
+            throw new IllegalArgumentException("Verified FTGO JWT is required");
+        }
+        return "Bearer " + token;
     }
 }

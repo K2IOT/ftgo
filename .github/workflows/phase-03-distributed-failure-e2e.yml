@@ -37,16 +37,12 @@ jobs:
             config --quiet
 
       - name: Run two clean-state distributed failure cycles
-        id: failure_e2e
         shell: bash
         run: |
-          set +e
+          set -o pipefail
           chmod +x gradlew scripts/smoke/verify-distributed-consistency.sh
           timeout 95m bash scripts/smoke/verify-distributed-consistency.sh --runs 2 \
             2>&1 | tee phase03-distributed-failure-e2e.log
-          status=${PIPESTATUS[0]}
-          echo "status=${status}" >> "$GITHUB_OUTPUT"
-          exit 0
 
       - name: Upload distributed failure diagnostics
         if: always()
@@ -59,8 +55,3 @@ jobs:
             distributed-consistency-e2e-logs/**
             e2e-tests/build/reports/tests/**
             e2e-tests/build/test-results/**
-
-      - name: Preserve distributed failure result
-        if: always()
-        shell: bash
-        run: exit '${{ steps.failure_e2e.outputs.status }}'

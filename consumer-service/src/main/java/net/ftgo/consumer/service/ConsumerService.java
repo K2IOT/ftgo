@@ -45,12 +45,27 @@ public class ConsumerService {
     }
 
     public Consumer updateConsumer(Long consumerId, String name, String email) {
-        Consumer consumer = consumerRepository.findById(consumerId)
-            .orElseThrow(() -> new IllegalArgumentException("Consumer not found: " + consumerId));
-
+        Consumer consumer = requireConsumer(consumerId);
         consumer.updateProfile(name, email);
         consumerRepository.saveAndFlush(consumer);
+        publishConsumerUpdated(consumer);
+        return consumer;
+    }
 
+    public Consumer updateCreditLimit(Long consumerId, Money creditLimit) {
+        Consumer consumer = requireConsumer(consumerId);
+        consumer.updateCreditLimit(creditLimit);
+        consumerRepository.saveAndFlush(consumer);
+        publishConsumerUpdated(consumer);
+        return consumer;
+    }
+
+    private Consumer requireConsumer(Long consumerId) {
+        return consumerRepository.findById(consumerId)
+            .orElseThrow(() -> new IllegalArgumentException("Consumer not found: " + consumerId));
+    }
+
+    private void publishConsumerUpdated(Consumer consumer) {
         ConsumerUpdated event = new ConsumerUpdated(
             consumer.getId(),
             consumer.getName(),
@@ -64,6 +79,5 @@ public class ConsumerService {
             consumer.getVersion(),
             event
         );
-        return consumer;
     }
 }

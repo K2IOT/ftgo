@@ -11,6 +11,17 @@ spring:
     bootstrap-servers: localhost:9092
     consumer:
       group-id: order-history-service
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${FTGO_SECURITY_ISSUER_URI:http://localhost:9000/realms/ftgo}
+          jwk-set-uri: ${FTGO_SECURITY_JWK_SET_URI:http://localhost:9000/realms/ftgo/protocol/openid-connect/certs}
+
+ftgo:
+  security:
+    public-audience: ${FTGO_SECURITY_PUBLIC_AUDIENCE:ftgo-api}
+    internal-audience: ${FTGO_SECURITY_INTERNAL_AUDIENCE:ftgo-internal}
 
 server:
   port: 8087
@@ -20,3 +31,8 @@ management:
     web:
       exposure:
         include: health,info,prometheus
+  endpoint:
+    health:
+      show-details: when_authorized
+      probes:
+        enabled: true

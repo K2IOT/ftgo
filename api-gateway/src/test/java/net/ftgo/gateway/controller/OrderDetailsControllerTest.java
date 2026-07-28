@@ -1,369 +1,269 @@
 package net.ftgo.gateway.controller;
 
 import com.github.tomakehurst.wiremock.WireMockServer;
-import com.github.tomakehurst.wiremock.client.WireMock;
+import net.ftgo.common.security.FtgoJwtAuthenticationConverter;
 import net.ftgo.gateway.dto.OrderDetails;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.ApplicationContext;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.security.authentication.AbstractAuthenticationToken;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.web.reactive.server.EntityExchangeResult;
 import org.springframework.test.web.reactive.server.WebTestClient;
 
-import static com.github.tomakehurst.wiremock.client.WireMock.*;
-import static org.assertj.core.api.Assertions.assertThat;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.List;
 
-/**
- * Integration tests for OrderDetailsController.
- * Tests API composition with WireMock for downstream services.
- */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
+import static com.github.tomakehurst.wiremock.client.WireMock.get;
+import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.security.test.web.reactive.server.SecurityMockServerConfigurers.mockAuthentication;
+import static org.springframework.security.test.web.reactive.server.SecurityMockServerConfigurers.springSecurity;
+
+/** Integration tests for authenticated Order Details API composition. */
+@SpringBootTest
 class OrderDetailsControllerTest {
-    
+
     @Autowired
-    private WebTestClient webTestClient;
-    
-    private static WireMockServer orderServiceMock;
-    private static WireMockServer kitchenServiceMock;
-    private static WireMockServer deliveryServiceMock;
-    
-    @BeforeEach
-    void setUp() {
-        // Start WireMock servers for each downstream service
-        orderServiceMock = new WireMockServer(8091);
-        kitchenServiceMock = new WireMockServer(8092);
-        deliveryServiceMock = new WireMockServer(8093);
-        
-        orderServiceMock.start();
-        kitchenServiceMock.start();
-        deliveryServiceMock.start();
-        
-        WireMock.configureFor("localhost", 8091);
-    }
-    
-    @AfterEach
-    void tearDown() {
-        orderServiceMock.stop();
-        kitchenServiceMock.stop();
-        deliveryServiceMock.stop();
-    }
-    
+    private ApplicationContext applicationContext;
+
+    private WebTestClient authenticatedClient;
+    private WireMockServer orderServiceMock;
+    private WireMockServer kitchenServiceMock;
+    private WireMockServer deliveryServiceMock;
+
     @DynamicPropertySource
     static void configureProperties(DynamicPropertyRegistry registry) {
         registry.add("services.order-service.url", () -> "http://localhost:8091");
         registry.add("services.kitchen-service.url", () -> "http://localhost:8092");
         registry.add("services.delivery-service.url", () -> "http://localhost:8093");
-        registry.add("spring.security.oauth2.resourceserver.jwt.issuer-uri", () -> "");
-        registry.add("spring.redis.host", () -> "localhost");
+        registry.add(
+            "spring.security.oauth2.resourceserver.jwt.issuer-uri",
+            () -> "https://identity.example/realms/ftgo"
+        );
+        registry.add(
+            "spring.security.oauth2.resourceserver.jwt.jwk-set-uri",
+            () -> "https://identity.example/realms/ftgo/protocol/openid-connect/certs"
+        );
     }
-    
+
+    @BeforeEach
+    void setUp() {
+        orderServiceMock = new WireMockServer(8091);
+        kitchenServiceMock = new WireMockServer(8092);
+        deliveryServiceMock = new WireMockServer(8093);
+        orderServiceMock.start();
+        kitchenServiceMock.start();
+        deliveryServiceMock.start();
+
+        authenticatedClient = WebTestClient.bindToApplicationContext(applicationContext)
+            .apply(springSecurity())
+            .configureClient()
+            .responseTimeout(Duration.ofSeconds(15))
+            .build()
+            .mutateWith(mockAuthentication(consumerAuthentication()));
+    }
+
+    @AfterEach
+    void tearDown() {
+        stop(orderServiceMock);
+        stop(kitchenServiceMock);
+        stop(deliveryServiceMock);
+    }
+
     @Test
     void testSuccessfulAggregationFromAllServices() {
-        // Given: All three services return successful responses
-        Long orderId = 12345L;
-        
-        // Mock Order Service response
-        orderServiceMock.stubFor(get(urlEqualTo("/orders/" + orderId))
-                .willReturn(aResponse()
-                        .withStatus(200)
-                        .withHeader("Content-Type", "application/json")
-                        .withBody("""
-                                {
-                                    "id": 12345,
-                                    "state": "APPROVED",
-                                    "consumerId": 100,
-                                    "restaurantId": 200,
-                                    "orderTotal": 45.99,
-                                    "deliveryAddress": "123 Main St",
-                                    "createdAt": "2025-01-15T10:30:00",
-                                    "lineItems": [
-                                        {
-                                            "menuItemId": 1,
-                                            "name": "Burger",
-                                            "price": 12.99,
-                                            "quantity": 2
-                                        },
-                                        {
-                                            "menuItemId": 2,
-                                            "name": "Fries",
-                                            "price": 4.99,
-                                            "quantity": 1
-                                        }
-                                    ]
-                                }
-                                """)));
-        
-        // Mock Kitchen Service response
-        kitchenServiceMock.stubFor(get(urlEqualTo("/tickets/by-order/" + orderId))
-                .willReturn(aResponse()
-                        .withStatus(200)
-                        .withHeader("Content-Type", "application/json")
-                        .withBody("""
-                                {
-                                    "id": 5001,
-                                    "orderId": 12345,
-                                    "state": "ACCEPTED",
-                                    "acceptedAt": "2025-01-15T10:35:00",
-                                    "readyBy": "2025-01-15T11:00:00"
-                                }
-                                """)));
-        
-        // Mock Delivery Service response
-        deliveryServiceMock.stubFor(get(urlEqualTo("/deliveries/by-order/" + orderId))
-                .willReturn(aResponse()
-                        .withStatus(200)
-                        .withHeader("Content-Type", "application/json")
-                        .withBody("""
-                                {
-                                    "id": 7001,
-                                    "orderId": 12345,
-                                    "status": "ASSIGNED",
-                                    "courierId": 300,
-                                    "scheduledTime": "2025-01-15T11:30:00"
-                                }
-                                """)));
-        
-        // When: Request order details
-        webTestClient.get()
-                .uri("/order-details/{orderId}", orderId)
-                .exchange()
-                
-                // Then: Should return 200 with aggregated data
-                .expectStatus().isOk()
-                .expectHeader().contentType(MediaType.APPLICATION_JSON)
-                .expectBody(OrderDetails.class)
-                .value(details -> {
-                    // Verify Order Service data
-                    assertThat(details.getOrderId()).isEqualTo(12345L);
-                    assertThat(details.getOrderState()).isEqualTo("APPROVED");
-                    assertThat(details.getConsumerId()).isEqualTo(100L);
-                    assertThat(details.getRestaurantId()).isEqualTo(200L);
-                    assertThat(details.getOrderTotal()).isEqualByComparingTo("45.99");
-                    assertThat(details.getDeliveryAddress()).isEqualTo("123 Main St");
-                    assertThat(details.getLineItems()).hasSize(2);
-                    
-                    // Verify Kitchen Service data
-                    assertThat(details.getTicketInfo()).isNotNull();
-                    assertThat(details.getTicketInfo().getTicketId()).isEqualTo(5001L);
-                    assertThat(details.getTicketInfo().getTicketState()).isEqualTo("ACCEPTED");
-                    
-                    // Verify Delivery Service data
-                    assertThat(details.getDeliveryInfo()).isNotNull();
-                    assertThat(details.getDeliveryInfo().getDeliveryId()).isEqualTo(7001L);
-                    assertThat(details.getDeliveryInfo().getDeliveryStatus()).isEqualTo("ASSIGNED");
-                    assertThat(details.getDeliveryInfo().getCourierId()).isEqualTo(300L);
-                });
-        
-        // Verify all services were called
-        orderServiceMock.verify(getRequestedFor(urlEqualTo("/orders/" + orderId)));
-        kitchenServiceMock.verify(getRequestedFor(urlEqualTo("/tickets/by-order/" + orderId)));
-        deliveryServiceMock.verify(getRequestedFor(urlEqualTo("/deliveries/by-order/" + orderId)));
+        long orderId = 12345L;
+        stubOrder(orderId, 100L, "APPROVED", "45.99", "123 Main St");
+        stubTicket(orderId, 5001L, "ACCEPTED");
+        stubDelivery(orderId, 7001L, "ASSIGNED", 300L);
+
+        authenticatedGet(orderId)
+            .expectStatus().isOk()
+            .expectHeader().contentType(MediaType.APPLICATION_JSON)
+            .expectBody(OrderDetails.class)
+            .value(details -> {
+                assertThat(details.getOrderId()).isEqualTo(orderId);
+                assertThat(details.getOrderState()).isEqualTo("APPROVED");
+                assertThat(details.getConsumerId()).isEqualTo(100L);
+                assertThat(details.getRestaurantId()).isEqualTo(200L);
+                assertThat(details.getOrderTotal()).isEqualByComparingTo("45.99");
+                assertThat(details.getDeliveryAddress()).isEqualTo("123 Main St");
+                assertThat(details.getTicketInfo()).isNotNull();
+                assertThat(details.getTicketInfo().getTicketId()).isEqualTo(5001L);
+                assertThat(details.getDeliveryInfo()).isNotNull();
+                assertThat(details.getDeliveryInfo().getDeliveryId()).isEqualTo(7001L);
+                assertThat(details.getDeliveryInfo().getCourierId()).isEqualTo(300L);
+            });
+
+        orderServiceMock.verify(getRequestedFor(urlEqualTo("/orders/" + orderId))
+            .withHeader(HttpHeaders.AUTHORIZATION, com.github.tomakehurst.wiremock.client.WireMock.equalTo("Bearer consumer-token")));
+        kitchenServiceMock.verify(getRequestedFor(urlEqualTo("/tickets/by-order/" + orderId))
+            .withHeader(HttpHeaders.AUTHORIZATION, com.github.tomakehurst.wiremock.client.WireMock.equalTo("Bearer consumer-token")));
+        deliveryServiceMock.verify(getRequestedFor(urlEqualTo("/deliveries/by-order/" + orderId))
+            .withHeader(HttpHeaders.AUTHORIZATION, com.github.tomakehurst.wiremock.client.WireMock.equalTo("Bearer consumer-token")));
     }
-    
+
     @Test
     void testFallbackWhenKitchenServiceUnavailable() {
-        // Given: Order Service succeeds, Kitchen Service fails, Delivery Service succeeds
-        Long orderId = 12346L;
-        
-        // Mock Order Service response
-        orderServiceMock.stubFor(get(urlEqualTo("/orders/" + orderId))
-                .willReturn(aResponse()
-                        .withStatus(200)
-                        .withHeader("Content-Type", "application/json")
-                        .withBody("""
-                                {
-                                    "id": 12346,
-                                    "state": "APPROVED",
-                                    "consumerId": 101,
-                                    "restaurantId": 201,
-                                    "orderTotal": 25.50,
-                                    "deliveryAddress": "456 Oak Ave",
-                                    "createdAt": "2025-01-15T11:00:00",
-                                    "lineItems": []
-                                }
-                                """)));
-        
-        // Mock Kitchen Service failure (503)
+        long orderId = 12346L;
+        stubOrder(orderId, 101L, "APPROVED", "25.50", "456 Oak Ave");
         kitchenServiceMock.stubFor(get(urlEqualTo("/tickets/by-order/" + orderId))
-                .willReturn(aResponse()
-                        .withStatus(503)
-                        .withBody("Service Unavailable")));
-        
-        // Mock Delivery Service response
-        deliveryServiceMock.stubFor(get(urlEqualTo("/deliveries/by-order/" + orderId))
-                .willReturn(aResponse()
-                        .withStatus(200)
-                        .withHeader("Content-Type", "application/json")
-                        .withBody("""
-                                {
-                                    "id": 7002,
-                                    "orderId": 12346,
-                                    "status": "PENDING",
-                                    "scheduledTime": "2025-01-15T12:00:00"
-                                }
-                                """)));
-        
-        // When: Request order details
-        webTestClient.get()
-                .uri("/order-details/{orderId}", orderId)
-                .exchange()
-                
-                // Then: Should return 200 with partial data (no ticket info)
-                .expectStatus().isOk()
-                .expectBody(OrderDetails.class)
-                .value(details -> {
-                    // Order data should be present
-                    assertThat(details.getOrderId()).isEqualTo(12346L);
-                    assertThat(details.getOrderState()).isEqualTo("APPROVED");
-                    
-                    // Ticket info should be null (service unavailable)
-                    assertThat(details.getTicketInfo()).isNull();
-                    
-                    // Delivery info should be present
-                    assertThat(details.getDeliveryInfo()).isNotNull();
-                    assertThat(details.getDeliveryInfo().getDeliveryId()).isEqualTo(7002L);
-                });
+            .willReturn(aResponse().withStatus(503)));
+        stubDelivery(orderId, 7002L, "PENDING", null);
+
+        authenticatedGet(orderId)
+            .expectStatus().isOk()
+            .expectBody(OrderDetails.class)
+            .value(details -> {
+                assertThat(details.getOrderId()).isEqualTo(orderId);
+                assertThat(details.getTicketInfo()).isNull();
+                assertThat(details.getDeliveryInfo()).isNotNull();
+            });
     }
-    
+
     @Test
     void testFallbackWhenDeliveryServiceUnavailable() {
-        // Given: Order and Kitchen services succeed, Delivery Service fails
-        Long orderId = 12347L;
-        
-        // Mock Order Service response
-        orderServiceMock.stubFor(get(urlEqualTo("/orders/" + orderId))
-                .willReturn(aResponse()
-                        .withStatus(200)
-                        .withHeader("Content-Type", "application/json")
-                        .withBody("""
-                                {
-                                    "id": 12347,
-                                    "state": "APPROVED",
-                                    "consumerId": 102,
-                                    "restaurantId": 202,
-                                    "orderTotal": 35.75,
-                                    "deliveryAddress": "789 Pine Rd",
-                                    "createdAt": "2025-01-15T12:00:00",
-                                    "lineItems": []
-                                }
-                                """)));
-        
-        // Mock Kitchen Service response
-        kitchenServiceMock.stubFor(get(urlEqualTo("/tickets/by-order/" + orderId))
-                .willReturn(aResponse()
-                        .withStatus(200)
-                        .withHeader("Content-Type", "application/json")
-                        .withBody("""
-                                {
-                                    "id": 5002,
-                                    "orderId": 12347,
-                                    "state": "PREPARING",
-                                    "acceptedAt": "2025-01-15T12:05:00",
-                                    "readyBy": "2025-01-15T12:30:00"
-                                }
-                                """)));
-        
-        // Mock Delivery Service failure (timeout)
+        long orderId = 12347L;
+        stubOrder(orderId, 102L, "APPROVED", "35.75", "789 Pine Rd");
+        stubTicket(orderId, 5002L, "PREPARING");
         deliveryServiceMock.stubFor(get(urlEqualTo("/deliveries/by-order/" + orderId))
-                .willReturn(aResponse()
-                        .withStatus(500)
-                        .withBody("Internal Server Error")));
-        
-        // When: Request order details
-        webTestClient.get()
-                .uri("/order-details/{orderId}", orderId)
-                .exchange()
-                
-                // Then: Should return 200 with partial data (no delivery info)
-                .expectStatus().isOk()
-                .expectBody(OrderDetails.class)
-                .value(details -> {
-                    // Order data should be present
-                    assertThat(details.getOrderId()).isEqualTo(12347L);
-                    
-                    // Ticket info should be present
-                    assertThat(details.getTicketInfo()).isNotNull();
-                    assertThat(details.getTicketInfo().getTicketState()).isEqualTo("PREPARING");
-                    
-                    // Delivery info should be null (service unavailable)
-                    assertThat(details.getDeliveryInfo()).isNull();
-                });
+            .willReturn(aResponse().withStatus(500)));
+
+        authenticatedGet(orderId)
+            .expectStatus().isOk()
+            .expectBody(OrderDetails.class)
+            .value(details -> {
+                assertThat(details.getTicketInfo()).isNotNull();
+                assertThat(details.getDeliveryInfo()).isNull();
+            });
     }
-    
+
     @Test
     void testNotFoundWhenOrderDoesNotExist() {
-        // Given: Order Service returns 404
-        Long orderId = 99999L;
-        
+        long orderId = 99999L;
         orderServiceMock.stubFor(get(urlEqualTo("/orders/" + orderId))
-                .willReturn(aResponse()
-                        .withStatus(404)
-                        .withBody("Order not found")));
-        
-        // When: Request order details
-        webTestClient.get()
-                .uri("/order-details/{orderId}", orderId)
-                .exchange()
-                
-                // Then: Should return 404
-                .expectStatus().isNotFound();
+            .willReturn(aResponse().withStatus(404)));
+
+        EntityExchangeResult<byte[]> result = authenticatedClient.get()
+            .uri("/order-details/{orderId}", orderId)
+            .exchange()
+            .expectBody()
+            .returnResult();
+        byte[] responseBody = result.getResponseBody();
+        String body = responseBody == null ? "" : new String(responseBody, StandardCharsets.UTF_8);
+        assertThat(result.getStatus())
+            .withFailMessage("Gateway status=%s response=%s", result.getStatus(), body)
+            .isEqualTo(HttpStatus.NOT_FOUND);
     }
-    
+
     @Test
     void testPartialResponseWhenTicketNotYetCreated() {
-        // Given: Order exists but ticket not yet created (404 from Kitchen Service)
-        Long orderId = 12348L;
-        
-        // Mock Order Service response
-        orderServiceMock.stubFor(get(urlEqualTo("/orders/" + orderId))
-                .willReturn(aResponse()
-                        .withStatus(200)
-                        .withHeader("Content-Type", "application/json")
-                        .withBody("""
-                                {
-                                    "id": 12348,
-                                    "state": "APPROVAL_PENDING",
-                                    "consumerId": 103,
-                                    "restaurantId": 203,
-                                    "orderTotal": 50.00,
-                                    "deliveryAddress": "321 Elm St",
-                                    "createdAt": "2025-01-15T13:00:00",
-                                    "lineItems": []
-                                }
-                                """)));
-        
-        // Mock Kitchen Service 404 (ticket not created yet)
+        long orderId = 12348L;
+        stubOrder(orderId, 103L, "APPROVAL_PENDING", "50.00", "321 Elm St");
         kitchenServiceMock.stubFor(get(urlEqualTo("/tickets/by-order/" + orderId))
-                .willReturn(aResponse()
-                        .withStatus(404)
-                        .withBody("Ticket not found")));
-        
-        // Mock Delivery Service 404 (delivery not created yet)
+            .willReturn(aResponse().withStatus(404)));
         deliveryServiceMock.stubFor(get(urlEqualTo("/deliveries/by-order/" + orderId))
-                .willReturn(aResponse()
-                        .withStatus(404)
-                        .withBody("Delivery not found")));
-        
-        // When: Request order details
-        webTestClient.get()
-                .uri("/order-details/{orderId}", orderId)
-                .exchange()
-                
-                // Then: Should return 200 with only order data
-                .expectStatus().isOk()
-                .expectBody(OrderDetails.class)
-                .value(details -> {
-                    // Order data should be present
-                    assertThat(details.getOrderId()).isEqualTo(12348L);
-                    assertThat(details.getOrderState()).isEqualTo("APPROVAL_PENDING");
-                    
-                    // Ticket and delivery info should be null (not created yet)
-                    assertThat(details.getTicketInfo()).isNull();
-                    assertThat(details.getDeliveryInfo()).isNull();
-                });
+            .willReturn(aResponse().withStatus(404)));
+
+        authenticatedGet(orderId)
+            .expectStatus().isOk()
+            .expectBody(OrderDetails.class)
+            .value(details -> {
+                assertThat(details.getOrderState()).isEqualTo("APPROVAL_PENDING");
+                assertThat(details.getTicketInfo()).isNull();
+                assertThat(details.getDeliveryInfo()).isNull();
+            });
+    }
+
+    private WebTestClient.ResponseSpec authenticatedGet(long orderId) {
+        return authenticatedClient.get()
+            .uri("/order-details/{orderId}", orderId)
+            .exchange();
+    }
+
+    private void stubOrder(long orderId, long consumerId, String state, String total, String address) {
+        orderServiceMock.stubFor(get(urlEqualTo("/orders/" + orderId))
+            .willReturn(aResponse()
+                .withStatus(200)
+                .withHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
+                .withBody("""
+                    {
+                      "id": %d,
+                      "state": "%s",
+                      "consumerId": %d,
+                      "restaurantId": 200,
+                      "orderTotal": %s,
+                      "deliveryAddress": "%s",
+                      "createdAt": "2025-01-15T10:30:00",
+                      "lineItems": []
+                    }
+                    """.formatted(orderId, state, consumerId, total, address))));
+    }
+
+    private void stubTicket(long orderId, long ticketId, String state) {
+        kitchenServiceMock.stubFor(get(urlEqualTo("/tickets/by-order/" + orderId))
+            .willReturn(aResponse()
+                .withStatus(200)
+                .withHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
+                .withBody("""
+                    {
+                      "id": %d,
+                      "orderId": %d,
+                      "state": "%s",
+                      "acceptedAt": "2025-01-15T10:35:00",
+                      "readyBy": "2025-01-15T11:00:00"
+                    }
+                    """.formatted(ticketId, orderId, state))));
+    }
+
+    private void stubDelivery(long orderId, long deliveryId, String status, Long courierId) {
+        String courierField = courierId == null ? "null" : courierId.toString();
+        deliveryServiceMock.stubFor(get(urlEqualTo("/deliveries/by-order/" + orderId))
+            .willReturn(aResponse()
+                .withStatus(200)
+                .withHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
+                .withBody("""
+                    {
+                      "id": %d,
+                      "orderId": %d,
+                      "status": "%s",
+                      "courierId": %s,
+                      "scheduledTime": "2025-01-15T11:30:00"
+                    }
+                    """.formatted(deliveryId, orderId, status, courierField))));
+    }
+
+    private AbstractAuthenticationToken consumerAuthentication() {
+        Instant now = Instant.now();
+        Jwt jwt = Jwt.withTokenValue("consumer-token")
+            .header("alg", "RS256")
+            .issuer("https://identity.example/realms/ftgo")
+            .subject("consumer-100")
+            .issuedAt(now)
+            .expiresAt(now.plusSeconds(300))
+            .audience(List.of("ftgo-api"))
+            .claim("roles", List.of("CONSUMER"))
+            .claim("consumer_id", 100L)
+            .build();
+        return new FtgoJwtAuthenticationConverter("").convert(jwt);
+    }
+
+    private void stop(WireMockServer server) {
+        if (server != null && server.isRunning()) {
+            server.stop();
+        }
     }
 }

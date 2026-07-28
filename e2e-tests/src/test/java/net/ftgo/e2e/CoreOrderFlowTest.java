@@ -4,7 +4,10 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import net.ftgo.e2e.support.TestIdentityProvider;
 import org.awaitility.Awaitility;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 
@@ -19,6 +22,8 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -45,16 +50,39 @@ class CoreOrderFlowTest {
         "ftgo.e2e.jdbc-url", "jdbc:mysql://localhost:33306");
     private static final String DB_USER = "ftgo_user";
     private static final String DB_PASSWORD = "ftgo_password";
+    private static final int IDENTITY_PORT = 19000;
+
+    private static TestIdentityProvider identityProvider;
+    private static String adminToken;
+
+    @BeforeAll
+    static void startIdentityProvider() throws Exception {
+        identityProvider = TestIdentityProvider.start(IDENTITY_PORT);
+        adminToken = identityProvider.issueToken(
+            "phase02-e2e-admin",
+            List.of("ADMIN"),
+            List.of("ftgo-api"),
+            Map.of(),
+            Duration.ofMinutes(30)
+        );
+    }
+
+    @AfterAll
+    static void stopIdentityProvider() {
+        if (identityProvider != null) {
+            identityProvider.close();
+        }
+    }
 
     @Test
     void happyAcceptanceCommitsCreditAndCapturesPayment() {
         Fixture fixture = createFixture(new BigDecimal("1000.00"), new BigDecimal("25.00"));
         long orderId = createOrder(fixture, fixture.menuVersion(), "tok_happy");
-        long ticketId = awaitTicket(orderId, fixture.restaurantId());
+        long ticketId = awaitTicket(orderId, fixture.restaurantId(), fixture.restaurantToken());
 
-        awaitOrderState(orderId, "AWAITING_RESTAURANT_ACCEPTANCE");
-        post(KITCHEN_URL + "/tickets/" + ticketId + "/accept", null);
-        awaitOrderState(orderId, "APPROVED");
+        awaitOrderState(orderId, "AWAITING_RESTAURANT_ACCEPTANCE", fixture.consumerToken());
+        post(KITCHEN_URL + "/tickets/" + ticketId + "/accept", null, fixture.restaurantToken());
+        awaitOrderState(orderId, "APPROVED", fixture.consumerToken());
 
         awaitSqlValue("ftgo_consumer",
             "select status from credit_reservations where order_id = ?",
@@ -72,7 +100,7 @@ class CoreOrderFlowTest {
         Fixture fixture = createFixture(new BigDecimal("1000.00"), new BigDecimal("25.00"));
         long orderId = createOrder(fixture, fixture.menuVersion() + 1, "tok_stale_menu");
 
-        awaitOrderState(orderId, "REJECTED");
+        awaitOrderState(orderId, "REJECTED", fixture.consumerToken());
         assertThat(count("ftgo_consumer",
             "select count(*) from credit_reservations where order_id = ?", orderId)).isZero();
         assertThat(count("ftgo_kitchen",
@@ -86,7 +114,7 @@ class CoreOrderFlowTest {
         Fixture fixture = createFixture(new BigDecimal("5.00"), new BigDecimal("25.00"));
         long orderId = createOrder(fixture, fixture.menuVersion(), "tok_low_credit");
 
-        awaitOrderState(orderId, "REJECTED");
+        awaitOrderState(orderId, "REJECTED", fixture.consumerToken());
         assertThat(count("ftgo_consumer",
             "select count(*) from credit_reservations where order_id = ?", orderId)).isZero();
         assertThat(count("ftgo_kitchen",
@@ -100,7 +128,7 @@ class CoreOrderFlowTest {
         Fixture fixture = createFixture(new BigDecimal("1000.00"), new BigDecimal("25.00"));
         long orderId = createOrder(fixture, fixture.menuVersion(), "tok_e2e_decline");
 
-        awaitOrderState(orderId, "REJECTED");
+        awaitOrderState(orderId, "REJECTED", fixture.consumerToken());
         awaitSqlValue("ftgo_consumer",
             "select status from credit_reservations where order_id = ?",
             orderId, "RELEASED");
@@ -115,12 +143,16 @@ class CoreOrderFlowTest {
     void explicitRestaurantRejectionVoidsAuthorizationAndReleasesCredit() {
         Fixture fixture = createFixture(new BigDecimal("1000.00"), new BigDecimal("25.00"));
         long orderId = createOrder(fixture, fixture.menuVersion(), "tok_reject");
-        long ticketId = awaitTicket(orderId, fixture.restaurantId());
-        awaitOrderState(orderId, "AWAITING_RESTAURANT_ACCEPTANCE");
+        long ticketId = awaitTicket(orderId, fixture.restaurantId(), fixture.restaurantToken());
+        awaitOrderState(orderId, "AWAITING_RESTAURANT_ACCEPTANCE", fixture.consumerToken());
 
         ObjectNode reason = JSON.createObjectNode().put("reason", "RESTAURANT_CAPACITY");
-        post(KITCHEN_URL + "/tickets/" + ticketId + "/reject", reason);
-        awaitOrderState(orderId, "REJECTED");
+        post(
+            KITCHEN_URL + "/tickets/" + ticketId + "/reject",
+            reason,
+            fixture.restaurantToken()
+        );
+        awaitOrderState(orderId, "REJECTED", fixture.consumerToken());
 
         awaitSqlValue("ftgo_consumer",
             "select status from credit_reservations where order_id = ?",
@@ -137,14 +169,14 @@ class CoreOrderFlowTest {
     void acceptanceTimeoutRejectsOrderAndReleasesResources() {
         Fixture fixture = createFixture(new BigDecimal("1000.00"), new BigDecimal("25.00"));
         long orderId = createOrder(fixture, fixture.menuVersion(), "tok_timeout");
-        long ticketId = awaitTicket(orderId, fixture.restaurantId());
-        awaitOrderState(orderId, "AWAITING_RESTAURANT_ACCEPTANCE");
+        long ticketId = awaitTicket(orderId, fixture.restaurantId(), fixture.restaurantToken());
+        awaitOrderState(orderId, "AWAITING_RESTAURANT_ACCEPTANCE", fixture.consumerToken());
 
         expireTicket(ticketId);
         awaitSqlValue("ftgo_kitchen",
             "select state from tickets where id = ?",
             ticketId, "REJECTED_TIMEOUT");
-        awaitOrderState(orderId, "REJECTED");
+        awaitOrderState(orderId, "REJECTED", fixture.consumerToken());
         awaitSqlValue("ftgo_consumer",
             "select status from credit_reservations where order_id = ?",
             orderId, "RELEASED");
@@ -157,12 +189,17 @@ class CoreOrderFlowTest {
     void acceptAndTimeoutRaceProducesExactlyOneDecision() {
         Fixture fixture = createFixture(new BigDecimal("1000.00"), new BigDecimal("25.00"));
         long orderId = createOrder(fixture, fixture.menuVersion(), "tok_race");
-        long ticketId = awaitTicket(orderId, fixture.restaurantId());
-        awaitOrderState(orderId, "AWAITING_RESTAURANT_ACCEPTANCE");
+        long ticketId = awaitTicket(orderId, fixture.restaurantId(), fixture.restaurantToken());
+        awaitOrderState(orderId, "AWAITING_RESTAURANT_ACCEPTANCE", fixture.consumerToken());
 
         expireTicket(ticketId);
         CompletableFuture<HttpResponse<String>> accept = CompletableFuture.supplyAsync(() ->
-            send("POST", KITCHEN_URL + "/tickets/" + ticketId + "/accept", null));
+            send(
+                "POST",
+                KITCHEN_URL + "/tickets/" + ticketId + "/accept",
+                null,
+                fixture.restaurantToken()
+            ));
 
         Awaitility.await().atMost(60, TimeUnit.SECONDS).pollInterval(Duration.ofMillis(200))
             .untilAsserted(() -> assertThat(ticketState(ticketId))
@@ -171,9 +208,9 @@ class CoreOrderFlowTest {
         accept.join();
         String finalTicketState = ticketState(ticketId);
         if ("ACCEPTED".equals(finalTicketState)) {
-            awaitOrderState(orderId, "APPROVED");
+            awaitOrderState(orderId, "APPROVED", fixture.consumerToken());
         } else {
-            awaitOrderState(orderId, "REJECTED");
+            awaitOrderState(orderId, "REJECTED", fixture.consumerToken());
         }
 
         long decisionRows = count("ftgo_kitchen",
@@ -189,12 +226,12 @@ class CoreOrderFlowTest {
     void duplicateAcceptanceDeliveryIsIdempotent() {
         Fixture fixture = createFixture(new BigDecimal("1000.00"), new BigDecimal("25.00"));
         long orderId = createOrder(fixture, fixture.menuVersion(), "tok_duplicate");
-        long ticketId = awaitTicket(orderId, fixture.restaurantId());
-        awaitOrderState(orderId, "AWAITING_RESTAURANT_ACCEPTANCE");
+        long ticketId = awaitTicket(orderId, fixture.restaurantId(), fixture.restaurantToken());
+        awaitOrderState(orderId, "AWAITING_RESTAURANT_ACCEPTANCE", fixture.consumerToken());
 
-        post(KITCHEN_URL + "/tickets/" + ticketId + "/accept", null);
-        post(KITCHEN_URL + "/tickets/" + ticketId + "/accept", null);
-        awaitOrderState(orderId, "APPROVED");
+        post(KITCHEN_URL + "/tickets/" + ticketId + "/accept", null, fixture.restaurantToken());
+        post(KITCHEN_URL + "/tickets/" + ticketId + "/accept", null, fixture.restaurantToken());
+        awaitOrderState(orderId, "APPROVED", fixture.consumerToken());
 
         assertThat(count("ftgo_kitchen",
             "select count(*) from outbox where aggregate_id = ? and event_type = 'TicketAcceptedEvent'",
@@ -213,8 +250,20 @@ class CoreOrderFlowTest {
         ObjectNode consumer = JSON.createObjectNode();
         consumer.put("name", "E2E Consumer " + suffix);
         consumer.put("email", "e2e-" + suffix + "@example.test");
-        consumer.put("creditLimit", creditLimit);
-        long consumerId = post(CONSUMER_URL + "/consumers", consumer).path("id").asLong();
+        long consumerId = post(CONSUMER_URL + "/consumers", consumer, adminToken)
+            .path("id").asLong();
+
+        ObjectNode creditPolicy = JSON.createObjectNode().put("creditLimit", creditLimit);
+        put(
+            CONSUMER_URL + "/admin/consumers/" + consumerId + "/credit-limit",
+            creditPolicy,
+            adminToken
+        );
+        String consumerToken = issueToken(
+            "consumer-" + consumerId,
+            List.of("CONSUMER"),
+            Map.of("consumer_id", consumerId)
+        );
 
         ObjectNode address = JSON.createObjectNode();
         address.put("street", "1 E2E Street");
@@ -226,8 +275,13 @@ class CoreOrderFlowTest {
         restaurant.put("name", "E2E Restaurant " + suffix);
         restaurant.set("address", address);
         restaurant.put("openingHours", "{\"daily\":\"00:00-23:59\"}");
-        long restaurantId = post(RESTAURANT_URL + "/restaurants", restaurant)
+        long restaurantId = post(RESTAURANT_URL + "/restaurants", restaurant, adminToken)
             .path("id").asLong();
+        String restaurantToken = issueToken(
+            "restaurant-" + restaurantId,
+            List.of("RESTAURANT"),
+            Map.of("restaurant_ids", List.of(restaurantId))
+        );
 
         String menuName = "Burger " + suffix;
         ObjectNode menuItem = JSON.createObjectNode();
@@ -236,7 +290,8 @@ class CoreOrderFlowTest {
         menuItem.set("price", money(price));
         long menuItemId = post(
             RESTAURANT_URL + "/restaurants/" + restaurantId + "/menu-items",
-            menuItem
+            menuItem,
+            restaurantToken
         ).path("id").asLong();
 
         long menuVersion = Long.parseLong(queryString(
@@ -244,7 +299,16 @@ class CoreOrderFlowTest {
             "select menu_version from restaurants where id = ?",
             restaurantId
         ));
-        return new Fixture(consumerId, restaurantId, menuItemId, menuVersion, price, menuName);
+        return new Fixture(
+            consumerId,
+            restaurantId,
+            menuItemId,
+            menuVersion,
+            price,
+            menuName,
+            consumerToken,
+            restaurantToken
+        );
     }
 
     private long createOrder(Fixture fixture, long expectedMenuVersion, String paymentToken) {
@@ -269,18 +333,22 @@ class CoreOrderFlowTest {
         request.set("deliveryAddress", deliveryAddress);
         request.put("deliveryTime", LocalDateTime.now().plusHours(1).toString());
         request.put("paymentToken", paymentToken);
-        return post(ORDER_URL + "/orders", request).path("orderId").asLong();
+        return post(ORDER_URL + "/orders", request, fixture.consumerToken())
+            .path("orderId").asLong();
     }
 
     private ObjectNode money(BigDecimal amount) {
         return JSON.createObjectNode().put("amount", amount);
     }
 
-    private long awaitTicket(long orderId, long restaurantId) {
+    private long awaitTicket(long orderId, long restaurantId, String restaurantToken) {
         final long[] ticketId = {-1L};
         Awaitility.await().atMost(60, TimeUnit.SECONDS).pollInterval(Duration.ofMillis(250))
             .untilAsserted(() -> {
-                JsonNode tickets = get(KITCHEN_URL + "/tickets?restaurantId=" + restaurantId);
+                JsonNode tickets = get(
+                    KITCHEN_URL + "/tickets?restaurantId=" + restaurantId,
+                    restaurantToken
+                );
                 for (JsonNode ticket : tickets) {
                     if (ticket.path("orderId").asLong() == orderId) {
                         ticketId[0] = ticket.path("id").asLong();
@@ -291,10 +359,10 @@ class CoreOrderFlowTest {
         return ticketId[0];
     }
 
-    private void awaitOrderState(long orderId, String expectedState) {
+    private void awaitOrderState(long orderId, String expectedState, String consumerToken) {
         Awaitility.await().atMost(60, TimeUnit.SECONDS).pollInterval(Duration.ofMillis(250))
             .untilAsserted(() -> assertThat(
-                get(ORDER_URL + "/orders/" + orderId).path("state").asText()
+                get(ORDER_URL + "/orders/" + orderId, consumerToken).path("state").asText()
             ).isEqualTo(expectedState));
     }
 
@@ -314,27 +382,44 @@ class CoreOrderFlowTest {
             ticketId);
     }
 
-    private JsonNode get(String url) {
-        HttpResponse<String> response = send("GET", url, null);
-        assertThat(response.statusCode()).isBetween(200, 299);
+    private JsonNode get(String url, String token) {
+        HttpResponse<String> response = send("GET", url, null, token);
+        assertThat(response.statusCode())
+            .withFailMessage("GET %s failed: status=%s body=%s", url, response.statusCode(), response.body())
+            .isBetween(200, 299);
         return parse(response.body());
     }
 
-    private JsonNode post(String url, JsonNode body) {
-        HttpResponse<String> response = send("POST", url, body);
+    private JsonNode post(String url, JsonNode body, String token) {
+        return write("POST", url, body, token);
+    }
+
+    private JsonNode put(String url, JsonNode body, String token) {
+        return write("PUT", url, body, token);
+    }
+
+    private JsonNode write(String method, String url, JsonNode body, String token) {
+        HttpResponse<String> response = send(method, url, body, token);
         assertThat(response.statusCode())
-            .withFailMessage("POST %s failed: status=%s body=%s", url, response.statusCode(), response.body())
+            .withFailMessage(
+                "%s %s failed: status=%s body=%s",
+                method,
+                url,
+                response.statusCode(),
+                response.body()
+            )
             .isBetween(200, 299);
         return response.body() == null || response.body().isBlank()
             ? JSON.createObjectNode()
             : parse(response.body());
     }
 
-    private HttpResponse<String> send(String method, String url, JsonNode body) {
+    private HttpResponse<String> send(String method, String url, JsonNode body, String token) {
         try {
             HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url))
                 .timeout(Duration.ofSeconds(15))
-                .header("Content-Type", "application/json");
+                .header("Content-Type", "application/json")
+                .header("Authorization", "Bearer " + token);
             if ("GET".equals(method)) {
                 builder.GET();
             } else {
@@ -342,16 +427,30 @@ class CoreOrderFlowTest {
                 builder.method(method, HttpRequest.BodyPublishers.ofString(payload));
             }
             return HTTP.send(builder.build(), HttpResponse.BodyHandlers.ofString());
-        } catch (Exception e) {
-            throw new RuntimeException("HTTP request failed: " + method + " " + url, e);
+        } catch (Exception error) {
+            throw new RuntimeException("HTTP request failed: " + method + " " + url, error);
+        }
+    }
+
+    private String issueToken(String subject, List<String> roles, Map<String, ?> claims) {
+        try {
+            return identityProvider.issueToken(
+                subject,
+                roles,
+                List.of("ftgo-api"),
+                claims,
+                Duration.ofMinutes(30)
+            );
+        } catch (Exception error) {
+            throw new RuntimeException("Unable to issue E2E JWT for " + subject, error);
         }
     }
 
     private JsonNode parse(String body) {
         try {
             return JSON.readTree(body);
-        } catch (Exception e) {
-            throw new RuntimeException("Invalid JSON response: " + body, e);
+        } catch (Exception error) {
+            throw new RuntimeException("Invalid JSON response: " + body, error);
         }
     }
 
@@ -367,8 +466,8 @@ class CoreOrderFlowTest {
             try (ResultSet resultSet = statement.executeQuery()) {
                 return resultSet.next() ? resultSet.getString(1) : null;
             }
-        } catch (Exception e) {
-            throw new RuntimeException("Query failed for " + schema + ": " + sql, e);
+        } catch (Exception error) {
+            throw new RuntimeException("Query failed for " + schema + ": " + sql, error);
         }
     }
 
@@ -377,8 +476,8 @@ class CoreOrderFlowTest {
              PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setObject(1, parameter);
             statement.executeUpdate();
-        } catch (Exception e) {
-            throw new RuntimeException("Update failed for " + schema + ": " + sql, e);
+        } catch (Exception error) {
+            throw new RuntimeException("Update failed for " + schema + ": " + sql, error);
         }
     }
 
@@ -397,7 +496,9 @@ class CoreOrderFlowTest {
         long menuItemId,
         long menuVersion,
         BigDecimal price,
-        String menuName
+        String menuName,
+        String consumerToken,
+        String restaurantToken
     ) {
     }
 }

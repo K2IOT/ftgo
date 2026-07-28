@@ -113,7 +113,7 @@ public class SimulatedProviderOperation {
             || !Objects.equals(orderId, expectedOrderId)
             || operationType != expectedOperationType
             || amount.compareTo(expectedAmount) != 0) {
-            throw new IllegalArgumentException(
+            throw new IllegalStateException(
                 "Provider operation request ID conflict: " + requestId
             );
         }

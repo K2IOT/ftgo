@@ -9,6 +9,7 @@ import net.ftgo.kitchen.messaging.DomainEventPublisher;
 import net.ftgo.kitchen.messaging.TicketPreparingEvent;
 import net.ftgo.kitchen.messaging.TicketReadyEvent;
 import net.ftgo.kitchen.repository.TicketRepository;
+import net.ftgo.kitchen.security.TicketAuthorizationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -41,7 +42,11 @@ class KitchenServiceTest {
 
     @BeforeEach
     void setUp() {
-        kitchenService = new KitchenService(ticketRepository, eventPublisher);
+        kitchenService = new KitchenService(
+            ticketRepository,
+            eventPublisher,
+            new TicketAuthorizationService()
+        );
         ticket = new Ticket(
             1L,
             100L,
@@ -98,7 +103,7 @@ class KitchenServiceTest {
     void testMarkPreparing() {
         ticket.approve();
         ticket.accept();
-        when(ticketRepository.findById(1L)).thenReturn(Optional.of(ticket));
+        when(ticketRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(ticket));
 
         Ticket updatedTicket = kitchenService.markPreparing(1L);
 
@@ -116,7 +121,7 @@ class KitchenServiceTest {
         ticket.approve();
         ticket.accept();
         ticket.preparing();
-        when(ticketRepository.findById(1L)).thenReturn(Optional.of(ticket));
+        when(ticketRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(ticket));
 
         Ticket updatedTicket = kitchenService.markReady(1L);
 

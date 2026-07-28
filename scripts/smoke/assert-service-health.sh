@@ -12,6 +12,12 @@ service_pid="$3"
 log_file="$4"
 attempts="${5:-90}"
 
+# Full actuator health is protected after Phase 04. Startup smoke probes use
+# the public liveness group and never require an application bearer token.
+if [[ "${health_url}" == */actuator/health ]]; then
+  health_url="${health_url}/liveness"
+fi
+
 for attempt in $(seq 1 "${attempts}"); do
   if ! kill -0 "${service_pid}" >/dev/null 2>&1; then
     echo "${service_name} exited before becoming healthy" >&2

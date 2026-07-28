@@ -59,15 +59,11 @@ jobs:
       - name: Verify fresh-stack contracts
         run: python3 -m unittest deployment/tests/test_fresh_stack_contract.py
       - name: Run two clean-volume smoke cycles
-        id: smoke
         shell: bash
         run: |
-          set +e
+          set -o pipefail
           chmod +x gradlew scripts/smoke/*.sh deployment/tests/run-debezium-smoke.sh
           timeout 45m ./scripts/smoke/fresh-stack.sh --runs 2 2>&1 | tee fresh-stack.log
-          status=${PIPESTATUS[0]}
-          echo "status=${status}" >> "$GITHUB_OUTPUT"
-          exit 0
       - name: Upload fresh-stack diagnostics
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -81,7 +77,3 @@ jobs:
             deployment/tests/debezium-smoke.log
             deployment/tests/debezium-smoke-record.txt
             deployment/tests/debezium-smoke-containers.log
-      - name: Preserve smoke result
-        if: always()
-        shell: bash
-        run: exit '${{ steps.smoke.outputs.status }}'

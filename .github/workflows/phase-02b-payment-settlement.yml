@@ -18,6 +18,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: phase-02b-payment-settlement-${{ github.ref }}
@@ -82,9 +83,29 @@ jobs:
         run: docker compose -f deployment/tests/docker-compose.core-order-flow.yml config --quiet
 
       - name: Run two clean-state payment settlement cycles
+        shell: bash
         run: |
           chmod +x gradlew scripts/smoke/verify-payment-settlement.sh
-          bash scripts/smoke/verify-payment-settlement.sh --runs 2
+          set +e
+          bash scripts/smoke/verify-payment-settlement.sh --runs 2 \
+            >/tmp/payment-settlement-e2e.log 2>&1
+          status=$?
+          set -e
+
+          if [ "$status" -ne 0 ]; then
+            echo 'PAYMENT_E2E_JUNIT_FAILURES'
+            python3 scripts/ci/summarize-junit-failures.py e2e-tests || true
+            echo 'PAYMENT_E2E_RUNNER_TAIL'
+            tail -n 120 payment-settlement-e2e-logs/runner.log 2>/dev/null || true
+            echo 'PAYMENT_E2E_SERVICE_ERRORS'
+            grep -R -E 'ERROR|Exception|Caused by:|401|403|409|500' \
+              payment-settlement-e2e-logs/run-*/*.log 2>/dev/null | tail -n 80 || true
+            echo 'PAYMENT_E2E_COMMAND_TAIL'
+            tail -n 120 /tmp/payment-settlement-e2e.log || true
+          else
+            echo 'Payment settlement E2E completed successfully.'
+          fi
+          exit "$status"
 
       - name: Upload settlement diagnostics
         if: always()
@@ -96,3 +117,70 @@ jobs:
             payment-settlement-e2e-logs/**
             e2e-tests/build/reports/tests/**
             e2e-tests/build/test-results/**
+
+  payment-e2e-failure-summary:
+    needs: payment-settlement-e2e
+    if: ${{ always() && needs.payment-settlement-e2e.result == 'failure' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Download diagnostics from this run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          artifact_id="$(curl --silent --fail \
+            --header "Authorization: Bearer ${GH_TOKEN}" \
+            --header 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts" \
+            | jq -r '.artifacts[] | select(.name == "phase-02b-payment-settlement-e2e-diagnostics") | .id' \
+            | head -n 1)"
+          test -n "${artifact_id}"
+          curl --silent --show-error --fail --location \
+            --header "Authorization: Bearer ${GH_TOKEN}" \
+            --header 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" \
+            --output diagnostics.zip
+          unzip -q diagnostics.zip -d diagnostics
+
+      - name: Print concise payment failure
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          import xml.etree.ElementTree as ET
+
+          root = Path("diagnostics")
+          print("PAYMENT_FAILURE_SUMMARY")
+          found = False
+          for xml_path in sorted(root.rglob("TEST-*.xml")):
+              try:
+                  suite = ET.parse(xml_path).getroot()
+              except ET.ParseError:
+                  continue
+              for case in suite.findall("testcase"):
+                  failure = case.find("failure")
+                  error = case.find("error")
+                  node = failure if failure is not None else error
+                  if node is None:
+                      continue
+                  found = True
+                  print(f"FAILED_TEST {case.get('classname')}#{case.get('name')}")
+                  message = (node.get("message") or "").replace("\n", " ")
+                  print(f"MESSAGE {message[:1000]}")
+                  text = (node.text or "").splitlines()
+                  for line in text[:12]:
+                      print(f"DETAIL {line[:1000]}")
+
+          runner_logs = sorted(root.rglob("runner.log"))
+          if runner_logs:
+              lines = runner_logs[-1].read_text(encoding="utf-8", errors="replace").splitlines()
+              interesting = [
+                  line for line in lines
+                  if re.search(r"failed: status=|AssertionError|expected:|but was:|Conflicting idempotency|FAILED", line, re.I)
+              ]
+              for line in interesting[-20:]:
+                  print(f"RUNNER {line[:1000]}")
+          if not found:
+              print("NO_JUNIT_FAILURE_FOUND")
+          PY

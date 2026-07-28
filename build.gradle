@@ -79,6 +79,9 @@ configure(subprojects.findAll {
     dependencies {
         implementation project(':common')
         implementation 'org.springframework.boot:spring-boot-starter-web'
+        implementation 'org.springframework.boot:spring-boot-starter-security'
+        implementation 'org.springframework.security:spring-security-oauth2-resource-server'
+        implementation 'org.springframework.security:spring-security-oauth2-jose'
         implementation 'org.springframework.kafka:spring-kafka'
         implementation 'io.eventuate.tram.core:eventuate-tram-spring-messaging'
         implementation 'io.eventuate.tram.core:eventuate-tram-spring-events'
@@ -87,6 +90,7 @@ configure(subprojects.findAll {
         implementation 'io.opentelemetry.instrumentation:opentelemetry-instrumentation-annotations:2.0.0'
         implementation 'net.logstash.logback:logstash-logback-encoder:7.4'
         testImplementation 'org.springframework.kafka:spring-kafka-test'
+        testImplementation 'org.springframework.security:spring-security-test'
     }
 }
 
@@ -174,12 +178,14 @@ project(':api-gateway') {
         implementation 'org.springframework.cloud:spring-cloud-starter-gateway'
         implementation 'org.springframework.boot:spring-boot-starter-data-redis-reactive'
         implementation 'org.springframework.boot:spring-boot-starter-security'
+        implementation 'org.springframework.boot:spring-boot-starter-oauth2-client'
         implementation 'org.springframework.security:spring-security-oauth2-resource-server'
         implementation 'org.springframework.security:spring-security-oauth2-jose'
         implementation 'io.github.resilience4j:resilience4j-spring-boot3:2.1.0'
         implementation 'io.github.resilience4j:resilience4j-reactor:2.1.0'
         implementation 'io.github.resilience4j:resilience4j-circuitbreaker:2.1.0'
         implementation 'io.micrometer:micrometer-registry-prometheus'
+        testImplementation 'org.springframework.security:spring-security-test'
         testImplementation 'com.nimbusds:nimbus-jose-jwt:9.37.3'
         testImplementation 'org.wiremock:wiremock-standalone:3.3.1'
         testImplementation 'org.testcontainers:testcontainers:1.19.3'
@@ -199,6 +205,7 @@ project(':e2e-tests') {
     }
     tasks.named('test') {
         onlyIf { System.getenv('FTGO_E2E_ENABLED') == 'true' }
+        systemProperty 'ftgo.e2e.gateway-url', System.getenv('FTGO_E2E_GATEWAY_URL') ?: 'http://localhost:8080'
         systemProperty 'ftgo.e2e.order-url', System.getenv('FTGO_E2E_ORDER_URL') ?: 'http://localhost:8081'
         systemProperty 'ftgo.e2e.consumer-url', System.getenv('FTGO_E2E_CONSUMER_URL') ?: 'http://localhost:8082'
         systemProperty 'ftgo.e2e.restaurant-url', System.getenv('FTGO_E2E_RESTAURANT_URL') ?: 'http://localhost:8083'

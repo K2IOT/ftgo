@@ -3,6 +3,9 @@ package net.ftgo.order.api;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import net.ftgo.common.Address;
 import net.ftgo.common.Money;
+import net.ftgo.common.security.FtgoJwtAuthenticationConverter;
+import net.ftgo.common.security.FtgoPrincipal;
+import net.ftgo.order.config.SecurityConfiguration;
 import net.ftgo.order.domain.DeliveryInfo;
 import net.ftgo.order.domain.Order;
 import net.ftgo.order.domain.OrderLineItem;
@@ -15,10 +18,14 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
+import org.springframework.security.authentication.AbstractAuthenticationToken;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -30,13 +37,24 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@WebMvcTest(OrderController.class)
+@WebMvcTest(properties = {
+    "spring.security.oauth2.resourceserver.jwt.issuer-uri=https://identity.example/realms/ftgo",
+    "spring.security.oauth2.resourceserver.jwt.jwk-set-uri=https://identity.example/realms/ftgo/protocol/openid-connect/certs"
+})
+@ContextConfiguration(classes = {
+    SecurityConfiguration.class,
+    OrderController.class,
+    OrderApiExceptionHandler.class
+})
 class OrderControllerTest {
+
+    private static final Long CONSUMER_ID = 123L;
 
     @Autowired
     private MockMvc mockMvc;
@@ -63,7 +81,7 @@ class OrderControllerTest {
     void createOrderPropagatesExpectedMenuVersion() throws Exception {
         CreateOrderRequest request = createValidOrderRequest(7L);
         when(orderService.createOrder(
-            eq(123L),
+            eq(CONSUMER_ID),
             eq(456L),
             eq(7L),
             anyList(),
@@ -72,13 +90,14 @@ class OrderControllerTest {
         )).thenReturn(1L);
 
         mockMvc.perform(post("/orders")
+                .with(authentication(consumerAuthentication(CONSUMER_ID)))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.orderId").value(1L));
 
         verify(orderService).createOrder(
-            eq(123L),
+            eq(CONSUMER_ID),
             eq(456L),
             eq(7L),
             anyList(),
@@ -92,6 +111,7 @@ class OrderControllerTest {
         ReflectionTestUtils.setField(orderController, "phase2Enabled", false);
 
         mockMvc.perform(post("/orders")
+                .with(authentication(consumerAuthentication(CONSUMER_ID)))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(createValidOrderRequest(7L))))
             .andExpect(status().isServiceUnavailable())
@@ -103,7 +123,6 @@ class OrderControllerTest {
     @Test
     void createOrderDefaultsMissingMenuVersionToZero() throws Exception {
         CreateOrderRequest request = new CreateOrderRequest(
-            123L,
             456L,
             createLineItemRequests(),
             createSampleAddress(),
@@ -111,7 +130,7 @@ class OrderControllerTest {
             "tok_visa_4242"
         );
         when(orderService.createOrder(
-            eq(123L),
+            eq(CONSUMER_ID),
             eq(456L),
             eq(0L),
             anyList(),
@@ -120,6 +139,7 @@ class OrderControllerTest {
         )).thenReturn(2L);
 
         mockMvc.perform(post("/orders")
+                .with(authentication(consumerAuthentication(CONSUMER_ID)))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
             .andExpect(status().isCreated())
@@ -130,7 +150,6 @@ class OrderControllerTest {
     void invalidCreateRequestReturnsBadRequest() throws Exception {
         CreateOrderRequest invalid = new CreateOrderRequest(
             null,
-            456L,
             0L,
             createLineItemRequests(),
             createSampleAddress(),
@@ -139,6 +158,7 @@ class OrderControllerTest {
         );
 
         mockMvc.perform(post("/orders")
+                .with(authentication(consumerAuthentication(CONSUMER_ID)))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(invalid)))
             .andExpect(status().isBadRequest());
@@ -146,9 +166,10 @@ class OrderControllerTest {
 
     @Test
     void getOrderReturnsOrder() throws Exception {
-        when(orderService.getOrder(1L)).thenReturn(sampleOrder);
+        when(orderService.getOrder(eq(1L), any(FtgoPrincipal.class))).thenReturn(sampleOrder);
 
-        mockMvc.perform(get("/orders/{orderId}", 1L))
+        mockMvc.perform(get("/orders/{orderId}", 1L)
+                .with(authentication(consumerAuthentication(CONSUMER_ID))))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.id").value(1L))
             .andExpect(jsonPath("$.state").value("APPROVAL_PENDING"));
@@ -156,31 +177,34 @@ class OrderControllerTest {
 
     @Test
     void getUnknownOrderReturnsNotFound() throws Exception {
-        when(orderService.getOrder(404L))
+        when(orderService.getOrder(eq(404L), any(FtgoPrincipal.class)))
             .thenThrow(new OrderNotFoundException("Order not found: 404"));
 
-        mockMvc.perform(get("/orders/{orderId}", 404L))
+        mockMvc.perform(get("/orders/{orderId}", 404L)
+                .with(authentication(consumerAuthentication(CONSUMER_ID))))
             .andExpect(status().isNotFound())
             .andExpect(jsonPath("$.errorCode").value("ORDER_NOT_FOUND"));
     }
 
     @Test
     void cancelOrderDelegatesToService() throws Exception {
-        doNothing().when(orderService).cancelOrder(1L);
+        doNothing().when(orderService).cancelOrder(eq(1L), any(FtgoPrincipal.class));
 
-        mockMvc.perform(post("/orders/{orderId}/cancel", 1L))
+        mockMvc.perform(post("/orders/{orderId}/cancel", 1L)
+                .with(authentication(consumerAuthentication(CONSUMER_ID))))
             .andExpect(status().isOk());
 
-        verify(orderService).cancelOrder(1L);
+        verify(orderService).cancelOrder(eq(1L), any(FtgoPrincipal.class));
     }
 
     @Test
     void pendingCancelReturnsConflict() throws Exception {
         doThrow(new IllegalStateException(
             "Cannot modify order in state CONFIRMATION_PENDING. Operation in progress"
-        )).when(orderService).cancelOrder(1L);
+        )).when(orderService).cancelOrder(eq(1L), any(FtgoPrincipal.class));
 
-        mockMvc.perform(post("/orders/{orderId}/cancel", 1L))
+        mockMvc.perform(post("/orders/{orderId}/cancel", 1L)
+                .with(authentication(consumerAuthentication(CONSUMER_ID))))
             .andExpect(status().isConflict())
             .andExpect(jsonPath("$.errorCode").value("CONFLICT"));
     }
@@ -190,14 +214,23 @@ class OrderControllerTest {
         ReviseOrderRequest request = new ReviseOrderRequest(List.of(
             new OrderLineItemRequest(1L, "Pizza", new Money("20.00"), 2)
         ));
-        doNothing().when(orderService).reviseOrder(eq(1L), anyList());
+        doNothing().when(orderService).reviseOrder(
+            eq(1L),
+            anyList(),
+            any(FtgoPrincipal.class)
+        );
 
         mockMvc.perform(post("/orders/{orderId}/revise", 1L)
+                .with(authentication(consumerAuthentication(CONSUMER_ID)))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
             .andExpect(status().isOk());
 
-        verify(orderService).reviseOrder(eq(1L), anyList());
+        verify(orderService).reviseOrder(
+            eq(1L),
+            anyList(),
+            any(FtgoPrincipal.class)
+        );
     }
 
     @Test
@@ -207,9 +240,14 @@ class OrderControllerTest {
         ));
         doThrow(new IllegalStateException(
             "Cannot modify order in state REJECTION_PENDING. Operation in progress"
-        )).when(orderService).reviseOrder(eq(1L), anyList());
+        )).when(orderService).reviseOrder(
+            eq(1L),
+            anyList(),
+            any(FtgoPrincipal.class)
+        );
 
         mockMvc.perform(post("/orders/{orderId}/revise", 1L)
+                .with(authentication(consumerAuthentication(CONSUMER_ID)))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
             .andExpect(status().isConflict())
@@ -218,7 +256,6 @@ class OrderControllerTest {
 
     private CreateOrderRequest createValidOrderRequest(Long menuVersion) {
         return new CreateOrderRequest(
-            123L,
             456L,
             menuVersion,
             createLineItemRequests(),
@@ -241,7 +278,7 @@ class OrderControllerTest {
 
     private Order createSampleOrder() {
         return new Order(
-            123L,
+            CONSUMER_ID,
             456L,
             List.of(
                 new OrderLineItem(1L, "Burger", new Money("10.00"), 2),
@@ -253,5 +290,19 @@ class OrderControllerTest {
             ),
             new PaymentInfo("tok_visa_4242")
         );
+    }
+
+    private AbstractAuthenticationToken consumerAuthentication(Long consumerId) {
+        Instant now = Instant.now();
+        Jwt jwt = Jwt.withTokenValue("consumer-token")
+            .header("alg", "RS256")
+            .subject("consumer-" + consumerId)
+            .issuedAt(now)
+            .expiresAt(now.plusSeconds(300))
+            .audience(List.of("ftgo-api"))
+            .claim("consumer_id", consumerId)
+            .claim("roles", List.of("CONSUMER"))
+            .build();
+        return new FtgoJwtAuthenticationConverter("").convert(jwt);
     }
 }

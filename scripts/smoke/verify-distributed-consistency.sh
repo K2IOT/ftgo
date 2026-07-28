@@ -143,7 +143,7 @@ start_sql_service() {
   local pid
   pid="$(cat "${pid_file}")"
   SERVICE_PIDS+=("${pid}")
-  wait_for_health "${module}" "http://localhost:${port}/actuator/health" "${pid_file}" "${log_file}"
+  wait_for_health "${module}" "http://localhost:${port}/actuator/health/liveness" "${pid_file}" "${log_file}"
 }
 
 start_order_history() {
@@ -174,7 +174,7 @@ start_order_history() {
   local pid
   pid="$(cat "${pid_file}")"
   SERVICE_PIDS+=("${pid}")
-  wait_for_health "${module}" "http://localhost:8087/actuator/health" "${pid_file}" "${log_file}"
+  wait_for_health "${module}" "http://localhost:8087/actuator/health/liveness" "${pid_file}" "${log_file}"
 }
 
 wait_for_url() {

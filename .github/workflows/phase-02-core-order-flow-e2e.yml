@@ -19,6 +19,7 @@ on:
       - 'e2e-tests/**'
       - 'deployment/tests/**'
       - 'scripts/smoke/verify-core-order-flow.sh'
+      - 'scripts/ci/summarize-core-e2e-artifact.py'
   pull_request:
     branches:
       - dev
@@ -35,10 +36,12 @@ on:
       - 'e2e-tests/**'
       - 'deployment/tests/**'
       - 'scripts/smoke/verify-core-order-flow.sh'
+      - 'scripts/ci/summarize-core-e2e-artifact.py'
   workflow_dispatch:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: phase-02-core-order-flow-e2e-${{ github.ref }}
@@ -65,9 +68,29 @@ jobs:
         run: docker compose -f deployment/tests/docker-compose.core-order-flow.yml config --quiet
 
       - name: Run two clean-state core order flow cycles
+        shell: bash
         run: |
           chmod +x gradlew scripts/smoke/verify-core-order-flow.sh
-          bash scripts/smoke/verify-core-order-flow.sh --runs 2
+          set +e
+          bash scripts/smoke/verify-core-order-flow.sh --runs 2 \
+            >/tmp/core-order-flow-e2e.log 2>&1
+          status=$?
+          set -e
+
+          if [ "$status" -ne 0 ]; then
+            echo 'CORE_E2E_JUNIT_FAILURES'
+            python3 scripts/ci/summarize-junit-failures.py e2e-tests || true
+            echo 'CORE_E2E_RUNNER_TAIL'
+            tail -n 160 core-order-flow-e2e-logs/runner.log 2>/dev/null || true
+            echo 'CORE_E2E_SERVICE_ERRORS'
+            grep -R -E 'ERROR|Exception|Caused by:|401|403|409|500|503' \
+              core-order-flow-e2e-logs/run-*/*.log 2>/dev/null | tail -n 160 || true
+            echo 'CORE_E2E_COMMAND_TAIL'
+            tail -n 160 /tmp/core-order-flow-e2e.log || true
+          else
+            echo 'Core order flow E2E completed successfully.'
+          fi
+          exit "$status"
 
       - name: Upload core order flow diagnostics
         if: always()
@@ -79,3 +102,32 @@ jobs:
             core-order-flow-e2e-logs/**
             e2e-tests/build/reports/tests/**
             e2e-tests/build/test-results/**
+            scripts/ci/summarize-core-e2e-artifact.py
+
+  core-e2e-failure-summary:
+    needs: core-order-flow-e2e
+    if: ${{ always() && needs.core-order-flow-e2e.result == 'failure' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Download diagnostics from this run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          artifact_id="$(curl --silent --fail \
+            --header "Authorization: Bearer ${GH_TOKEN}" \
+            --header 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts" \
+            | jq -r '.artifacts[] | select(.name == "phase-02-core-order-flow-e2e-diagnostics") | .id' \
+            | head -n 1)"
+          test -n "${artifact_id}"
+          curl --silent --show-error --fail --location \
+            --header "Authorization: Bearer ${GH_TOKEN}" \
+            --header 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" \
+            --output diagnostics.zip
+          unzip -q diagnostics.zip -d diagnostics
+
+      - name: Print concise core failure
+        run: python3 diagnostics/scripts/ci/summarize-core-e2e-artifact.py diagnostics

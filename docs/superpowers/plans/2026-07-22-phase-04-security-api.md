@@ -1,472 +1,174 @@
 # FTGO Phase 04 Security and API Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+**Status:** Complete.
 
-**Goal:** Ngăn forged identity, BOLA/IDOR và direct-service bypass; chuẩn hóa public API, validation, error contract và actuator exposure.
+**Verified runtime code SHA:** `8542a713d28c004d8b5e68c946d5cc67a41d7756`
 
-**Architecture:** Gateway tiếp tục là edge policy enforcement nhưng mọi downstream HTTP service cũng trở thành OAuth2 Resource Server và tự xác minh ownership. Consumer/restaurant/courier identity lấy từ JWT claims; internal endpoints được bảo vệ bằng service audience/role và network policy.
+This file is the completed execution record for Phase 04. The commit that marks this plan complete changes documentation only; runtime verification was completed against the code SHA above.
 
-**Tech Stack:** Spring Security OAuth2 Resource Server, JWT, Spring Cloud Gateway TokenRelay, Bean Validation, RFC 9457 ProblemDetail, WireMock, Testcontainers, Kubernetes NetworkPolicy.
+## Goal
+
+Ngăn forged identity, BOLA/IDOR và direct-service bypass; chuẩn hóa public API, validation, error contract, gateway behavior và actuator exposure.
+
+## Delivered Architecture
+
+Gateway remains the edge policy-enforcement point, while every downstream HTTP service is also an OAuth2 Resource Server. Consumer, restaurant and courier identities are derived from signed JWT claims. Ownership checks run in application/service layers, not only in route matchers. Internal endpoints require the internal audience and service role.
 
 ## Global Constraints
 
-- Không tin `consumerId`, `restaurantId`, `courierId` hoặc role header do client gửi.
-- Không dùng unsigned internal identity headers.
-- Downstream service phải xác minh JWT issuer, audience và expiry.
-- Mọi ownership check nằm trong application/service layer, không chỉ controller matcher.
-- Public error không chứa stack trace, SQL, token, PII hoặc internal host.
+- [x] Do not trust client-supplied `consumerId`, `restaurantId`, `courierId` or role headers.
+- [x] Do not use unsigned internal identity headers.
+- [x] Downstream services validate JWT issuer, audience and expiry independently.
+- [x] Ownership checks run in the application/service layer.
+- [x] Public errors do not expose stack traces, SQL, tokens, PII or internal hosts.
 
 ---
 
-### Task 1: Add Shared JWT Principal Model
+## Task 1: Shared JWT Principal Model
 
-**Files:**
-- Create: `common/src/main/java/net/ftgo/common/security/FtgoPrincipal.java`
-- Create: `common/src/main/java/net/ftgo/common/security/FtgoJwtAuthenticationConverter.java`
-- Create: `common/src/main/java/net/ftgo/common/security/PrincipalAccess.java`
-- Create: `common/src/test/java/net/ftgo/common/security/FtgoJwtAuthenticationConverterTest.java`
-- Modify: `build.gradle`
+- [x] Added `FtgoPrincipal` with subject, consumer, restaurant, courier, role and audience claims.
+- [x] Added deterministic JWT claim conversion and principal access helpers.
+- [x] Added issuer/audience-aware blocking and reactive JWT decoder helpers.
+- [x] Covered consumer, restaurant, courier, admin, malformed claims and missing audiences.
+- [x] Verified shared JWT principal contracts.
 
-**Interfaces:**
+Key files:
 
-```java
-public record FtgoPrincipal(
-    String subject,
-    Long consumerId,
-    Set<Long> restaurantIds,
-    Long courierId,
-    Set<String> roles,
-    Set<String> audiences
-) {}
-```
-
-- [ ] **Step 1: Write claim mapping tests**
-
-Cover:
-
-- consumer token with `consumer_id`
-- restaurant token with `restaurant_ids`
-- courier token with `courier_id`
-- admin token
-- malformed numeric claim
-- missing required audience
-
-- [ ] **Step 2: Add security dependencies to shared compilation scope**
-
-Use Spring Security APIs in `common`, while each service adds the resource-server starter explicitly.
-
-- [ ] **Step 3: Implement converter**
-
-Map Keycloak/issuer roles from configured claim names without accepting arbitrary `X-Roles` headers. Reject invalid claim types with authentication failure.
-
-- [ ] **Step 4: Run tests**
-
-```bash
-./gradlew :common:test --tests '*FtgoJwtAuthenticationConverterTest'
-```
-
-Expected: all identity forms mapped deterministically; malformed claim rejected.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add common build.gradle
-git commit -m "feat: define authenticated ftgo principal"
-```
+- `common/src/main/java/net/ftgo/common/security/FtgoPrincipal.java`
+- `common/src/main/java/net/ftgo/common/security/FtgoJwtAuthenticationConverter.java`
+- `common/src/main/java/net/ftgo/common/security/PrincipalAccess.java`
+- `common/src/test/java/net/ftgo/common/security/FtgoJwtAuthenticationConverterTest.java`
 
 ---
 
-### Task 2: Secure Every HTTP Service as a Resource Server
+## Task 2: Secure Every HTTP Service as a Resource Server
 
-**Files:**
-- Create one `SecurityConfiguration.java` under each service `config` package.
-- Modify: each service `src/main/resources/application.yml`.
-- Modify: `api-gateway/src/main/resources/application.yml`.
-- Modify: `api-gateway/src/main/java/net/ftgo/gateway/security/SecurityConfiguration.java`.
-- Create: `common/src/testFixtures/java/net/ftgo/testsupport/JwtTestFactory.java`
-- Create: one context/security smoke test per service.
-
-**Interfaces:**
-- Public audience: `ftgo-api`.
-- Internal audience: `ftgo-internal`.
-- Gateway relays bearer token to routed downstream requests.
-
-- [ ] **Step 1: Add resource-server dependencies**
-
-For Order, Consumer, Restaurant, Kitchen, Accounting, Delivery and Order History:
-
-```groovy
-implementation 'org.springframework.boot:spring-boot-starter-security'
-implementation 'org.springframework.security:spring-security-oauth2-resource-server'
-implementation 'org.springframework.security:spring-security-oauth2-jose'
-```
-
-- [ ] **Step 2: Write unauthorized/direct-service tests**
-
-Assert:
-
-- no token -> 401
-- expired/wrong issuer/wrong audience -> 401
-- valid token without role -> 403
-- health liveness/readiness -> allowed with hidden details
-
-- [ ] **Step 3: Configure issuer and audience validators**
-
-Each service creates `JwtDecoder` with issuer validation plus explicit audience validator. Do not rely on Gateway validation alone.
-
-- [ ] **Step 4: Enable token relay at Gateway**
-
-Add `TokenRelay` for service routes. Verify Authorization header is replaced/relayed safely and not logged.
-
-- [ ] **Step 5: Separate internal paths**
-
-Endpoints under `/internal/**` require `ftgo-internal` audience and `ROLE_SERVICE`; public user tokens cannot call them.
-
-- [ ] **Step 6: Run service security smoke tests**
-
-```bash
-./gradlew test --tests '*SecuritySmokeTest'
-```
-
-Expected: every service rejects direct unauthenticated access.
-
-- [ ] **Step 7: Commit**
-
-```bash
-git add build.gradle common api-gateway */src/main/java/*/config */src/main/resources/application.yml */src/test
-git commit -m "feat: authenticate every http service"
-```
+- [x] Added Spring Security resource-server dependencies and configuration to Order, Consumer, Restaurant, Kitchen, Accounting, Delivery and Order History.
+- [x] Configured issuer, JWKS and explicit public/internal audience validation.
+- [x] Enabled safe bearer-token relay through the Gateway.
+- [x] Protected `/internal/**` with the internal audience and service role.
+- [x] Kept anonymous access limited to liveness/readiness and selected restaurant reads.
+- [x] Added security smoke tests for every downstream service.
+- [x] Verified direct unauthenticated, expired, wrong-issuer, wrong-audience and insufficient-role requests are rejected.
 
 ---
 
-### Task 3: Derive Consumer Identity from JWT
+## Task 3: Derive and Enforce Consumer Identity
 
-**Files:**
-- Modify: `order-service/src/main/java/net/ftgo/order/api/CreateOrderRequest.java`
-- Modify: `order-service/src/main/java/net/ftgo/order/api/OrderController.java`
-- Modify: `order-service/src/main/java/net/ftgo/order/service/OrderService.java`
-- Modify: `consumer-service/src/main/java/net/ftgo/consumer/api/ConsumerController.java`
-- Create: `order-service/src/main/java/net/ftgo/order/security/OrderAuthorizationService.java`
-- Create: `order-service/src/test/java/net/ftgo/order/security/OrderAuthorizationIntegrationTest.java`
-- Modify: `api-gateway/src/main/java/net/ftgo/gateway/controller/OrderDetailsController.java`
-
-**Interfaces:**
-- `OrderAuthorizationService.requireOwner(Long orderId, FtgoPrincipal principal)`.
-- Admin bypass is explicit and audit logged.
-
-- [ ] **Step 1: Write BOLA tests**
-
-Create order owned by consumer 101. Assert token for consumer 202 receives `403` for get/cancel/revise/order-details/history.
-
-- [ ] **Step 2: Remove `consumerId` from Create Order body**
-
-Controller obtains:
-
-```java
-FtgoPrincipal principal = PrincipalAccess.require(authentication);
-Long consumerId = principal.consumerId();
-```
-
-Reject consumer role without `consumer_id` claim.
-
-- [ ] **Step 3: Enforce owner in service layer**
-
-`getOrder`, `cancelOrder` and `reviseOrder` accept principal/actor ID or call an authorization service before mutation. Do not rely solely on URL matcher.
-
-- [ ] **Step 4: Restrict consumer profile operations**
-
-Consumer can read/update own profile only; registration endpoint must not allow caller to set privileged fields or arbitrary credit limit. Admin-only credit limit operations move to `/admin/consumers/{id}/credit-limit`.
-
-- [ ] **Step 5: Secure API composition**
-
-Order Details Controller verifies ownership before issuing downstream calls, or calls Order Service first and uses its authorization result. Partial response must never expose unauthorized ticket/delivery data.
-
-- [ ] **Step 6: Run tests**
-
-```bash
-./gradlew :order-service:test --tests '*OrderAuthorizationIntegrationTest'
-./gradlew :consumer-service:test --tests '*Authorization*'
-./gradlew :api-gateway:test --tests '*OrderDetails*Security*'
-```
-
-Expected: cross-consumer access always 403; own resource succeeds.
-
-- [ ] **Step 7: Commit**
-
-```bash
-git add order-service consumer-service api-gateway
-git commit -m "fix: derive and enforce consumer ownership"
-```
+- [x] Removed trusted use of body-supplied `consumerId` for order creation.
+- [x] Derived consumer identity from the authenticated principal.
+- [x] Enforced order ownership for get, cancel and revise operations in the service layer.
+- [x] Restricted consumer profile read/update to the owner or admin.
+- [x] Prevented registration callers from setting privileged credit policy.
+- [x] Moved credit-limit changes to an explicit admin endpoint.
+- [x] Secured API composition before ticket/delivery information is fetched.
+- [x] Added cross-consumer BOLA/IDOR tests and trusted-identity tests.
 
 ---
 
-### Task 4: Enforce Restaurant Ownership
+## Task 4: Enforce Restaurant Ownership
 
-**Files:**
-- Create: `restaurant-service/src/main/java/net/ftgo/restaurant/security/RestaurantAuthorizationService.java`
-- Modify: `restaurant-service/src/main/java/net/ftgo/restaurant/api/RestaurantController.java`
-- Modify: `kitchen-service/src/main/java/net/ftgo/kitchen/api/KitchenController.java`
-- Create: `kitchen-service/src/main/java/net/ftgo/kitchen/security/TicketAuthorizationService.java`
-- Create: `restaurant-service/src/test/java/net/ftgo/restaurant/security/RestaurantOwnershipIntegrationTest.java`
-- Create: `kitchen-service/src/test/java/net/ftgo/kitchen/security/TicketOwnershipIntegrationTest.java`
-
-**Interfaces:**
-- `requireRestaurantAccess(restaurantId, principal)` accepts admin or membership in `restaurantIds` claim.
-- Ticket access derives restaurant ID from persisted ticket, not request header.
-
-- [ ] **Step 1: Write cross-restaurant tests**
-
-Token for restaurant 10 attempts update/delete menu at restaurant 20 and accept ticket belonging to restaurant 20. Expect `403` and no state change.
-
-- [ ] **Step 2: Apply ownership before mutations**
-
-Controller/application service loads resource, checks persisted restaurant ID, then mutates. Avoid check-then-use race by running authorization and mutation in one transaction.
-
-- [ ] **Step 3: Restrict restaurant creation**
-
-Choose explicit policy:
-
-- Admin creates restaurant and assigns owner; or
-- Restaurant principal may create one restaurant and receives assignment through identity administration.
-
-Baseline implementation uses admin-only `POST /restaurants`; restaurant role manages assigned IDs only.
-
-- [ ] **Step 4: Run tests**
-
-```bash
-./gradlew :restaurant-service:test --tests '*RestaurantOwnershipIntegrationTest'
-./gradlew :kitchen-service:test --tests '*TicketOwnershipIntegrationTest'
-```
-
-Expected: only assigned restaurant resources mutate.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add restaurant-service kitchen-service
-git commit -m "fix: enforce restaurant resource ownership"
-```
+- [x] Added restaurant authorization based on persisted resource ownership and JWT `restaurant_ids` claims.
+- [x] Made restaurant creation admin-only.
+- [x] Enforced restaurant ownership before menu mutations.
+- [x] Derived ticket restaurant ownership from the persisted ticket.
+- [x] Added cross-restaurant controller, service and authorization tests.
 
 ---
 
-### Task 5: Enforce Courier Assignment and Delivery Ownership
+## Task 5: Enforce Courier Assignment and Delivery Ownership
 
-**Files:**
-- Create: `delivery-service/src/main/java/net/ftgo/delivery/security/DeliveryAuthorizationService.java`
-- Modify: `delivery-service/src/main/java/net/ftgo/delivery/api/DeliveryController.java`
-- Modify: `delivery-service/src/main/java/net/ftgo/delivery/domain/Delivery.java`
-- Modify: `delivery-service/src/main/java/net/ftgo/delivery/repository/DeliveryRepository.java`
-- Create: `delivery-service/src/test/java/net/ftgo/delivery/security/DeliveryOwnershipIntegrationTest.java`
-
-**Interfaces:**
-- Assignment policy: unassigned delivery may be claimed only through atomic compare-and-set endpoint, or assigned by dispatcher/admin.
-- Pickup/deliver require `delivery.courierId == principal.courierId`.
-
-- [ ] **Step 1: Write assignment race tests**
-
-Two courier tokens claim the same delivery concurrently; exactly one succeeds. Losing courier gets `409` or `403` according to final state.
-
-- [ ] **Step 2: Remove courier ID from assignment body**
-
-Courier identity comes from token. If dispatcher assignment is required, expose separate admin/dispatcher endpoint with explicit target courier ID.
-
-- [ ] **Step 3: Add optimistic version/CAS**
-
-Ensure Delivery has `@Version`. Claim transition only from unassigned state and persists principal courier ID.
-
-- [ ] **Step 4: Enforce pickup/deliver owner**
-
-Check persisted courier assignment in same transaction as state transition.
-
-- [ ] **Step 5: Run tests**
-
-```bash
-./gradlew :delivery-service:test --tests '*DeliveryOwnershipIntegrationTest'
-```
-
-Expected: one claim winner; non-owner cannot pickup/deliver/read sensitive route details.
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add delivery-service
-git commit -m "fix: enforce courier delivery ownership"
-```
+- [x] Removed trusted courier identity from assignment request bodies.
+- [x] Derived courier identity from JWT claims.
+- [x] Implemented atomic delivery claim semantics with exactly one winner.
+- [x] Enforced courier ownership for read, pickup and delivery transitions.
+- [x] Added concurrency, authorization, controller identity and service tests.
 
 ---
 
-### Task 6: Standardize RFC 9457 Errors and Validation
+## Task 6: Standardize RFC 9457 Errors and Validation
 
-**Files:**
-- Create: `common/src/main/java/net/ftgo/common/web/FtgoProblemDetail.java`
-- Create: `common/src/main/java/net/ftgo/common/web/GlobalExceptionHandler.java`
-- Create: `common/src/main/java/net/ftgo/common/web/CorrelationIdFilter.java`
-- Create: `common/src/main/java/net/ftgo/common/web/RequestLimits.java`
-- Replace controller-local exception handlers across all MVC services.
-- Modify: `api-gateway/src/main/java/net/ftgo/gateway/controller/FallbackController.java`
-- Create: `common/src/testFixtures/java/net/ftgo/testsupport/ProblemDetailContract.java`
-- Create: API contract tests in each service.
+- [x] Added shared `FtgoProblemDetail`, correlation filtering and web auto-configuration.
+- [x] Centralized MVC exception mapping and removed controller-local exception handlers.
+- [x] Added stable status/error codes without leaking internal exception details.
+- [x] Added `/api/v1/**` public aliases and one-release deprecation metadata for legacy paths.
+- [x] Added positive ID, item-count, quantity, address/text and payment-token limits.
+- [x] Added a configurable maximum delivery scheduling window.
+- [x] Added safe idempotency-key and 256 KiB request-size contracts.
+- [x] Added stable `415 application/problem+json` handling.
+- [x] Added Gateway edge validation so unsupported mutation media types remain `415` even when a downstream circuit is open.
+- [x] Added API contract and validation tests.
 
-**Interfaces:**
+Key files:
 
-```json
-{
-  "type": "https://ftgo.example/problems/order-not-found",
-  "title": "Order not found",
-  "status": 404,
-  "detail": "Order 123 does not exist",
-  "instance": "/api/v1/orders/123",
-  "errorCode": "ORDER_NOT_FOUND",
-  "correlationId": "..."
-}
-```
-
-- [ ] **Step 1: Write shared error contract tests**
-
-Verify content type, mandatory fields, correlation ID propagation and no stack trace/internal exception class.
-
-- [ ] **Step 2: Add validation constraints**
-
-Apply exact baseline:
-
-- IDs positive
-- delivery time future and within configured maximum scheduling window
-- item count 1..50
-- quantity 1..100
-- address and text length limits
-- idempotency key 8..255 printable safe characters
-- request body limit 256 KiB for business APIs
-
-- [ ] **Step 3: Centralize exception mapping**
-
-Map domain/business exceptions to stable codes and status. Unexpected exception returns generic 500 and logs correlation ID server-side.
-
-- [ ] **Step 4: Add API version prefix**
-
-Expose public routes under `/api/v1/**`. Gateway may temporarily keep old routes with deprecation headers for one release; internal routes remain `/internal/**`.
-
-- [ ] **Step 5: Run contract tests**
-
-```bash
-./gradlew test --tests '*ProblemDetail*' --tests '*Validation*Contract*'
-```
-
-Expected: all services return the same error shape.
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add common api-gateway */src/main/java/*/api */src/test
-git commit -m "feat: standardize api validation and errors"
-```
+- `common/src/main/java/net/ftgo/common/web/FtgoProblemDetail.java`
+- `common/src/main/java/net/ftgo/common/web/GlobalExceptionHandler.java`
+- `common/src/main/java/net/ftgo/common/web/CorrelationIdFilter.java`
+- `common/src/main/java/net/ftgo/common/web/RequestLimits.java`
+- `api-gateway/src/main/java/net/ftgo/gateway/filter/ApiVersioningFilter.java`
+- `api-gateway/src/main/java/net/ftgo/gateway/filter/JsonContentTypeFilter.java`
 
 ---
 
-### Task 7: Harden Gateway and Actuator Exposure
+## Task 7: Harden Gateway and Actuator Exposure
 
-**Files:**
-- Modify: `api-gateway/src/main/resources/application.yml`
-- Modify: every service `src/main/resources/application.yml`.
-- Modify: `api-gateway/src/main/java/net/ftgo/gateway/config/GatewayConfiguration.java`
-- Create: `api-gateway/src/main/java/net/ftgo/gateway/security/ForwardedHeaderPolicy.java`
-- Create: `api-gateway/src/test/java/net/ftgo/gateway/security/GatewayHardeningIntegrationTest.java`
-
-**Interfaces:**
-- Public anonymous endpoints: readiness/liveness only and selected public restaurant browsing.
-- Full actuator, gateway route introspection and metrics require admin/internal access.
-
-- [ ] **Step 1: Write exposure tests**
-
-Anonymous calls:
-
-- `/actuator/health/liveness` -> 200 without component details
-- `/actuator/health` -> 401/403 or sanitized
-- `/actuator/gateway/routes` -> 401/403
-- spoofed `X-Forwarded-For` from untrusted peer does not bypass rate-limit identity
-
-- [ ] **Step 2: Set health detail policy**
-
-Use `show-details: when_authorized`. Separate liveness/readiness groups and exclude optional downstream dependencies from liveness.
-
-- [ ] **Step 3: Tighten request size and timeouts**
-
-Set route-specific body limit 256 KiB for JSON APIs, shorter connection/read timeout where appropriate and maximum in-memory WebFlux buffer.
-
-- [ ] **Step 4: Define trusted proxy handling**
-
-Only honor forwarded headers from ingress/service mesh trust boundary. Rate-limit fallback uses normalized remote address only when unauthenticated route is allowed.
-
-- [ ] **Step 5: Run tests**
-
-```bash
-./gradlew :api-gateway:test --tests '*GatewayHardeningIntegrationTest'
-```
-
-Expected: actuator data hidden and spoofed forwarding headers ignored.
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add api-gateway */src/main/resources/application.yml
-git commit -m "fix: harden gateway and actuator exposure"
-```
+- [x] Allowed anonymous liveness/readiness without component details.
+- [x] Protected full health, metrics and Gateway actuator introspection.
+- [x] Set health details to `when_authorized` across services.
+- [x] Applied 256 KiB body and in-memory limits.
+- [x] Restricted retries to idempotent GET requests.
+- [x] Added trusted forwarded-header handling and subject-based rate-limit identity.
+- [x] Prevented spoofed forwarding headers from bypassing rate limits.
+- [x] Updated Fresh Stack and Distributed Failure harnesses to use public liveness probes.
+- [x] Added Gateway hardening, token-relay, versioning and media-type tests.
 
 ---
 
-### Task 8: Security E2E and Abuse Tests
+## Task 8: Security E2E and Abuse Tests
 
-**Files:**
-- Create: `e2e-tests/src/test/java/net/ftgo/e2e/SecurityAuthorizationTest.java`
-- Create: `e2e-tests/src/test/java/net/ftgo/e2e/ApiAbuseTest.java`
-- Create: `e2e-tests/src/test/java/net/ftgo/e2e/support/TestIdentityProvider.java`
+- [x] Added a real RS256 test identity provider with discovery and JWKS endpoints.
+- [x] Added authorization tests through the Gateway and direct service ports.
+- [x] Covered forged body identity and cross-tenant resource IDs.
+- [x] Covered expired, malformed, wrong-audience and unsigned JWTs.
+- [x] Covered oversized bodies and unsupported content types.
+- [x] Covered duplicate idempotency keys with changed payloads.
+- [x] Covered malicious forwarded headers and rate-limit bypass attempts.
+- [x] Verified no unauthorized durable mutation occurs.
+- [x] Added concise CI artifact diagnostics for real-process failures.
+- [x] Ran full Phase 04 and regression verification.
 
-**Interfaces:**
-- Test identity provider issues signed JWTs for consumer, restaurant, courier, admin and service audiences.
+---
 
-- [ ] **Step 1: Implement authorization matrix**
+## Verification Evidence
 
-Test every role/resource combination for allow/deny, including direct calls to service ports in test network.
+All required workflows completed successfully on runtime code SHA `8542a713d28c004d8b5e68c946d5cc67a41d7756`:
 
-- [ ] **Step 2: Implement abuse scenarios**
-
-- forged body consumer ID
-- cross-tenant IDs
-- expired/wrong-audience token
-- unsigned token
-- oversized body
-- duplicate idempotency key with changed payload
-- malicious forwarded headers
-- unsupported content type
-
-- [ ] **Step 3: Run suite**
-
-```bash
-./gradlew :e2e-tests:test --tests '*SecurityAuthorizationTest' --tests '*ApiAbuseTest'
-```
-
-Expected: every unauthorized scenario denied and no durable state mutation occurs.
-
-- [ ] **Step 4: Run full phase verification**
-
-```bash
-./gradlew clean test
-```
-
-Expected: exit code `0`.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add e2e-tests
-git commit -m "test: verify ownership and api abuse defenses"
-```
+- [x] Phase 04 API Contract — run `30339302457`.
+- [x] Phase 04 Security and API — run `30339302694`.
+- [x] Phase 04 Web Diagnostic — run `30339302517`.
+- [x] Phase 01 Verification — run `30339302525`.
+- [x] Phase 01 Module Diagnostics — run `30339302536`.
+- [x] Phase 01 Full Gradle Verification — run `30339302485`.
+- [x] Phase 01 Fresh Stack Smoke, two clean-volume cycles — run `30339302531`.
+- [x] Phase 02 Core Order Flow contracts and full tests — run `30339302461`.
+- [x] Phase 02 Core Order Flow E2E, two clean-state cycles — run `30339302553`.
+- [x] Phase 02B Payment Settlement unit/contracts and two clean-state E2E cycles — run `30339302530`.
+- [x] Phase 03 Distributed Consistency — run `30339302561`.
+- [x] Phase 03 Distributed Failure E2E, two clean-state cycles — run `30339302478`.
+- [x] Phase 03 Operations Reconciliation — run `30339302586`.
+- [x] Phase 03 Order History Consistency — run `30339302452`.
 
 ## Phase Completion Checklist
 
-- [ ] Every HTTP service validates JWT independently.
-- [ ] Consumer, restaurant and courier ownership enforced in service layer.
-- [ ] Client-controlled identity fields removed from mutation APIs.
-- [ ] Internal endpoints require service audience.
-- [ ] RFC 9457 errors and validation are consistent.
-- [ ] Gateway/actuator exposure is hardened.
-- [ ] Security E2E suite proves no unauthorized mutation.
+- [x] Every HTTP service validates JWT independently.
+- [x] Consumer, restaurant and courier ownership is enforced in the service layer.
+- [x] Client-controlled identity fields are removed or ignored for mutation APIs.
+- [x] Internal endpoints require service audience and role.
+- [x] RFC 9457 errors and validation are consistent.
+- [x] Gateway and actuator exposure are hardened.
+- [x] Security E2E proves unauthorized requests cannot mutate durable state.
+- [x] Full unit, contract, smoke and distributed regression gates are green.
+
+## Deferred Platform Work
+
+Kubernetes NetworkPolicy, production IdP deployment automation, secret distribution and broader platform observability remain Phase 05 platform responsibilities. Application-level authentication, authorization and internal-audience enforcement required by Phase 04 are complete.

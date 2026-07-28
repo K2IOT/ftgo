@@ -1,13 +1,16 @@
 spring:
   application:
     name: api-gateway
+  codec:
+    max-in-memory-size: 256KB
   cloud:
     gateway:
       # Global defaults
       default-filters:
+        - TokenRelay
         - name: RequestSize
           args:
-            maxSize: 10MB
+            maxSize: 256KB
       routes:
         - id: order-service
           uri: ${services.order-service.url:http://localhost:8081}
@@ -38,6 +41,38 @@ spring:
                 backoff:
                   firstBackoff: 500ms
                   maxBackoff: 2000ms
+                  factor: 2
+                  basedOnPreviousValue: false
+
+        - id: consumer-admin
+          uri: ${services.consumer-service.url:http://localhost:8082}
+          predicates:
+            - Path=/admin/consumers/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: consumerServiceCircuitBreaker
+                fallbackUri: forward:/fallback/consumers
+                statusCodes:
+                  - 500
+                  - 502
+                  - 503
+                  - 504
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 5
+                redis-rate-limiter.burstCapacity: 10
+                redis-rate-limiter.requestedTokens: 1
+                key-resolver: "#{@userKeyResolver}"
+                deny-empty-key: true
+            - name: Retry
+              args:
+                retries: 2
+                statuses: BAD_GATEWAY,SERVICE_UNAVAILABLE,GATEWAY_TIMEOUT
+                methods: GET
+                backoff:
+                  firstBackoff: 500ms
+                  maxBackoff: 1500ms
                   factor: 2
                   basedOnPreviousValue: false
 
@@ -169,6 +204,28 @@ spring:
                   factor: 2
                   basedOnPreviousValue: false
 
+        - id: payment-settlement-admin
+          uri: ${services.accounting-service.url:http://localhost:8085}
+          predicates:
+            - Path=/api/admin/payment-settlement/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: accountingServiceCircuitBreaker
+                fallbackUri: forward:/fallback/accounts
+                statusCodes:
+                  - 500
+                  - 502
+                  - 503
+                  - 504
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 5
+                redis-rate-limiter.burstCapacity: 10
+                redis-rate-limiter.requestedTokens: 1
+                key-resolver: "#{@userKeyResolver}"
+                deny-empty-key: true
+
         - id: delivery-service
           uri: ${services.delivery-service.url:http://localhost:8086}
           predicates:
@@ -201,9 +258,8 @@ spring:
                   factor: 2
                   basedOnPreviousValue: false
 
-        # B1 FIX: Order History Service uses @RequestMapping("/api") with
-        # endpoints /api/orders/{id} and /api/consumers/{consumerId}/orders.
-        # Rewrite /order-history/** to /api/** to match the actual service paths.
+        # Order History Service uses @RequestMapping("/api") with endpoints
+        # /api/orders/{id} and /api/consumers/{consumerId}/orders.
         - id: order-history-service
           uri: ${services.order-history-service.url:http://localhost:8087}
           predicates:
@@ -251,15 +307,19 @@ spring:
     oauth2:
       resourceserver:
         jwt:
-          # This should be configured to point to your OAuth2 authorization server
-          # For development, you can use a local key or mock server
-          issuer-uri: ${JWT_ISSUER_URI:http://localhost:9000}
-          # Alternative: use jwk-set-uri for direct JWK endpoint
-          # jwk-set-uri: ${JWT_JWK_SET_URI:http://localhost:9000/.well-known/jwks.json}
+          issuer-uri: ${FTGO_SECURITY_ISSUER_URI:http://localhost:9000/realms/ftgo}
+          jwk-set-uri: ${FTGO_SECURITY_JWK_SET_URI:http://localhost:9000/realms/ftgo/protocol/openid-connect/certs}
+
+ftgo:
+  gateway:
+    trusted-proxies: ${FTGO_GATEWAY_TRUSTED_PROXIES:}
+  security:
+    public-audience: ${FTGO_SECURITY_PUBLIC_AUDIENCE:ftgo-api}
+    internal-audience: ${FTGO_SECURITY_INTERNAL_AUDIENCE:ftgo-internal}
 
 server:
   port: ${SERVER_PORT:8080}
-  # Netty server configuration
+  forward-headers-strategy: none
   netty:
     connection-timeout: 5s
     idle-timeout: 30s
@@ -271,14 +331,15 @@ management:
         include: health,info,prometheus,metrics,gateway
   endpoint:
     health:
-      show-details: always
+      show-details: when_authorized
+      probes:
+        enabled: true
     gateway:
       enabled: true
   metrics:
     tags:
       application: ${spring.application.name}
 
-# Resilience4j Circuit Breaker Configuration
 resilience4j:
   circuitbreaker:
     configs:
@@ -289,7 +350,6 @@ resilience4j:
         waitDurationInOpenState: 30s
         permittedNumberOfCallsInHalfOpenState: 3
         automaticTransitionFromOpenToHalfOpenEnabled: true
-        # B7 FIX: Use WebFlux exceptions, not Spring MVC exceptions
         recordExceptions:
           - org.springframework.cloud.gateway.filter.factory.SpringCloudCircuitBreakerFilterFactory$CircuitBreakerStatusCodeException
           - org.springframework.web.reactive.function.client.WebClientResponseException
@@ -317,13 +377,11 @@ resilience4j:
         minimumNumberOfCalls: 5
         failureRateThreshold: 50
         waitDurationInOpenState: 30s
-
   timelimiter:
     configs:
       default:
         timeoutDuration: 5s
 
-# Service URLs for API composition and routing
 services:
   order-service:
     url: ${ORDER_SERVICE_URL:http://localhost:8081}
@@ -340,7 +398,6 @@ services:
   order-history-service:
     url: ${ORDER_HISTORY_SERVICE_URL:http://localhost:8087}
 
-# WebClient configuration for API composition
 webclient:
   connect-timeout-ms: 3000
   read-timeout-ms: 5000
