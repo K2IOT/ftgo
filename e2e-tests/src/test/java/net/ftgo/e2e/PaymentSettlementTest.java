@@ -4,7 +4,10 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import net.ftgo.e2e.support.TestIdentityProvider;
 import org.awaitility.Awaitility;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 
@@ -19,6 +22,8 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
@@ -44,8 +49,31 @@ class PaymentSettlementTest {
     private static final String DB_USER = "ftgo_user";
     private static final String DB_PASSWORD = "ftgo_password";
 
+    private static TestIdentityProvider identityProvider;
+    private static String adminToken;
+    private static String consumerToken;
+
+    @BeforeAll
+    static void startIdentityProvider() throws Exception {
+        identityProvider = TestIdentityProvider.start(19000);
+        adminToken = identityProvider.issueToken(
+            "phase02b-admin",
+            List.of("ADMIN"),
+            List.of("ftgo-api"),
+            Map.of(),
+            Duration.ofMinutes(30)
+        );
+    }
+
+    @AfterAll
+    static void stopIdentityProvider() {
+        if (identityProvider != null) {
+            identityProvider.close();
+        }
+    }
+
     @Test
-    void capturePartialRefundDuplicateOverRefundReconcileAndRepair() {
+    void capturePartialRefundDuplicateOverRefundReconcileAndRepair() throws Exception {
         Fixture fixture = createFixture(new BigDecimal("1000.00"), new BigDecimal("25.00"));
         long orderId = createOrder(fixture, "tok_phase02b");
         long ticketId = awaitTicket(orderId, fixture.restaurantId());
@@ -133,7 +161,8 @@ class PaymentSettlementTest {
             "POST",
             ACCOUNTING_URL + "/api/admin/payment-settlement/authorizations/"
                 + authorizationId + "/refunds",
-            overRefund
+            overRefund,
+            adminToken
         );
         assertThat(rejected.statusCode()).isEqualTo(400);
         assertThat(parse(rejected.body()).path("message").asText())
@@ -195,14 +224,37 @@ class PaymentSettlementTest {
             )).isZero());
     }
 
-    private Fixture createFixture(BigDecimal creditLimit, BigDecimal price) {
+    private Fixture createFixture(BigDecimal creditLimit, BigDecimal price) throws Exception {
         String suffix = UUID.randomUUID().toString().replace("-", "").substring(0, 12);
 
         ObjectNode consumer = JSON.createObjectNode();
         consumer.put("name", "Phase02B Consumer " + suffix);
         consumer.put("email", "phase02b-" + suffix + "@example.test");
-        consumer.put("creditLimit", creditLimit);
         long consumerId = post(CONSUMER_URL + "/consumers", consumer).path("id").asLong();
+
+        ObjectNode creditLimitRequest = JSON.createObjectNode();
+        creditLimitRequest.put("creditLimit", creditLimit);
+        HttpResponse<String> creditLimitResponse = send(
+            "PUT",
+            CONSUMER_URL + "/admin/consumers/" + consumerId + "/credit-limit",
+            creditLimitRequest,
+            adminToken
+        );
+        assertThat(creditLimitResponse.statusCode())
+            .withFailMessage(
+                "Credit limit update failed: status=%s body=%s",
+                creditLimitResponse.statusCode(),
+                creditLimitResponse.body()
+            )
+            .isEqualTo(200);
+
+        consumerToken = identityProvider.issueToken(
+            "consumer-" + consumerId,
+            List.of("CONSUMER"),
+            List.of("ftgo-api"),
+            Map.of("consumer_id", consumerId),
+            Duration.ofMinutes(30)
+        );
 
         ObjectNode address = JSON.createObjectNode();
         address.put("street", "1 Settlement Street");
@@ -297,7 +349,7 @@ class PaymentSettlementTest {
     }
 
     private JsonNode get(String url) {
-        HttpResponse<String> response = send("GET", url, null);
+        HttpResponse<String> response = send("GET", url, null, tokenFor(url));
         assertThat(response.statusCode())
             .withFailMessage("GET %s failed: status=%s body=%s", url, response.statusCode(), response.body())
             .isBetween(200, 299);
@@ -305,7 +357,7 @@ class PaymentSettlementTest {
     }
 
     private JsonNode post(String url, JsonNode body) {
-        HttpResponse<String> response = send("POST", url, body);
+        HttpResponse<String> response = send("POST", url, body, tokenFor(url));
         assertThat(response.statusCode())
             .withFailMessage("POST %s failed: status=%s body=%s", url, response.statusCode(), response.body())
             .isBetween(200, 299);
@@ -314,11 +366,24 @@ class PaymentSettlementTest {
             : parse(response.body());
     }
 
-    private HttpResponse<String> send(String method, String url, JsonNode body) {
+    private String tokenFor(String url) {
+        if (url.startsWith(ORDER_URL)) {
+            if (consumerToken == null) {
+                throw new IllegalStateException("Consumer token is not initialized");
+            }
+            return consumerToken;
+        }
+        return adminToken;
+    }
+
+    private HttpResponse<String> send(String method, String url, JsonNode body, String token) {
         try {
             HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url))
                 .timeout(Duration.ofSeconds(20))
                 .header("Content-Type", "application/json");
+            if (token != null) {
+                builder.header("Authorization", "Bearer " + token);
+            }
             if ("GET".equals(method)) {
                 builder.GET();
             } else {
