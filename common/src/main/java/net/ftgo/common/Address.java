@@ -5,6 +5,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.Embeddable;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 
 import java.util.Objects;
 
@@ -14,25 +15,29 @@ import java.util.Objects;
  */
 @Embeddable
 public class Address {
-    
+
     @NotBlank
+    @Size(max = 200)
     private String street;
-    
+
     @NotBlank
+    @Size(max = 100)
     private String city;
-    
+
     @NotBlank
+    @Size(max = 100)
     private String state;
-    
+
     @NotBlank
+    @Size(max = 20)
     private String zipCode;
-    
+
     /**
      * Default constructor for JPA.
      */
     protected Address() {
     }
-    
+
     @JsonCreator
     public Address(
             @JsonProperty("street") String street,
@@ -56,28 +61,28 @@ public class Address {
         this.state = state;
         this.zipCode = zipCode;
     }
-    
+
     public String getStreet() {
         return street;
     }
-    
+
     public String getCity() {
         return city;
     }
-    
+
     public String getState() {
         return state;
     }
-    
+
     public String getZipCode() {
         return zipCode;
     }
-    
+
     @JsonIgnore
     public String getFullAddress() {
         return String.format("%s, %s, %s %s", street, city, state, zipCode);
     }
-    
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
@@ -88,12 +93,12 @@ public class Address {
                 Objects.equals(state, address.state) &&
                 Objects.equals(zipCode, address.zipCode);
     }
-    
+
     @Override
     public int hashCode() {
         return Objects.hash(street, city, state, zipCode);
     }
-    
+
     @Override
     public String toString() {
         return getFullAddress();
