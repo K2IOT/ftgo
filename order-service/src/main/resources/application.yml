@@ -55,6 +55,8 @@ ftgo:
   security:
     public-audience: ${FTGO_SECURITY_PUBLIC_AUDIENCE:ftgo-api}
     internal-audience: ${FTGO_SECURITY_INTERNAL_AUDIENCE:ftgo-internal}
+  order:
+    max-scheduling-window: ${FTGO_ORDER_MAX_SCHEDULING_WINDOW:PT168H}
 
 server:
   port: 8081
