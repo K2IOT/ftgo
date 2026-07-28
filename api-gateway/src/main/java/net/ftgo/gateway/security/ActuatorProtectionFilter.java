@@ -68,7 +68,7 @@ public final class ActuatorProtectionFilter implements WebFilter {
                 return chain.filter(exchange)
                     .contextWrite(ReactiveSecurityContextHolder.withAuthentication(authenticated));
             })
-            .switchIfEmpty(unauthorized(exchange));
+            .switchIfEmpty(Mono.defer(() -> unauthorized(exchange)));
     }
 
     private String bearerToken(String authorization) {
