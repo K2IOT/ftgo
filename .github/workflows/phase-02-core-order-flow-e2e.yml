@@ -65,9 +65,29 @@ jobs:
         run: docker compose -f deployment/tests/docker-compose.core-order-flow.yml config --quiet
 
       - name: Run two clean-state core order flow cycles
+        shell: bash
         run: |
           chmod +x gradlew scripts/smoke/verify-core-order-flow.sh
-          bash scripts/smoke/verify-core-order-flow.sh --runs 2
+          set +e
+          bash scripts/smoke/verify-core-order-flow.sh --runs 2 \
+            >/tmp/core-order-flow-e2e.log 2>&1
+          status=$?
+          set -e
+
+          if [ "$status" -ne 0 ]; then
+            echo 'CORE_E2E_JUNIT_FAILURES'
+            python3 scripts/ci/summarize-junit-failures.py e2e-tests || true
+            echo 'CORE_E2E_RUNNER_TAIL'
+            tail -n 160 core-order-flow-e2e-logs/runner.log 2>/dev/null || true
+            echo 'CORE_E2E_SERVICE_ERRORS'
+            grep -R -E 'ERROR|Exception|Caused by:|401|403|409|500' \
+              core-order-flow-e2e-logs/run-*/*.log 2>/dev/null | tail -n 120 || true
+            echo 'CORE_E2E_COMMAND_TAIL'
+            tail -n 160 /tmp/core-order-flow-e2e.log || true
+          else
+            echo 'Core order flow E2E completed successfully.'
+          fi
+          exit "$status"
 
       - name: Upload core order flow diagnostics
         if: always()
