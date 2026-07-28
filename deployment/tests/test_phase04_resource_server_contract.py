@@ -82,6 +82,23 @@ class Phase04ResourceServerContractTest(unittest.TestCase):
             "Admin consumer route must be evaluated before the general consumer route",
         )
 
+    def test_gateway_declares_request_and_forwarded_header_hardening(self):
+        configuration = (ROOT / "api-gateway/src/main/resources/application.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("maxSize: 256KB", configuration)
+        self.assertNotIn("maxSize: 10MB", configuration)
+        self.assertIn("max-in-memory-size: 256KB", configuration)
+        self.assertIn("forward-headers-strategy: none", configuration)
+        self.assertIn("trusted-proxies: ${FTGO_GATEWAY_TRUSTED_PROXIES:}", configuration)
+
+        security = (ROOT / "api-gateway/src/main/java/net/ftgo/gateway/security/SecurityConfiguration.java").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('"/actuator/health/liveness"', security)
+        self.assertIn('"/actuator/health/readiness"', security)
+        self.assertIn('.pathMatchers("/actuator/**").hasRole("ADMIN")', security)
+
 
 if __name__ == "__main__":
     unittest.main()
