@@ -1,11 +1,14 @@
 package net.ftgo.gateway.security;
 
+import net.ftgo.gateway.config.GatewayConfiguration;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
 import org.springframework.mock.http.server.reactive.MockServerHttpRequest;
 import org.springframework.mock.web.server.MockServerWebExchange;
+import org.springframework.security.authentication.TestingAuthenticationToken;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
+import reactor.test.StepVerifier;
 
 import java.net.InetSocketAddress;
 import java.util.concurrent.atomic.AtomicReference;
@@ -52,6 +55,38 @@ class ForwardedHeaderPolicyTest {
         MockServerWebExchange exchange = exchange("10.1.2.3", "attacker.example");
 
         assertThat(policy.resolveClientAddress(exchange)).isEqualTo("10.1.2.3");
+    }
+
+    @Test
+    void rateLimitResolverUsesSanitizedAddressForAnonymousRequest() {
+        ForwardedHeaderPolicy policy = new ForwardedHeaderPolicy("10.0.0.0/8");
+        GatewayConfiguration configuration = new GatewayConfiguration();
+
+        StepVerifier.create(configuration.userKeyResolver(policy).resolve(exchange(
+                "203.0.113.9",
+                "198.51.100.7"
+            )))
+            .expectNext("203.0.113.9")
+            .verifyComplete();
+    }
+
+    @Test
+    void rateLimitResolverPrefersAuthenticatedSubject() {
+        ForwardedHeaderPolicy policy = new ForwardedHeaderPolicy("");
+        GatewayConfiguration configuration = new GatewayConfiguration();
+        TestingAuthenticationToken authentication = new TestingAuthenticationToken(
+            "consumer-101",
+            "",
+            "ROLE_CONSUMER"
+        );
+        ServerWebExchange authenticated = exchange("203.0.113.9", "198.51.100.7")
+            .mutate()
+            .principal(Mono.just(authentication))
+            .build();
+
+        StepVerifier.create(configuration.userKeyResolver(policy).resolve(authenticated))
+            .expectNext("consumer-101")
+            .verifyComplete();
     }
 
     private MockServerWebExchange exchange(String remoteAddress, String forwardedFor) {
