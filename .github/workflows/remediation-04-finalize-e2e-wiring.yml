@@ -24,20 +24,22 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
+          import re
 
           distributed = Path('e2e-tests/src/test/java/net/ftgo/e2e/DistributedConsistencyTest.java')
           text = distributed.read_text(encoding='utf-8')
-          bad = '''        if ((ORDER_URL + "/orders").equals(url)) {
-          builder.header("Idempotency-Key", "distributed-consistency-" + UUID.randomUUID());
-          }
-          '''
-          good = '''        if ((ORDER_URL + "/orders").equals(url)) {
+          pattern = re.compile(
+              r'        if \(\(ORDER_URL \+ "/orders"\)\.equals\(url\)\) \{\s*'
+              r'builder\.header\("Idempotency-Key", "distributed-consistency-" \+ UUID\.randomUUID\(\)\);\s*'
+              r'\}'
+          )
+          replacement = '''        if ((ORDER_URL + "/orders").equals(url)) {
               builder.header("Idempotency-Key", "distributed-consistency-" + UUID.randomUUID());
-          }
-          '''
-          if text.count(bad) != 1:
-              raise SystemExit(f'expected one distributed indentation match, found {text.count(bad)}')
-          distributed.write_text(text.replace(bad, good), encoding='utf-8')
+          }'''
+          text, matches = pattern.subn(replacement, text)
+          if matches != 1:
+              raise SystemExit(f'expected one distributed indentation match, found {matches}')
+          distributed.write_text(text, encoding='utf-8')
 
           smoke = Path('scripts/smoke/verify-core-order-flow.sh')
           script = smoke.read_text(encoding='utf-8')
