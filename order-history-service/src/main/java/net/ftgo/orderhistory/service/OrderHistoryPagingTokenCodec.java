@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
@@ -118,7 +119,7 @@ public class OrderHistoryPagingTokenCodec {
             return new OrderHistoryPageCursor(bucketMonth, payload.driverPagingState());
         } catch (IllegalArgumentException e) {
             throw e;
-        } catch (RuntimeException | JsonProcessingException e) {
+        } catch (RuntimeException | IOException e) {
             throw new IllegalArgumentException("Invalid paging token", e);
         }
     }
