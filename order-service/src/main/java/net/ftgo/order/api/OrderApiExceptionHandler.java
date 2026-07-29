@@ -3,6 +3,9 @@ package net.ftgo.order.api;
 import jakarta.servlet.http.HttpServletRequest;
 import net.ftgo.common.web.FtgoProblemDetail;
 import net.ftgo.common.web.FtgoProblemResponses;
+import net.ftgo.order.idempotency.IdempotencyKeyConflictException;
+import net.ftgo.order.idempotency.IdempotencyRequestInProgressException;
+import net.ftgo.order.idempotency.InvalidIdempotencyKeyException;
 import net.ftgo.order.service.OrderNotFoundException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -46,6 +49,52 @@ public final class OrderApiExceptionHandler {
             "Order intake unavailable",
             "New order intake is temporarily unavailable",
             "ORDER_FLOW_DISABLED",
+            request
+        );
+    }
+
+    @ExceptionHandler(InvalidIdempotencyKeyException.class)
+    ResponseEntity<FtgoProblemDetail> invalidIdempotencyKey(
+        InvalidIdempotencyKeyException error,
+        HttpServletRequest request
+    ) {
+        return FtgoProblemResponses.response(
+            HttpStatus.BAD_REQUEST,
+            "invalid-idempotency-key",
+            "Invalid idempotency key",
+            "A valid Idempotency-Key header is required for order mutations",
+            error.errorCode(),
+            request
+        );
+    }
+
+    @ExceptionHandler(IdempotencyKeyConflictException.class)
+    ResponseEntity<FtgoProblemDetail> idempotencyKeyConflict(
+        IdempotencyKeyConflictException error,
+        HttpServletRequest request
+    ) {
+        logger.warn("Order mutation idempotency conflict");
+        return FtgoProblemResponses.response(
+            HttpStatus.CONFLICT,
+            "idempotency-key-conflict",
+            "Idempotency key conflict",
+            "The idempotency key was already used for a different request",
+            "IDEMPOTENCY_KEY_CONFLICT",
+            request
+        );
+    }
+
+    @ExceptionHandler(IdempotencyRequestInProgressException.class)
+    ResponseEntity<FtgoProblemDetail> idempotencyRequestInProgress(
+        IdempotencyRequestInProgressException error,
+        HttpServletRequest request
+    ) {
+        return FtgoProblemResponses.response(
+            HttpStatus.CONFLICT,
+            "idempotency-request-in-progress",
+            "Request still processing",
+            "A request with this idempotency key is still processing",
+            "IDEMPOTENCY_REQUEST_IN_PROGRESS",
             request
         );
     }
