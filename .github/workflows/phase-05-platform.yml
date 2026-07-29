@@ -31,3 +31,53 @@ jobs:
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       - name: Verify immutable image and infrastructure contracts
         run: python -m unittest deployment.tests.test_phase05_image_contract -v
+      - name: Validate pinned infrastructure Compose
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp deployment/.env.example deployment/.env
+          docker compose --env-file deployment/.env \
+            -f deployment/docker-compose.infra.yml config --quiet
+
+  service-image:
+    needs: immutable-image-contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - api-gateway
+          - order-service
+          - consumer-service
+          - restaurant-service
+          - kitchen-service
+          - accounting-service
+          - delivery-service
+          - order-history-service
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - name: Build ${{ matrix.service }} immutable image
+        shell: bash
+        env:
+          SERVICE: ${{ matrix.service }}
+          VERSION: phase05-${{ github.run_id }}
+          GIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          DOCKER_BUILDKIT=1 docker build \
+            --file docker/service.Dockerfile \
+            --build-arg SERVICE="${SERVICE}" \
+            --build-arg VERSION="${VERSION}" \
+            --build-arg GIT_SHA="${GIT_SHA}" \
+            --tag "ftgo/${SERVICE}:${VERSION}" \
+            .
+      - name: Verify ${{ matrix.service }} runtime image
+        shell: bash
+        env:
+          SERVICE: ${{ matrix.service }}
+          VERSION: phase05-${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          bash scripts/build/verify-image.sh "ftgo/${SERVICE}:${VERSION}"
