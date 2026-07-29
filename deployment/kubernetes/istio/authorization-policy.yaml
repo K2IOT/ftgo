@@ -41,6 +41,8 @@ spec:
     - from:
         - source:
             principals:
+              - cluster.local/ns/ftgo-dev/sa/api-gateway
+              - cluster.local/ns/ftgo-staging/sa/api-gateway
               - cluster.local/ns/ftgo-production/sa/api-gateway
               - cluster.local/ns/monitoring/sa/prometheus
       to:
@@ -63,6 +65,8 @@ spec:
     - from:
         - source:
             principals:
+              - cluster.local/ns/ftgo-dev/sa/api-gateway
+              - cluster.local/ns/ftgo-staging/sa/api-gateway
               - cluster.local/ns/ftgo-production/sa/api-gateway
       to:
         - operation:
@@ -71,6 +75,8 @@ spec:
     - from:
         - source:
             principals:
+              - cluster.local/ns/ftgo-dev/sa/order-service
+              - cluster.local/ns/ftgo-staging/sa/order-service
               - cluster.local/ns/ftgo-production/sa/order-service
       to:
         - operation:
@@ -99,6 +105,8 @@ spec:
     - from:
         - source:
             principals:
+              - cluster.local/ns/ftgo-dev/sa/api-gateway
+              - cluster.local/ns/ftgo-staging/sa/api-gateway
               - cluster.local/ns/ftgo-production/sa/api-gateway
       to:
         - operation:
@@ -107,6 +115,8 @@ spec:
     - from:
         - source:
             principals:
+              - cluster.local/ns/ftgo-dev/sa/order-service
+              - cluster.local/ns/ftgo-staging/sa/order-service
               - cluster.local/ns/ftgo-production/sa/order-service
       to:
         - operation:
@@ -135,7 +145,11 @@ spec:
     - from:
         - source:
             principals:
+              - cluster.local/ns/ftgo-dev/sa/api-gateway
+              - cluster.local/ns/ftgo-staging/sa/api-gateway
               - cluster.local/ns/ftgo-production/sa/api-gateway
+              - cluster.local/ns/ftgo-dev/sa/order-service
+              - cluster.local/ns/ftgo-staging/sa/order-service
               - cluster.local/ns/ftgo-production/sa/order-service
       to:
         - operation:
