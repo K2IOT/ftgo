@@ -403,6 +403,9 @@ class PaymentSettlementTest {
             if (token != null) {
                 builder.header("Authorization", "Bearer " + token);
             }
+            if ("POST".equals(method) && (ORDER_URL + "/orders").equals(url)) {
+                builder.header("Idempotency-Key", "payment-settlement-" + UUID.randomUUID());
+            }
             if ("GET".equals(method)) {
                 builder.GET();
             } else {
