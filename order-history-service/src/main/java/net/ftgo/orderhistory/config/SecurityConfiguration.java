@@ -1,17 +1,15 @@
 package net.ftgo.orderhistory.config;
 
+import net.ftgo.common.security.FtgoAuthorizationManagers;
 import net.ftgo.common.security.FtgoJwtAuthenticationConverter;
 import net.ftgo.common.security.FtgoJwtDecoders;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.security.authorization.AuthorizationDecision;
-import org.springframework.security.authorization.AuthorizationManager;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.access.intercept.RequestAuthorizationContext;
 
 import java.util.List;
 
@@ -22,6 +20,7 @@ public class SecurityConfiguration {
     @Bean
     SecurityFilterChain securityFilterChain(
         HttpSecurity http,
+        @Value("${ftgo.security.public-audience:ftgo-api}") String publicAudience,
         @Value("${ftgo.security.internal-audience:ftgo-internal}") String internalAudience
     ) throws Exception {
         return http
@@ -31,10 +30,16 @@ public class SecurityConfiguration {
                     "/actuator/health/liveness",
                     "/actuator/health/readiness"
                 ).permitAll()
-                .requestMatchers("/internal/**").access(internalServiceAccess(internalAudience))
+                .requestMatchers("/internal/**")
+                    .access(FtgoAuthorizationManagers.internalService(internalAudience))
                 .requestMatchers("/actuator/**").hasAnyRole("ADMIN", "SERVICE")
-                .requestMatchers("/api/**").hasAnyRole("CONSUMER", "ADMIN")
-                .anyRequest().authenticated()
+                .requestMatchers("/api/**")
+                    .access(FtgoAuthorizationManagers.publicApi(
+                        publicAudience,
+                        "CONSUMER",
+                        "ADMIN"
+                    ))
+                .anyRequest().denyAll()
             )
             .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt ->
                 jwt.jwtAuthenticationConverter(new FtgoJwtAuthenticationConverter(""))
@@ -50,16 +55,5 @@ public class SecurityConfiguration {
         @Value("${ftgo.security.internal-audience:ftgo-internal}") String internalAudience
     ) {
         return FtgoJwtDecoders.create(issuerUri, jwkSetUri, List.of(publicAudience, internalAudience));
-    }
-
-    private AuthorizationManager<RequestAuthorizationContext> internalServiceAccess(String internalAudience) {
-        return (authentication, context) -> {
-            var authorities = authentication.get().getAuthorities();
-            boolean serviceRole = authorities.stream()
-                .anyMatch(authority -> authority.getAuthority().equals("ROLE_SERVICE"));
-            boolean internalToken = authorities.stream()
-                .anyMatch(authority -> authority.getAuthority().equals("AUD_" + internalAudience));
-            return new AuthorizationDecision(serviceRole && internalToken);
-        };
     }
 }
