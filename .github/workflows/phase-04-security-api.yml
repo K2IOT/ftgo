@@ -16,7 +16,7 @@ on:
       - 'e2e-tests/**'
       - 'deployment/tests/test_phase04_*.py'
       - '.github/workflows/phase-04-security-api.yml'
-    
+
   workflow_dispatch:
 
 permissions:
@@ -171,6 +171,12 @@ jobs:
             --tests '*ConsumerControllerAuthorizationTest' \
             --tests '*ConsumerAdminControllerTest' \
             --no-daemon --stacktrace
+      - name: Verify order history ownership
+        run: |
+          ./gradlew :order-history-service:test \
+            --tests '*OrderHistoryAuthorizationServiceTest' \
+            --tests '*OrderHistoryControllerAuthorizationTest' \
+            --no-daemon --stacktrace
       - name: Upload ownership diagnostics
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -188,6 +194,8 @@ jobs:
             restaurant-service/build/test-results/**
             kitchen-service/build/reports/tests/**
             kitchen-service/build/test-results/**
+            order-history-service/build/reports/tests/**
+            order-history-service/build/test-results/**
 
   gateway-composition-security-contract:
     runs-on: ubuntu-latest
