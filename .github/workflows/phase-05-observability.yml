@@ -44,5 +44,5 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew --no-daemon :common:test \
-            --tests 'net.ftgo.common.observability.CorrelationContextTest' \
+            --tests 'net.ftgo.common.observability.CorrelationContext*Test' \
             --stacktrace
