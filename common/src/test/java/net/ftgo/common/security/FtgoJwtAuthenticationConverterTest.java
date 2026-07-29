@@ -13,6 +13,7 @@ import java.util.Map;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -60,7 +61,7 @@ class FtgoJwtAuthenticationConverterTest {
     }
 
     @Test
-    void mapsCourierIdentityAndLegacyAuthoritiesClaim() {
+    void authoritiesClaimDoesNotGrantApplicationRole() {
         AbstractAuthenticationToken authentication = convert(jwt(
             "courier-user",
             List.of("ftgo-api"),
@@ -72,22 +73,34 @@ class FtgoJwtAuthenticationConverterTest {
 
         Object principal = authentication.getPrincipal();
         assertEquals(77L, principalValue(principal, "courierId"));
-        assertEquals(Set.of("COURIER"), principalValue(principal, "roles"));
-        assertAuthority(authentication, "ROLE_COURIER");
+        assertEquals(Set.of(), principalValue(principal, "roles"));
+        assertFalse(authorityNames(authentication).contains("ROLE_COURIER"));
     }
 
     @Test
-    void mapsAdminRoleFromScopeClaim() {
+    void scopeDoesNotGrantAdminOrServiceRole() {
         AbstractAuthenticationToken authentication = convert(jwt(
-            "admin-user",
+            "user",
             List.of("ftgo-api", "ftgo-internal"),
-            Map.of("scope", "ADMIN")
+            Map.of("scope", "openid ADMIN SERVICE")
         ));
 
         Object principal = authentication.getPrincipal();
-        assertEquals(Set.of("ADMIN"), principalValue(principal, "roles"));
+        assertEquals(Set.of(), principalValue(principal, "roles"));
         assertEquals(Set.of("ftgo-api", "ftgo-internal"), principalValue(principal, "audiences"));
-        assertAuthority(authentication, "ROLE_ADMIN");
+        assertFalse(authorityNames(authentication).contains("ROLE_ADMIN"));
+        assertFalse(authorityNames(authentication).contains("ROLE_SERVICE"));
+    }
+
+    @Test
+    void rejectsUnknownApplicationRole() {
+        BadJwtException error = assertThrows(BadJwtException.class, () -> convert(jwt(
+            "user",
+            List.of("ftgo-api"),
+            Map.of("roles", List.of("SUPERUSER"))
+        )));
+
+        assertTrue(error.getMessage().contains("SUPERUSER"));
     }
 
     @Test
@@ -157,10 +170,14 @@ class FtgoJwtAuthenticationConverterTest {
         }
     }
 
-    private void assertAuthority(AbstractAuthenticationToken authentication, String expected) {
-        Collection<String> authorities = authentication.getAuthorities().stream()
+    private Collection<String> authorityNames(AbstractAuthenticationToken authentication) {
+        return authentication.getAuthorities().stream()
             .map(authority -> authority.getAuthority())
             .toList();
+    }
+
+    private void assertAuthority(AbstractAuthenticationToken authentication, String expected) {
+        Collection<String> authorities = authorityNames(authentication);
         assertTrue(authorities.contains(expected), () -> "Missing authority " + expected + " in " + authorities);
     }
 }
