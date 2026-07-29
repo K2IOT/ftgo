@@ -1,0 +1,28 @@
+name: Remediation 04 Order Idempotency
+
+on:
+  pull_request:
+    branches: [dev]
+    paths:
+      - 'order-service/**'
+      - 'deployment/tests/test_phase04_order_idempotency_contract.py'
+      - '.github/workflows/remediation-04-order-idempotency.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract-and-focused-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+      - name: Verify migration contract
+        run: python -m unittest deployment.tests.test_phase04_order_idempotency_contract -v
+      - name: Verify focused idempotency tests
+        run: ./gradlew :order-service:test --tests '*Idempotency*Test' --no-daemon --stacktrace
