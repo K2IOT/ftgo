@@ -1,0 +1,33 @@
+name: Phase 05 Platform and Observability
+
+on:
+  pull_request:
+    branches: [dev]
+    paths:
+      - 'docker/**'
+      - '.dockerignore'
+      - '.gitignore'
+      - 'scripts/build/**'
+      - 'deployment/docker-compose.infra.yml'
+      - 'deployment/.env.example'
+      - 'deployment/tests/test_phase05_*.py'
+      - 'docs/runbooks/image-build.md'
+      - '.github/workflows/phase-05-platform.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: phase-05-platform-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  immutable-image-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - name: Verify immutable image and infrastructure contracts
+        run: python -m unittest deployment.tests.test_phase05_image_contract -v
