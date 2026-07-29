@@ -22,6 +22,10 @@ ftgo:
   security:
     public-audience: ${FTGO_SECURITY_PUBLIC_AUDIENCE:ftgo-api}
     internal-audience: ${FTGO_SECURITY_INTERNAL_AUDIENCE:ftgo-internal}
+  order-history:
+    paging-secret: ${FTGO_ORDER_HISTORY_PAGING_SECRET:}
+    paging-token-ttl: ${FTGO_ORDER_HISTORY_PAGING_TOKEN_TTL:PT15M}
+    max-bucket-reads: ${FTGO_ORDER_HISTORY_MAX_BUCKET_READS:24}
 
 server:
   port: 8087
