@@ -32,17 +32,20 @@ public class CassandraOrderHistoryQueryStore implements OrderHistoryQueryStore {
     private final OrderHistoryByConsumerStatusRepository statusRepository;
     private final OrderHistoryByConsumerRestaurantRepository restaurantRepository;
     private final int historyMonths;
+    private final int maxBucketReads;
 
     public CassandraOrderHistoryQueryStore(
         OrderHistoryByConsumerRepository consumerRepository,
         OrderHistoryByConsumerStatusRepository statusRepository,
         OrderHistoryByConsumerRestaurantRepository restaurantRepository,
-        @Value("${ftgo.order-history.query-history-months:120}") int historyMonths
+        @Value("${ftgo.order-history.query-history-months:120}") int historyMonths,
+        @Value("${ftgo.order-history.max-bucket-reads:24}") int maxBucketReads
     ) {
         this.consumerRepository = consumerRepository;
         this.statusRepository = statusRepository;
         this.restaurantRepository = restaurantRepository;
         this.historyMonths = Math.max(1, historyMonths);
+        this.maxBucketReads = Math.max(1, maxBucketReads);
     }
 
     @Override
@@ -60,9 +63,15 @@ public class CassandraOrderHistoryQueryStore implements OrderHistoryQueryStore {
             : YearMonth.from(criteria.since());
 
         List<OrderHistoryRecord> records = new ArrayList<>(pageSize);
-        while (records.size() < pageSize && !currentMonth.isBefore(lowerBound)) {
+        int bucketReads = 0;
+        while (
+            records.size() < pageSize
+                && !currentMonth.isBefore(lowerBound)
+                && bucketReads < maxBucketReads
+        ) {
             int remaining = pageSize - records.size();
             CassandraPageRequest request = pageRequest(remaining, driverState);
+            bucketReads++;
             Slice<? extends OrderHistoryQueryRow> slice = queryBucket(
                 criteria,
                 currentMonth,
@@ -92,7 +101,10 @@ public class CassandraOrderHistoryQueryStore implements OrderHistoryQueryStore {
                 return new QueryPage(records, next);
             }
         }
-        return new QueryPage(records, null);
+        OrderHistoryPageCursor continuation = currentMonth.isBefore(lowerBound)
+            ? null
+            : new OrderHistoryPageCursor(currentMonth, null);
+        return new QueryPage(records, continuation);
     }
 
     private Slice<? extends OrderHistoryQueryRow> queryBucket(
