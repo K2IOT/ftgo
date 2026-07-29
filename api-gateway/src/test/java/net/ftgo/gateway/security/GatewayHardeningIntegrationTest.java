@@ -15,7 +15,10 @@ import java.util.List;
 
 import static org.mockito.Mockito.when;
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(
+    webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+    properties = "logging.level.org.springframework.security=TRACE"
+)
 class GatewayHardeningIntegrationTest {
 
     @Autowired
