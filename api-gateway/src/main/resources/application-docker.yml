@@ -9,6 +9,14 @@ spring:
         jwt:
           issuer-uri: ${JWT_ISSUER_URI:http://auth-server:9000}
 
+ftgo:
+  gateway:
+    cors:
+      allowed-origins: "${FTGO_CORS_ALLOWED_ORIGINS:}"
+      allowed-methods: "${FTGO_CORS_ALLOWED_METHODS:GET,POST,PUT,DELETE,PATCH,OPTIONS}"
+      allow-credentials: ${FTGO_CORS_ALLOW_CREDENTIALS:false}
+      max-age: ${FTGO_CORS_MAX_AGE:1h}
+
 services:
   order-service:
     url: http://order-service:8081
