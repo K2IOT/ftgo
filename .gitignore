@@ -50,6 +50,8 @@ hs_err_pid*
 spring-boot-devtools.properties
 
 # Secrets (never commit)
+.env
+deployment/.env
 *.key
 *.pem
 *.p12
