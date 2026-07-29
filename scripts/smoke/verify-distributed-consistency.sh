@@ -167,6 +167,7 @@ start_order_history() {
     SPRING_CASSANDRA_LOCAL_DATACENTER=datacenter1
     SPRING_CASSANDRA_SCHEMA_ACTION=CREATE_IF_NOT_EXISTS
     SPRING_KAFKA_BOOTSTRAP_SERVERS=localhost:29092
+    FTGO_ORDER_HISTORY_PAGING_SECRET=test-order-history-paging-secret-32-bytes
     java -jar "${jar}"
   )
   write_restart_script "${restart_file}" "${pid_file}" "${log_file}" "${command[@]}"
