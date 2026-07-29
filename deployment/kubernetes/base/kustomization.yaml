@@ -16,3 +16,6 @@ resources:
   - availability/pod-disruption-budgets.yaml
   - autoscaling/gateway-hpa.yaml
   - autoscaling/keda-kafka-consumers.yaml
+  - secrets/cluster-secret-store.yaml
+  - network-policies/default-deny.yaml
+  - network-policies/service-allow-list.yaml
