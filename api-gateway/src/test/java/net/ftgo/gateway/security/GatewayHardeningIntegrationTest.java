@@ -4,11 +4,16 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.http.HttpHeaders;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder;
 import org.springframework.test.web.reactive.server.WebTestClient;
+import reactor.core.publisher.Mono;
 
-import static org.springframework.security.test.web.reactive.server.SecurityMockServerConfigurers.mockJwt;
+import java.time.Instant;
+import java.util.List;
+
+import static org.mockito.Mockito.when;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class GatewayHardeningIntegrationTest {
@@ -48,25 +53,50 @@ class GatewayHardeningIntegrationTest {
 
     @Test
     void internalAudienceOnlyCannotAccessPublicOrderRoute() {
-        webTestClient.mutateWith(mockJwt().authorities(
-                new SimpleGrantedAuthority("ROLE_CONSUMER"),
-                new SimpleGrantedAuthority("AUD_ftgo-internal")
-            ))
-            .get()
+        when(jwtDecoder.decode("internal-consumer-token")).thenReturn(Mono.just(jwt(
+            "internal-consumer-token",
+            "consumer-user",
+            List.of("CONSUMER"),
+            List.of("ftgo-internal")
+        )));
+
+        webTestClient.get()
             .uri("/orders/security-probe")
+            .header(HttpHeaders.AUTHORIZATION, "Bearer internal-consumer-token")
             .exchange()
             .expectStatus().isForbidden();
     }
 
     @Test
     void authenticatedUnknownRouteIsDenied() {
-        webTestClient.mutateWith(mockJwt().authorities(
-                new SimpleGrantedAuthority("ROLE_ADMIN"),
-                new SimpleGrantedAuthority("AUD_ftgo-api")
-            ))
-            .get()
+        when(jwtDecoder.decode("admin-token")).thenReturn(Mono.just(jwt(
+            "admin-token",
+            "admin-user",
+            List.of("ADMIN"),
+            List.of("ftgo-api")
+        )));
+
+        webTestClient.get()
             .uri("/security/unknown")
+            .header(HttpHeaders.AUTHORIZATION, "Bearer admin-token")
             .exchange()
             .expectStatus().isForbidden();
+    }
+
+    private Jwt jwt(
+        String tokenValue,
+        String subject,
+        List<String> roles,
+        List<String> audiences
+    ) {
+        Instant now = Instant.now();
+        return Jwt.withTokenValue(tokenValue)
+            .header("alg", "RS256")
+            .subject(subject)
+            .issuedAt(now)
+            .expiresAt(now.plusSeconds(300))
+            .audience(audiences)
+            .claim("roles", roles)
+            .build();
     }
 }
