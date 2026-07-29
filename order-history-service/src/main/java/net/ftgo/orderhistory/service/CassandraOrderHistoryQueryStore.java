@@ -15,7 +15,6 @@ import org.springframework.data.domain.Slice;
 import org.springframework.stereotype.Component;
 
 import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.time.ZoneOffset;
@@ -50,13 +49,12 @@ public class CassandraOrderHistoryQueryStore implements OrderHistoryQueryStore {
     public QueryPage fetch(
         OrderHistoryQueryCriteria criteria,
         int pageSize,
-        String pagingState
+        OrderHistoryPageCursor cursor
     ) {
-        Cursor cursor = decodeCursor(pagingState);
         YearMonth currentMonth = cursor == null
             ? YearMonth.now(ZoneOffset.UTC)
-            : cursor.month();
-        String driverState = cursor == null ? null : cursor.driverState();
+            : cursor.bucketMonth();
+        String driverState = cursor == null ? null : cursor.driverPagingState();
         YearMonth lowerBound = criteria.since() == null
             ? YearMonth.now(ZoneOffset.UTC).minusMonths(historyMonths - 1L)
             : YearMonth.from(criteria.since());
@@ -79,19 +77,18 @@ public class CassandraOrderHistoryQueryStore implements OrderHistoryQueryStore {
                 .forEach(records::add);
 
             if (slice.hasNext()) {
-                String nextState = nextDriverState(slice);
                 return new QueryPage(
                     records,
-                    encodeCursor(new Cursor(currentMonth, nextState))
+                    new OrderHistoryPageCursor(currentMonth, nextDriverState(slice))
                 );
             }
 
             currentMonth = currentMonth.minusMonths(1);
             driverState = null;
             if (records.size() == pageSize) {
-                String next = currentMonth.isBefore(lowerBound)
+                OrderHistoryPageCursor next = currentMonth.isBefore(lowerBound)
                     ? null
-                    : encodeCursor(new Cursor(currentMonth, null));
+                    : new OrderHistoryPageCursor(currentMonth, null);
                 return new QueryPage(records, next);
             }
         }
@@ -161,34 +158,5 @@ public class CassandraOrderHistoryQueryStore implements OrderHistoryQueryStore {
         byte[] bytes = new byte[copy.remaining()];
         copy.get(bytes);
         return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
-    }
-
-    private String encodeCursor(Cursor cursor) {
-        String raw = cursor.month().format(MONTH_FORMAT)
-            + "\n" + (cursor.driverState() == null ? "" : cursor.driverState());
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(
-            raw.getBytes(StandardCharsets.UTF_8)
-        );
-    }
-
-    private Cursor decodeCursor(String token) {
-        if (token == null || token.isBlank()) {
-            return null;
-        }
-        try {
-            String raw = new String(
-                Base64.getUrlDecoder().decode(token),
-                StandardCharsets.UTF_8
-            );
-            String[] parts = raw.split("\\n", 2);
-            YearMonth month = YearMonth.parse(parts[0], MONTH_FORMAT);
-            String state = parts.length == 2 && !parts[1].isBlank() ? parts[1] : null;
-            return new Cursor(month, state);
-        } catch (RuntimeException e) {
-            throw new IllegalArgumentException("Invalid paging token", e);
-        }
-    }
-
-    private record Cursor(YearMonth month, String driverState) {
     }
 }
