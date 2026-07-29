@@ -19,9 +19,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/**
- * Unit tests for DomainEventPublisher.
- */
+/** Unit tests for DomainEventPublisher. */
 @ExtendWith(MockitoExtension.class)
 class DomainEventPublisherTest {
 
@@ -81,15 +79,15 @@ class DomainEventPublisherTest {
         verify(outboxRepository).save(captor.capture());
         JsonNode envelope = new ObjectMapper().readTree(captor.getValue().getPayload());
 
-        assertThat(envelope.at("/metadata/correlationId").asText())
+        assertThat(envelope.at("/correlationId").asText())
             .isEqualTo("corr-outbox-202");
-        assertThat(envelope.at("/metadata/causationId").asText())
+        assertThat(envelope.at("/causationId").asText())
             .isEqualTo("command-202");
-        assertThat(envelope.at("/metadata/trace/traceparent").asText())
+        assertThat(envelope.at("/trace/traceparent").asText())
             .isEqualTo(TRACEPARENT);
-        assertThat(envelope.at("/metadata/trace/tracestate").asText())
+        assertThat(envelope.at("/trace/tracestate").asText())
             .isEqualTo("vendor=value");
-        assertThat(envelope.at("/metadata/trace/baggage").asText())
+        assertThat(envelope.at("/trace/baggage").asText())
             .contains("tenant=t-202")
             .contains("ftgo.correlation_id=corr-outbox-202");
     }
