@@ -50,7 +50,7 @@ public class OrderMutationIdempotencyService {
         ApiIdempotencyStore store,
         ObjectMapper objectMapper
     ) {
-        this(store, objectMapper, null);
+        this(store, objectMapper, (TransactionTemplate) null);
     }
 
     private OrderMutationIdempotencyService(
