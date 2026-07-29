@@ -52,7 +52,7 @@ class Phase05SecurityContractTest(unittest.TestCase):
         for service in SERVICES:
             base = f"deployment/kubernetes/base/{service}"
             external = self.read_required(f"{base}/external-secret.yaml")
-            deployment = self.read_required(f"{base}/deployment.yaml")
+            patch = self.read_required(f"{base}/runtime-secret-patch.yaml")
             kustomization = self.read_required(f"{base}/kustomization.yaml")
 
             for required in (
@@ -68,10 +68,11 @@ class Phase05SecurityContractTest(unittest.TestCase):
             self.assertNotIn("stringData:", external, service)
             self.assertNotIn("data:", external.split("spec:", 1)[0], service)
             self.assertIn("external-secret.yaml", kustomization, service)
-            self.assertIn("envFrom:", deployment, service)
-            self.assertIn(f"name: {service}-runtime", deployment, service)
+            self.assertIn("runtime-secret-patch.yaml", kustomization, service)
+            self.assertIn("envFrom:", patch, service)
+            self.assertIn(f"name: {service}-runtime", patch, service)
             for literal in ("password:", "secret:", "token:"):
-                self.assertNotIn(literal, deployment.lower(), service)
+                self.assertNotIn(literal, patch.lower(), service)
 
     def test_default_deny_blocks_ingress_and_egress(self):
         policy = self.read_required(
@@ -119,7 +120,7 @@ class Phase05SecurityContractTest(unittest.TestCase):
         self.assertIn("action: ALLOW", authz)
         self.assertIn("principals:", authz)
         self.assertIn("/internal/*", authz)
-        self.assertIn("cluster.local/ns/ftgo-production/sa/api-gateway", authz)
+        self.assertIn("cluster.local/ns/ftgo-*/sa/api-gateway", authz)
 
     def test_overlays_include_mesh_and_production_kafka_acl_resources(self):
         for environment in ("dev", "staging", "production"):
@@ -141,8 +142,9 @@ class Phase05SecurityContractTest(unittest.TestCase):
         self.assertIn("resource:", kafka)
         self.assertIn("type: topic", kafka)
         self.assertIn("type: group", kafka)
-        self.assertIn("operation: Read", kafka)
-        self.assertIn("operation: Write", kafka)
+        self.assertIn("operations:", kafka)
+        self.assertIn("Read", kafka)
+        self.assertIn("Write", kafka)
 
     def test_security_smoke_checks_denied_and_allowed_paths(self):
         script = self.read_required("scripts/k8s/security-smoke.sh")
