@@ -3,6 +3,8 @@ kind: Kustomization
 namespace: ftgo-production
 resources:
   - ../../base
+  - ../../istio
+  - kafka-security.yaml
 replicas:
   - name: api-gateway
     count: 3
