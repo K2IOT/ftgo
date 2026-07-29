@@ -8,6 +8,7 @@ import net.ftgo.order.api.CreateOrderRequest;
 import net.ftgo.order.api.OrderLineItemRequest;
 import net.ftgo.order.api.ReviseOrderRequest;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.charset.StandardCharsets;
@@ -38,7 +39,7 @@ public class OrderMutationIdempotencyService {
         this.objectMapper = objectMapper;
     }
 
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public IdempotentResult<String> execute(
         Long consumerId,
         String operation,
