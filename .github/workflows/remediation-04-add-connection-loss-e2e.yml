@@ -1,0 +1,143 @@
+name: Remediation 04 Add Connection Loss E2E
+
+on:
+  pull_request:
+    branches: [dev]
+    paths:
+      - '.github/workflows/remediation-04-add-connection-loss-e2e.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/remediation-04-order-api-idempotency'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/remediation-04-order-api-idempotency
+          fetch-depth: 0
+      - name: Add dropped response and provider assertions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('e2e-tests/src/test/java/net/ftgo/e2e/OrderMutationIdempotencyE2ETest.java')
+          text = path.read_text(encoding='utf-8')
+
+          replacements = [
+              (
+                  'import net.ftgo.e2e.support.TestIdentityProvider;\n',
+                  'import net.ftgo.e2e.support.TestIdentityProvider;\nimport org.awaitility.Awaitility;\n'
+              ),
+              (
+                  'import java.math.BigDecimal;\n',
+                  'import java.io.OutputStream;\nimport java.math.BigDecimal;\n'
+              ),
+              (
+                  'import java.net.URI;\n',
+                  'import java.net.Socket;\nimport java.net.URI;\n'
+              ),
+              (
+                  'import java.sql.ResultSet;\n',
+                  'import java.sql.ResultSet;\nimport java.nio.charset.StandardCharsets;\n'
+              ),
+              (
+                  '        verifyTwentyConcurrentCreatesReplayOneCommittedMutation(fixture);\n    }\n',
+                  '        verifyTwentyConcurrentCreatesReplayOneCommittedMutation(fixture);\n'
+                  '        verifyDroppedResponseRetryReplaysCommittedMutation(fixture);\n'
+                  '    }\n'
+              ),
+              (
+                  '        ObjectNode creditLimit = JSON.createObjectNode().put("creditLimit", "1000.00");\n',
+                  '        ObjectNode creditLimit = JSON.createObjectNode()\n'
+                  '            .put("creditLimit", new BigDecimal("1000.00"));\n'
+              ),
+              (
+                  '        )).isEqualTo(1L);\n    }\n\n    private HttpResponse<String> postOrder(',
+                  '        )).isEqualTo(1L);\n'
+                  '        awaitSingleProviderAuthorization(orderId);\n'
+                  '    }\n\n'
+                  '    private void awaitSingleProviderAuthorization(long orderId) {\n'
+                  '        Awaitility.await()\n'
+                  '            .atMost(60, TimeUnit.SECONDS)\n'
+                  '            .pollInterval(Duration.ofMillis(250))\n'
+                  '            .untilAsserted(() -> assertThat(count(\n'
+                  '                "ftgo_accounting",\n'
+                  '                "SELECT COUNT(*) FROM simulated_provider_operations "\n'
+                  '                    + "WHERE order_id = ? AND operation_type = \'AUTHORIZE\'",\n'
+                  '                orderId\n'
+                  '            )).isEqualTo(1L));\n'
+                  '    }\n\n'
+                  '    private HttpResponse<String> postOrder('
+              )
+          ]
+
+          for old, new in replacements:
+              if text.count(old) != 1:
+                  raise SystemExit(f'expected exactly one replacement anchor: {old!r}, found {text.count(old)}')
+              text = text.replace(old, new)
+
+          method_anchor = '    private Fixture createFixture() throws Exception {\n'
+          connection_loss_methods = '''    private void verifyDroppedResponseRetryReplaysCommittedMutation(Fixture fixture)
+              throws Exception {
+              ObjectNode request = orderRequest(fixture, 1, 5);
+              String key = "remediation-04-dropped-response-" + UUID.randomUUID();
+
+              postAndDropResponse(request, fixture.consumerToken(), key);
+              HttpResponse<String> retry = postOrder(
+                  ORDER_URL,
+                  request,
+                  fixture.consumerToken(),
+                  key
+              );
+
+              assertThat(retry.statusCode()).isEqualTo(201);
+              long orderId = parse(retry.body()).path("orderId").asLong();
+              assertSingleMutationArtifacts(orderId, key);
+          }
+
+          private void postAndDropResponse(
+              JsonNode request,
+              String token,
+              String idempotencyKey
+          ) throws Exception {
+              URI uri = URI.create(ORDER_URL);
+              int port = uri.getPort() > 0 ? uri.getPort() : 80;
+              byte[] payload = JSON.writeValueAsBytes(request);
+              String headers = "POST /orders HTTP/1.1\\r\\n"
+                  + "Host: " + uri.getHost() + ":" + port + "\\r\\n"
+                  + "Authorization: Bearer " + token + "\\r\\n"
+                  + "Idempotency-Key: " + idempotencyKey + "\\r\\n"
+                  + "Content-Type: application/json\\r\\n"
+                  + "Content-Length: " + payload.length + "\\r\\n"
+                  + "Connection: close\\r\\n\\r\\n";
+
+              try (Socket socket = new Socket(uri.getHost(), port);
+                   OutputStream output = socket.getOutputStream()) {
+                  output.write(headers.getBytes(StandardCharsets.US_ASCII));
+                  output.write(payload);
+                  output.flush();
+                  Thread.sleep(100L);
+              }
+          }
+
+          '''
+          if text.count(method_anchor) != 1:
+              raise SystemExit(f'expected one fixture anchor, found {text.count(method_anchor)}')
+          text = text.replace(method_anchor, connection_loss_methods + method_anchor)
+
+          path.write_text(text, encoding='utf-8')
+          Path('.github/workflows/remediation-04-add-connection-loss-e2e.yml').unlink()
+          PY
+      - name: Commit coverage
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add e2e-tests/src/test/java/net/ftgo/e2e/OrderMutationIdempotencyE2ETest.java \
+            .github/workflows/remediation-04-add-connection-loss-e2e.yml
+          git commit -m 'test: cover dropped order mutation responses'
+          git push origin HEAD:agent/remediation-04-order-api-idempotency
