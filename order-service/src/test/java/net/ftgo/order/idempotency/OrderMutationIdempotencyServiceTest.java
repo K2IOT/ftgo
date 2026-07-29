@@ -16,7 +16,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class OrderMutationIdempotencyServiceTest {
 
@@ -33,7 +35,7 @@ class OrderMutationIdempotencyServiceTest {
 
         IdempotentResult<String> first = service.execute(
             101L,
-            "CREATE_ORDER",
+            OrderMutationIdempotencyService.CREATE_ORDER,
             "create-101-1",
             hash,
             () -> {
@@ -43,7 +45,7 @@ class OrderMutationIdempotencyServiceTest {
         );
         IdempotentResult<String> replay = service.execute(
             101L,
-            "CREATE_ORDER",
+            OrderMutationIdempotencyService.CREATE_ORDER,
             "create-101-1",
             hash,
             () -> {
@@ -56,8 +58,79 @@ class OrderMutationIdempotencyServiceTest {
         assertEquals(201, first.httpStatus());
         assertEquals(first.responseBody(), replay.responseBody());
         assertEquals(9001L, replay.resourceId());
-        assertEquals(false, first.replayed());
-        assertEquals(true, replay.replayed());
+        assertFalse(first.replayed());
+        assertTrue(replay.replayed());
+    }
+
+    @Test
+    void duplicateCancelReplaysWithoutStartingSecondMutation() {
+        AtomicInteger mutations = new AtomicInteger();
+        byte[] hash = service.hashCancel(101L, 9001L);
+        String operation = OrderMutationIdempotencyService.cancelOperation(9001L);
+
+        IdempotentResult<String> first = service.execute(
+            101L,
+            operation,
+            "cancel-9001-1",
+            hash,
+            () -> {
+                mutations.incrementAndGet();
+                return null;
+            }
+        );
+        IdempotentResult<String> replay = service.execute(
+            101L,
+            operation,
+            "cancel-9001-1",
+            hash,
+            () -> {
+                mutations.incrementAndGet();
+                return null;
+            }
+        );
+
+        assertEquals(1, mutations.get());
+        assertEquals(200, first.httpStatus());
+        assertEquals(first.responseBody(), replay.responseBody());
+        assertFalse(first.replayed());
+        assertTrue(replay.replayed());
+    }
+
+    @Test
+    void duplicateRevisionReplaysWithoutStartingSecondMutation() {
+        AtomicInteger mutations = new AtomicInteger();
+        ReviseOrderRequest revision = new ReviseOrderRequest(List.of(
+            new OrderLineItemRequest(1L, "Pizza", new Money("20.00"), 2)
+        ));
+        byte[] hash = service.hashRevise(101L, 9001L, revision);
+        String operation = OrderMutationIdempotencyService.reviseOperation(9001L);
+
+        IdempotentResult<String> first = service.execute(
+            101L,
+            operation,
+            "revise-9001-1",
+            hash,
+            () -> {
+                mutations.incrementAndGet();
+                return null;
+            }
+        );
+        IdempotentResult<String> replay = service.execute(
+            101L,
+            operation,
+            "revise-9001-1",
+            hash,
+            () -> {
+                mutations.incrementAndGet();
+                return null;
+            }
+        );
+
+        assertEquals(1, mutations.get());
+        assertEquals(200, first.httpStatus());
+        assertEquals(first.responseBody(), replay.responseBody());
+        assertFalse(first.replayed());
+        assertTrue(replay.replayed());
     }
 
     @Test
@@ -65,7 +138,7 @@ class OrderMutationIdempotencyServiceTest {
         AtomicInteger mutations = new AtomicInteger();
         service.execute(
             101L,
-            "CREATE_ORDER",
+            OrderMutationIdempotencyService.CREATE_ORDER,
             "create-101-2",
             new byte[] {1},
             () -> "{\"orderId\":9001}"
@@ -73,7 +146,7 @@ class OrderMutationIdempotencyServiceTest {
 
         assertThrows(IdempotencyKeyConflictException.class, () -> service.execute(
             101L,
-            "CREATE_ORDER",
+            OrderMutationIdempotencyService.CREATE_ORDER,
             "create-101-2",
             new byte[] {2},
             () -> {
@@ -88,11 +161,16 @@ class OrderMutationIdempotencyServiceTest {
     void existingProcessingClaimDoesNotRunMutationAgain() {
         AtomicInteger mutations = new AtomicInteger();
         byte[] hash = new byte[] {7, 8, 9};
-        store.seedProcessing(101L, "CREATE_ORDER", "create-in-flight", hash);
+        store.seedProcessing(
+            101L,
+            OrderMutationIdempotencyService.CREATE_ORDER,
+            "create-in-flight",
+            hash
+        );
 
         assertThrows(IdempotencyRequestInProgressException.class, () -> service.execute(
             101L,
-            "CREATE_ORDER",
+            OrderMutationIdempotencyService.CREATE_ORDER,
             "create-in-flight",
             hash,
             () -> {
@@ -111,7 +189,7 @@ class OrderMutationIdempotencyServiceTest {
 
         byte[] firstHash = service.hashCreate(101L, first);
         assertArrayEquals(firstHash, service.hashCreate(101L, sameBusinessRequest));
-        org.junit.jupiter.api.Assertions.assertFalse(java.util.Arrays.equals(
+        assertFalse(java.util.Arrays.equals(
             firstHash,
             service.hashCreate(101L, changedQuantity)
         ));
@@ -123,11 +201,11 @@ class OrderMutationIdempotencyServiceTest {
             new OrderLineItemRequest(1L, "Pizza", new Money("20.00"), 2)
         ));
 
-        org.junit.jupiter.api.Assertions.assertFalse(java.util.Arrays.equals(
+        assertFalse(java.util.Arrays.equals(
             service.hashCancel(101L, 9001L),
             service.hashCancel(202L, 9001L)
         ));
-        org.junit.jupiter.api.Assertions.assertFalse(java.util.Arrays.equals(
+        assertFalse(java.util.Arrays.equals(
             service.hashRevise(101L, 9001L, revision),
             service.hashRevise(101L, 9002L, revision)
         ));
@@ -139,7 +217,7 @@ class OrderMutationIdempotencyServiceTest {
             7L,
             List.of(new OrderLineItemRequest(1L, "Pizza", new Money("20.00"), quantity)),
             new Address("123 Main St", "San Francisco", "CA", "94102"),
-            LocalDateTime.of(2026, 7, 30, 12, 0),
+            LocalDateTime.now().plusHours(2),
             paymentToken
         );
     }
