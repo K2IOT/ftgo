@@ -129,6 +129,11 @@ wait_for_url() {
   return 1
 }
 
+initialize_scylla() {
+  "${COMPOSE[@]}" exec -T scylla cqlsh -e \
+    "CREATE KEYSPACE IF NOT EXISTS ftgo_order_history WITH replication = {'class':'SimpleStrategy','replication_factor':1};"
+}
+
 register_kitchen_outbox_connector() {
   cat <<'JSON' | curl --silent --show-error --fail-with-body \
     --request PUT \
@@ -192,6 +197,7 @@ build_artifacts() {
     :restaurant-service:bootJar \
     :kitchen-service:bootJar \
     :accounting-service:bootJar \
+    :order-history-service:bootJar \
     :e2e-tests:testClasses
 }
 
@@ -200,7 +206,8 @@ run_cycle() {
   echo "=== Secured core order flow E2E run ${run}/${RUNS} ==="
   stop_services
   "${COMPOSE[@]}" --profile relays down --volumes --remove-orphans >/dev/null 2>&1 || true
-  "${COMPOSE[@]}" up --detach --wait --wait-timeout 300 mysql redis zookeeper kafka connect
+  "${COMPOSE[@]}" up --detach --wait --wait-timeout 600 mysql redis scylla zookeeper kafka connect
+  initialize_scylla
 
   start_service "${run}" restaurant-service 8083 ftgo_restaurant
   start_service "${run}" consumer-service 8082 ftgo_consumer
@@ -209,6 +216,12 @@ run_cycle() {
   start_service "${run}" accounting-service 8085 ftgo_accounting \
     FTGO_ACCOUNTING_DECLINED_PAYMENT_TOKENS=tok_e2e_decline
   start_service "${run}" order-service 8081 ftgo_order
+  start_service "${run}" order-history-service 8087 ftgo_order_history \
+    SPRING_CASSANDRA_CONTACT_POINTS=localhost \
+    SPRING_CASSANDRA_PORT=39042 \
+    SPRING_CASSANDRA_KEYSPACE_NAME=ftgo_order_history \
+    SPRING_CASSANDRA_LOCAL_DATACENTER=datacenter1 \
+    SPRING_CASSANDRA_SCHEMA_ACTION=CREATE_IF_NOT_EXISTS
   start_service "${run}" api-gateway 8080 ftgo_gateway \
     REDIS_HOST=localhost \
     REDIS_PORT=36379 \
@@ -216,7 +229,8 @@ run_cycle() {
     CONSUMER_SERVICE_URL=http://localhost:8082 \
     RESTAURANT_SERVICE_URL=http://localhost:8083 \
     KITCHEN_SERVICE_URL=http://localhost:8084 \
-    ACCOUNTING_SERVICE_URL=http://localhost:8085
+    ACCOUNTING_SERVICE_URL=http://localhost:8085 \
+    ORDER_HISTORY_SERVICE_URL=http://localhost:8087
 
   "${COMPOSE[@]}" --profile relays up --detach eventuate-cdc
   wait_for_url "Eventuate CDC" "http://localhost:18099/actuator/health"

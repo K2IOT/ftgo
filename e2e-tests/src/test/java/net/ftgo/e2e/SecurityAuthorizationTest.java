@@ -33,6 +33,8 @@ class SecurityAuthorizationTest {
         "ftgo.e2e.consumer-url", "http://localhost:8082");
     private static final String RESTAURANT_URL = System.getProperty(
         "ftgo.e2e.restaurant-url", "http://localhost:8083");
+    private static final String ORDER_HISTORY_URL = System.getProperty(
+        "ftgo.e2e.order-history-url", "http://localhost:8087");
 
     private static TestIdentityProvider identityProvider;
     private static String adminToken;
@@ -141,6 +143,22 @@ class SecurityAuthorizationTest {
             null,
             consumerAToken
         ), 200);
+    }
+
+    @Test
+    void consumerCannotReadAnotherConsumersOrderHistoryAtEdgeOrDirectPort() {
+        assertStatus(send(
+            "GET",
+            ORDER_HISTORY_URL + "/api/consumers/" + consumerBId + "/orders",
+            null,
+            consumerAToken
+        ), 403);
+        assertStatus(send(
+            "GET",
+            GATEWAY_URL + "/order-history/consumers/" + consumerBId + "/orders",
+            null,
+            consumerAToken
+        ), 403);
     }
 
     @Test
