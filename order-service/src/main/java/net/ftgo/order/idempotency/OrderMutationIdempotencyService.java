@@ -16,7 +16,6 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -48,7 +47,7 @@ public class OrderMutationIdempotencyService {
         Supplier<String> mutation
     ) {
         Instant now = Instant.now();
-        store.insertProcessing(
+        boolean inserted = store.insertProcessing(
             consumerId,
             operation,
             key,
@@ -72,8 +71,8 @@ public class OrderMutationIdempotencyService {
             );
         }
 
-        if (!Arrays.equals(record.requestHash(), requestHash)) {
-            throw new IdempotencyKeyConflictException();
+        if (!inserted) {
+            throw new IdempotencyRequestInProgressException();
         }
 
         String responseJson = mutation.get();
