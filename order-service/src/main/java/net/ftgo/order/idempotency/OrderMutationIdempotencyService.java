@@ -7,9 +7,12 @@ import net.ftgo.common.Address;
 import net.ftgo.order.api.CreateOrderRequest;
 import net.ftgo.order.api.OrderLineItemRequest;
 import net.ftgo.order.api.ReviseOrderRequest;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Isolation;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -20,6 +23,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.function.Supplier;
 
 @Service
@@ -27,20 +31,63 @@ public class OrderMutationIdempotencyService {
 
     public static final String CREATE_ORDER = "CREATE_ORDER";
     private static final Duration RECORD_TTL = Duration.ofHours(24);
+    private static final int MAX_TRANSACTION_ATTEMPTS = 5;
 
     private final ApiIdempotencyStore store;
     private final ObjectMapper objectMapper;
+    private final TransactionTemplate transactionTemplate;
 
+    @Autowired
     public OrderMutationIdempotencyService(
+        ApiIdempotencyStore store,
+        ObjectMapper objectMapper,
+        PlatformTransactionManager transactionManager
+    ) {
+        this(store, objectMapper, transactionTemplate(transactionManager));
+    }
+
+    OrderMutationIdempotencyService(
         ApiIdempotencyStore store,
         ObjectMapper objectMapper
     ) {
-        this.store = store;
-        this.objectMapper = objectMapper;
+        this(store, objectMapper, null);
     }
 
-    @Transactional(isolation = Isolation.READ_COMMITTED)
+    private OrderMutationIdempotencyService(
+        ApiIdempotencyStore store,
+        ObjectMapper objectMapper,
+        TransactionTemplate transactionTemplate
+    ) {
+        this.store = store;
+        this.objectMapper = objectMapper;
+        this.transactionTemplate = transactionTemplate;
+    }
+
     public IdempotentResult<String> execute(
+        Long consumerId,
+        String operation,
+        String key,
+        byte[] requestHash,
+        Supplier<String> mutation
+    ) {
+        if (transactionTemplate == null) {
+            return executeInTransaction(consumerId, operation, key, requestHash, mutation);
+        }
+
+        CannotAcquireLockException lastLockFailure = null;
+        for (int attempt = 1; attempt <= MAX_TRANSACTION_ATTEMPTS; attempt++) {
+            try {
+                return Objects.requireNonNull(transactionTemplate.execute(status ->
+                    executeInTransaction(consumerId, operation, key, requestHash, mutation)
+                ));
+            } catch (CannotAcquireLockException lockFailure) {
+                lastLockFailure = lockFailure;
+            }
+        }
+        throw Objects.requireNonNull(lastLockFailure);
+    }
+
+    private IdempotentResult<String> executeInTransaction(
         Long consumerId,
         String operation,
         String key,
@@ -195,5 +242,14 @@ public class OrderMutationIdempotencyService {
         } catch (JsonProcessingException error) {
             throw new IllegalStateException("Create order response is not valid JSON", error);
         }
+    }
+
+    private static TransactionTemplate transactionTemplate(
+        PlatformTransactionManager transactionManager
+    ) {
+        TransactionTemplate template = new TransactionTemplate(transactionManager);
+        template.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        template.setIsolationLevel(TransactionDefinition.ISOLATION_READ_COMMITTED);
+        return template;
     }
 }
