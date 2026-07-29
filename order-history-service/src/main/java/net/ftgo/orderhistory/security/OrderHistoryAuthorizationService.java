@@ -15,8 +15,16 @@ public class OrderHistoryAuthorizationService {
     private static final Logger log = LoggerFactory.getLogger(OrderHistoryAuthorizationService.class);
 
     public void requireConsumerAccess(Long consumerId, FtgoPrincipal principal) {
-        Objects.requireNonNull(consumerId, "consumerId is required");
         Objects.requireNonNull(principal, "principal is required");
+
+        if (consumerId == null) {
+            log.warn(
+                "Order history access denied actorSubject={} actorConsumerId={} reason=missing-owner",
+                principal.subject(),
+                principal.consumerId()
+            );
+            throw new AccessDeniedException("Order history access denied");
+        }
 
         if (principal.roles().contains("ADMIN")) {
             return;
