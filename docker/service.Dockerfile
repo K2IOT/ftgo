@@ -8,6 +8,10 @@ ARG SERVICE
 ARG VERSION
 ARG GIT_SHA
 
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends unzip \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /workspace
 COPY . .
 
