@@ -4,7 +4,7 @@
 
 **Goal:** Remove every security, reliability, scaling, lifecycle and repository-governance gap found in the Phase 01–04 review while preserving existing saga and distributed-consistency guarantees.
 
-**Architecture:** Deliver ten serial, independently reviewable PRs. Security hotfixes merge first; API and persistence changes use additive migrations and backward-compatible rollout windows; payment retries move from sleeping inside consumer threads to Kafka-backed redelivery; maintenance jobs are bounded and observable; mainline verification must run on the exact merge SHA.
+**Architecture:** Deliver ten serial, independently reviewable PRs. Security hotfixes merge first; API and persistence changes use additive migrations and compatibility windows; payment retries move from sleeping inside Eventuate consumer threads to Kafka-backed redelivery; maintenance jobs are bounded and observable; mainline verification runs on the exact merge SHA.
 
 **Tech Stack:** Java 21, Spring Boot, Spring Security OAuth2 Resource Server, Spring Cloud Gateway, Eventuate Tram/Sagas, Kafka, MySQL 8, ScyllaDB/Cassandra driver paging state, Flyway, Gradle, JUnit 5, Testcontainers, Docker Compose, GitHub Actions.
 
@@ -46,7 +46,7 @@ This leaves unbounded tables, stale documentation, unsupported dependencies and 
 7. Incremental settlement reconciliation.
 8. Outbox and processed-command retention lifecycle.
 9. Mainline CI, production configuration and repository hygiene.
-10. Supported Spring/Gradle dependency migration.
+10. Supported Spring/Gradle/Eventuate dependency migration.
 
 Do not start PR N+1 until PR N is merged and the `dev` merge SHA passes the required regression gate.
 
@@ -106,15 +106,15 @@ void consumerCannotReadAnotherConsumersHistory() {
 
 @Test
 void consumerCannotReadOrderOwnedByAnotherConsumer() {
-    OrderHistoryRecord record = record("9001", 202L);
+    OrderHistoryRecord record = new OrderHistoryRecord("9001");
+    record.setConsumerId(202L);
+
     assertThrows(AccessDeniedException.class,
         () -> authorization.requireOrderAccess(record, consumer(101L)));
 }
 ```
 
 - [ ] **Step 2: Run the tests and verify they fail**
-
-Run:
 
 ```bash
 ./gradlew :order-history-service:test \
@@ -139,17 +139,17 @@ public void requireOrderAccess(OrderHistoryRecord record, FtgoPrincipal principa
 }
 ```
 
-- [ ] **Step 4: Move checks into the controller flow before returning data**
+- [ ] **Step 4: Enforce checks before serialization or query execution**
 
-`findOrder()` must load the record, call `requireOrderAccess()`, then return it. `findOrderHistory()` must derive the FTGO principal from `Authentication` and call `requireConsumerAccess()` before constructing query criteria.
+`findOrder()` loads the record, calls `requireOrderAccess()`, then returns it. `findOrderHistory()` derives the FTGO principal from `Authentication`, calls `requireConsumerAccess()`, then constructs `OrderHistoryQueryCriteria`.
 
-- [ ] **Step 5: Add direct-service controller tests**
+- [ ] **Step 5: Add direct-service tests**
 
-Cover owner `200`, admin `200`, cross-consumer `403`, missing `consumer_id` `403`, nonexistent order `404`, and ensure the unauthorized request does not invoke `OrderHistoryQueryService`.
+Cover owner `200`, admin `200`, cross-consumer `403`, missing `consumer_id` `403`, nonexistent order `404`, and verify the unauthorized request never invokes `OrderHistoryQueryService.query()`.
 
 - [ ] **Step 6: Add Gateway and direct-port E2E abuse tests**
 
-Create consumer 101 and 202 records, query each route using consumer 101, and assert no response contains consumer 202 order IDs, line items, delivery address or payment status.
+Create records for consumers 101 and 202. Query both route forms using consumer 101 and assert the response never contains consumer 202 order IDs, line items, delivery address or payment status.
 
 - [ ] **Step 7: Run focused and Phase 04 security tests**
 
@@ -185,21 +185,29 @@ git commit -m "fix: enforce order history ownership"
 - Modify: `api-gateway/src/main/resources/application-docker.yml`
 - Modify: `api-gateway/src/main/resources/application-k8s.yml`
 - Test: `api-gateway/src/test/java/net/ftgo/gateway/config/CorsGatewayConfigurationTest.java`
-- Modify: all eight `SecurityConfiguration.java` files under `api-gateway`, `order-service`, `consumer-service`, `restaurant-service`, `kitchen-service`, `accounting-service`, `delivery-service`, and `order-history-service`
-- Test: every module's existing `SecuritySmokeTest.java`
+- Modify: `api-gateway/src/main/java/net/ftgo/gateway/security/SecurityConfiguration.java`
+- Modify: `order-service/src/main/java/net/ftgo/order/config/SecurityConfiguration.java`
+- Modify: `consumer-service/src/main/java/net/ftgo/consumer/config/SecurityConfiguration.java`
+- Modify: `restaurant-service/src/main/java/net/ftgo/restaurant/config/SecurityConfiguration.java`
+- Modify: `kitchen-service/src/main/java/net/ftgo/kitchen/config/SecurityConfiguration.java`
+- Modify: `accounting-service/src/main/java/net/ftgo/accounting/config/SecurityConfiguration.java`
+- Modify: `delivery-service/src/main/java/net/ftgo/delivery/config/SecurityConfiguration.java`
+- Modify: `order-history-service/src/main/java/net/ftgo/orderhistory/config/SecurityConfiguration.java`
+- Modify: each module's existing `SecuritySmokeTest.java`
 - Test: `e2e-tests/src/test/java/net/ftgo/e2e/AudienceAndRoleBoundaryE2ETest.java`
 
 **Interfaces:**
 - Produces: `FtgoRoles.isKnown(String): boolean`
-- Produces configuration: `ftgo.gateway.cors.allowed-origins`, `allowed-methods`, `allow-credentials`, `max-age`
+- Configuration: `ftgo.gateway.cors.allowed-origins`, `allowed-methods`, `allow-credentials`, `max-age`
 
 - [ ] **Step 1: Write failing claim-mapping tests**
 
 ```java
 @Test
-void scopeDoesNotGrantAdminRole() {
+void scopeDoesNotGrantAdminOrServiceRole() {
     AbstractAuthenticationToken auth = convert(jwt(
         "user", List.of("ftgo-api"), Map.of("scope", "openid ADMIN SERVICE")));
+
     assertFalse(authorityNames(auth).contains("ROLE_ADMIN"));
     assertFalse(authorityNames(auth).contains("ROLE_SERVICE"));
 }
@@ -220,21 +228,21 @@ void unknownApplicationRoleIsRejected() {
 
 - [ ] **Step 3: Restrict application roles**
 
-Only read application roles from `roles` and `realm_access.roles`. Remove role extraction from `scope` and `authorities`. Allow exactly `CONSUMER`, `RESTAURANT`, `COURIER`, `ADMIN`, and `SERVICE`; reject unknown nonblank values.
+Read application roles only from `roles` and `realm_access.roles`. Remove role extraction from `scope` and `authorities`. Allow exactly `CONSUMER`, `RESTAURANT`, `COURIER`, `ADMIN`, and `SERVICE`; reject unknown nonblank values.
 
 - [ ] **Step 4: Write failing audience and unknown-route tests in every service**
 
-For a public endpoint, a token with `ROLE_CONSUMER` plus only `AUD_ftgo-internal` must receive `403`. For an authenticated unknown endpoint, expect `403` from `.denyAll()` rather than accidental access.
+For a public endpoint, a token with the correct role but only `AUD_ftgo-internal` must receive `403`. For an authenticated unknown endpoint, expect `403` from `.denyAll()`.
 
 - [ ] **Step 5: Replace fail-open defaults**
 
-Every service must explicitly declare liveness/readiness, actuator, internal and public route namespaces and finish with:
+Every service explicitly declares liveness/readiness, actuator, internal and public route namespaces and finishes with:
 
 ```java
 .anyRequest().denyAll()
 ```
 
-Public route managers must require role and `AUD_ftgo-api`; internal route managers must require `ROLE_SERVICE` and `AUD_ftgo-internal`.
+Public route managers require role and `AUD_ftgo-api`; internal route managers require `ROLE_SERVICE` and `AUD_ftgo-internal`.
 
 - [ ] **Step 6: Write failing CORS tests**
 
@@ -242,7 +250,7 @@ Cover an allowed origin, an unlisted origin, credentialed mode with explicit ori
 
 - [ ] **Step 7: Replace wildcard CORS with typed properties**
 
-Production defaults are an empty allowlist and `allow-credentials=false`. Docker/Kubernetes read comma-separated explicit origins from `FTGO_CORS_ALLOWED_ORIGINS`; no profile may default to `*`.
+Production defaults are an empty allowlist and `allow-credentials=false`. Docker/Kubernetes read explicit origins from `FTGO_CORS_ALLOWED_ORIGINS`; no profile defaults to `*`.
 
 - [ ] **Step 8: Run security regression**
 
@@ -271,6 +279,7 @@ git commit -m "fix: make security policy fail closed"
 
 **Files:**
 - Create: `order-history-service/src/main/java/net/ftgo/orderhistory/service/OrderHistoryPagingTokenCodec.java`
+- Create: `order-history-service/src/main/java/net/ftgo/orderhistory/service/DecodedPagingToken.java`
 - Create: `order-history-service/src/main/java/net/ftgo/orderhistory/config/OrderHistoryPagingProperties.java`
 - Modify: `order-history-service/src/main/java/net/ftgo/orderhistory/service/CassandraOrderHistoryQueryStore.java`
 - Modify: `order-history-service/src/main/java/net/ftgo/orderhistory/service/OrderHistoryQueryCriteria.java`
@@ -293,15 +302,15 @@ Payload fields are `version`, `queryFingerprint`, `pageSize`, `month`, `driverSt
 
 - [ ] **Step 3: Bound query execution**
 
-Reject cursor months after the current UTC month. Stop after `max-bucket-scans` even when the requested history range is larger; return the next signed month cursor instead of looping without bound.
+Reject cursor months after the current UTC month. Stop after 24 bucket reads; when more history exists, return a signed cursor for the next month instead of continuing the loop.
 
-- [ ] **Step 4: Replace the existing unsigned Base64 cursor**
+- [ ] **Step 4: Replace the unsigned Base64 cursor**
 
-`CassandraOrderHistoryQueryStore` may no longer parse or emit raw month/driver state. All cursors pass through `OrderHistoryPagingTokenCodec`.
+`CassandraOrderHistoryQueryStore` no longer parses or emits raw month/driver state. All cursors pass through `OrderHistoryPagingTokenCodec`.
 
 - [ ] **Step 5: Add integration tests**
 
-Assert tampered/cross-query tokens return stable `400 ORDER_HISTORY_QUERY_INVALID`, and a far-future handcrafted token never causes repository calls.
+Assert tampered/cross-query tokens return `400 ORDER_HISTORY_QUERY_INVALID`, and a far-future handcrafted token causes zero repository calls.
 
 - [ ] **Step 6: Run tests**
 
@@ -332,6 +341,7 @@ git commit -m "fix: sign and bind order history paging tokens"
 - Create: `order-service/src/main/java/net/ftgo/order/idempotency/ApiIdempotencyRecord.java`
 - Create: `order-service/src/main/java/net/ftgo/order/idempotency/ApiIdempotencyStore.java`
 - Create: `order-service/src/main/java/net/ftgo/order/idempotency/JdbcApiIdempotencyStore.java`
+- Create: `order-service/src/main/java/net/ftgo/order/idempotency/IdempotentResult.java`
 - Create: `order-service/src/main/java/net/ftgo/order/idempotency/OrderMutationIdempotencyService.java`
 - Modify: `order-service/src/main/java/net/ftgo/order/api/OrderController.java`
 - Modify: `order-service/src/main/java/net/ftgo/order/service/OrderService.java`
@@ -352,19 +362,46 @@ The table has unique key `(consumer_id, operation, idempotency_key)`, request SH
 
 ```java
 @Test
-void duplicateCreateReturnsOriginalOrderWithoutStartingSecondSaga() { /* assert one order and one saga */ }
+void duplicateCreateReturnsOriginalOrderWithoutStartingSecondSaga() throws Exception {
+    String body = validCreateOrderJson();
+
+    MvcResult first = mockMvc.perform(post("/orders")
+            .header("Idempotency-Key", "create-101-1")
+            .contentType(APPLICATION_JSON).content(body)
+            .with(consumerJwt(101L)))
+        .andExpect(status().isCreated()).andReturn();
+
+    MvcResult second = mockMvc.perform(post("/orders")
+            .header("Idempotency-Key", "create-101-1")
+            .contentType(APPLICATION_JSON).content(body)
+            .with(consumerJwt(101L)))
+        .andExpect(status().isCreated()).andReturn();
+
+    assertEquals(first.getResponse().getContentAsString(),
+        second.getResponse().getContentAsString());
+    assertEquals(1, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM orders", Integer.class));
+}
 
 @Test
-void sameKeyWithDifferentBodyReturnsConflict() { /* assert 409 and no second mutation */ }
+void sameKeyWithDifferentBodyReturnsConflict() throws Exception {
+    mockMvc.perform(post("/orders").header("Idempotency-Key", "create-101-2")
+        .contentType(APPLICATION_JSON).content(validCreateOrderJson()).with(consumerJwt(101L)))
+        .andExpect(status().isCreated());
+
+    mockMvc.perform(post("/orders").header("Idempotency-Key", "create-101-2")
+        .contentType(APPLICATION_JSON).content(createOrderJsonWithQuantity(2)).with(consumerJwt(101L)))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.errorCode").value("IDEMPOTENCY_KEY_CONFLICT"));
+}
 ```
 
 - [ ] **Step 3: Implement transactional claim/replay**
 
-Use `INSERT IGNORE`, then `SELECT ... FOR UPDATE`. The loser of a concurrent insert waits for the winner transaction, validates the request hash and replays the completed response. The idempotency record, order mutation, outbox insert and saga creation must commit or roll back together.
+Use `INSERT IGNORE`, then `SELECT ... FOR UPDATE`. The loser of a concurrent insert waits for the winner transaction, validates the request hash and replays the completed response. The idempotency record, order mutation, outbox insert and saga creation commit or roll back together.
 
 - [ ] **Step 4: Hash canonical server inputs**
 
-Create hashes from authenticated consumer ID, operation name, order ID where applicable, and canonical JSON body. Do not include volatile timestamps or bearer tokens.
+Create SHA-256 from authenticated consumer ID, operation name, order ID where applicable, and canonical JSON body. Exclude timestamps generated by the server and bearer/payment tokens.
 
 - [ ] **Step 5: Apply the service to all order mutations**
 
@@ -372,7 +409,7 @@ Operations are `CREATE_ORDER`, `CANCEL_ORDER:{orderId}`, and `REVISE_ORDER:{orde
 
 - [ ] **Step 6: Add connection-loss and concurrency E2E tests**
 
-Send the same key concurrently and simulate a client retry after the first response is dropped. Assert one order, one mutation saga, one payment authorization request and byte-equivalent replay response.
+Send the same key concurrently and retry after dropping the first client response. Assert one order, one mutation saga, one provider authorization request and byte-equivalent replay response.
 
 - [ ] **Step 7: Run tests**
 
@@ -398,17 +435,22 @@ git commit -m "feat: make order mutations idempotent"
 **Branch:** `agent/remediation-05-gateway-api-contract`
 
 **Files:**
-- Replace: `api-gateway/src/main/java/net/ftgo/gateway/filter/SecurityHeadersFilter.java` with `SecurityResponseHeadersFilter.java`
-- Replace: `api-gateway/src/main/java/net/ftgo/gateway/filter/RequestLoggingFilter.java` with `GatewayCorrelationFilter.java`
+- Delete: `api-gateway/src/main/java/net/ftgo/gateway/filter/SecurityHeadersFilter.java`
+- Create: `api-gateway/src/main/java/net/ftgo/gateway/filter/SecurityResponseHeadersFilter.java`
+- Delete: `api-gateway/src/main/java/net/ftgo/gateway/filter/RequestLoggingFilter.java`
+- Create: `api-gateway/src/main/java/net/ftgo/gateway/filter/GatewayCorrelationFilter.java`
 - Modify: `api-gateway/src/main/java/net/ftgo/gateway/security/ForwardedHeaderPolicy.java`
 - Modify: `api-gateway/src/main/java/net/ftgo/gateway/handler/GlobalErrorHandler.java`
 - Modify: `common/src/main/java/net/ftgo/common/web/CorrelationIdFilter.java`
-- Remove controller-local error bodies from `kitchen-service`, `order-history-service`, and `accounting-service`
-- Modify their exception advice to return `FtgoProblemDetail`
+- Modify: `kitchen-service/src/main/java/net/ftgo/kitchen/api/KitchenController.java`
+- Modify: `order-history-service/src/main/java/net/ftgo/orderhistory/api/OrderHistoryExceptionHandler.java`
+- Modify: `accounting-service/src/main/java/net/ftgo/accounting/api/admin/PaymentSettlementExceptionHandler.java`
 - Test: `api-gateway/src/test/java/net/ftgo/gateway/filter/GatewayCorrelationFilterTest.java`
 - Test: `api-gateway/src/test/java/net/ftgo/gateway/filter/SecurityResponseHeadersFilterTest.java`
 - Modify: `common/src/test/java/net/ftgo/common/web/ProblemDetailContractTest.java`
-- Add module-specific `*ProblemDetailContractTest.java`
+- Create: `kitchen-service/src/test/java/net/ftgo/kitchen/api/KitchenProblemDetailContractTest.java`
+- Create: `order-history-service/src/test/java/net/ftgo/orderhistory/api/OrderHistoryProblemDetailContractTest.java`
+- Create: `accounting-service/src/test/java/net/ftgo/accounting/api/admin/PaymentSettlementProblemDetailContractTest.java`
 
 **Interfaces:**
 - Canonical header: `X-Correlation-ID`
@@ -417,11 +459,11 @@ git commit -m "feat: make order mutations idempotent"
 
 - [ ] **Step 1: Write failing tests proving `X-User-*` is absent**
 
-Downstream requests must contain the bearer token but no derived identity headers. Client-supplied `X-User-*` headers must be stripped.
+Downstream requests contain the bearer token but no derived identity headers. Client-supplied `X-User-*` headers are stripped.
 
 - [ ] **Step 2: Retain only security response headers**
 
-Rename the filter and remove all authentication-type branching. Downstream identity remains the independently validated JWT.
+`SecurityResponseHeadersFilter` adds response hardening headers and performs no identity extraction. Downstream identity remains the independently validated JWT.
 
 - [ ] **Step 3: Write failing correlation tests**
 
@@ -433,9 +475,9 @@ Apply `[A-Za-z0-9._:-]{8,128}` at Gateway and downstream services. Gateway loggi
 
 - [ ] **Step 5: Write failing error-contract tests**
 
-Kitchen conflicts, Order History validation, payment-settlement errors, Gateway authentication/authorization and fallback failures must expose the shared fields `type`, `title`, `status`, `detail`, `instance`, `errorCode`, and `correlationId` without raw exception messages.
+Kitchen conflicts, Order History validation, payment-settlement errors, Gateway authentication/authorization and fallback failures expose `type`, `title`, `status`, `detail`, `instance`, `errorCode`, and `correlationId` without raw exception messages.
 
-- [ ] **Step 6: Remove local ad-hoc error schemas**
+- [ ] **Step 6: Remove ad-hoc error schemas**
 
 Use shared `FtgoProblemResponses`/`FtgoProblemDetail`. Map internal exceptions to stable public messages and log full exceptions only with correlation ID.
 
@@ -483,25 +525,25 @@ git commit -m "fix: unify gateway identity and API error contracts"
 
 Fail if production accounting code contains `Thread.sleep(` or declares `RetryingSettlementGateway`.
 
-- [ ] **Step 2: Write an integration test around a real Kafka listener container**
+- [ ] **Step 2: Write a real Kafka redelivery integration test**
 
-Publish one accounting command configured for `timeout-once`; assert the first handler invocation rolls back, the second succeeds, the command reply is emitted once, and the Kafka consumer thread is not held during backoff.
+Publish one accounting command configured for `timeout-once`; assert the first handler transaction rolls back, the second succeeds, the command reply is emitted once, and a second unrelated command completes before the first retry delay expires.
 
 - [ ] **Step 3: Configure bounded Kafka error handling**
 
-Use the existing `KafkaDeadLetterSupport` backoff policy. Mark `SettlementGatewayTimeoutException` retryable. Do not retry validation, state-conflict or request-ID-conflict exceptions.
+Use `KafkaDeadLetterSupport.errorHandler(...)`. Mark `SettlementGatewayTimeoutException` retryable. Validation, state conflict and request-ID conflict remain non-retryable.
 
 - [ ] **Step 4: Change timeout behavior**
 
-Each delivery performs one provider attempt. Attempts 1–3 throw a retryable timeout; attempt 4 produces `SettlementRetryExhaustedException`, which the command handler converts into a terminal failure reply so the saga is not left without a reply.
+Each delivery performs one provider attempt. Attempts 1–3 throw a retryable timeout; attempt 4 throws `SettlementRetryExhaustedException`, which the command handler converts into a terminal failure reply so the saga always receives a reply.
 
-- [ ] **Step 5: Preserve command idempotency semantics**
+- [ ] **Step 5: Preserve command idempotency**
 
-The processed-command claim must abort on retryable timeout and complete only after success or terminal failure. Provider operation request IDs remain stable across all deliveries.
+The processed-command claim aborts on retryable timeout and completes only after success or terminal failure. Provider operation request IDs remain stable across deliveries.
 
 - [ ] **Step 6: Add outage/load tests**
 
-Run at least 20 timeout-always commands with listener concurrency 4. Assert unrelated successful commands progress during backoff, retries are bounded and every terminal command has one stored failure reply.
+Run 20 timeout-always commands with listener concurrency 4. Assert unrelated successful commands progress during backoff, retries are bounded and every terminal command has one stored failure reply.
 
 - [ ] **Step 7: Run settlement regression**
 
@@ -536,7 +578,8 @@ git commit -m "fix: retry settlement through Kafka redelivery"
 - Create: `accounting-service/src/main/java/net/ftgo/accounting/settlement/SettlementReconciliationWorkRepository.java`
 - Modify: `accounting-service/src/main/java/net/ftgo/accounting/settlement/SettlementReconciler.java`
 - Modify: `accounting-service/src/main/java/net/ftgo/accounting/settlement/SettlementReconciliationMonitor.java`
-- Modify: settlement mutation paths to enqueue authorization IDs
+- Modify: `accounting-service/src/main/java/net/ftgo/accounting/messaging/AccountingServiceCommandHandlers.java`
+- Modify: `accounting-service/src/main/java/net/ftgo/accounting/settlement/ManualPaymentSettlementService.java`
 - Test: `accounting-service/src/test/java/net/ftgo/accounting/settlement/SettlementReconciliationBatchTest.java`
 - Modify: `accounting-service/src/test/java/net/ftgo/accounting/settlement/SettlementReconcilerTest.java`
 
@@ -546,27 +589,27 @@ git commit -m "fix: retry settlement through Kafka redelivery"
 
 - [ ] **Step 1: Add a test that fails if `findAll()` is called**
 
-Use a strict repository mock and 250 queued authorizations. Assert one monitor execution inspects at most 100 records.
+Use a strict repository mock and 250 queued authorizations. Assert one monitor execution inspects exactly 100 records and leaves 150 due records for later runs.
 
 - [ ] **Step 2: Create the durable work table**
 
-Columns: `authorization_id` primary key, `next_attempt_at`, `locked_until`, `attempt_count`, `last_error`, `created_at`, `updated_at`; add an index on `(next_attempt_at, locked_until)`.
+Columns: `authorization_id` primary key, `next_attempt_at`, `locked_until`, `attempt_count`, `last_error`, `created_at`, `updated_at`; index `(next_attempt_at, locked_until)`.
 
-- [ ] **Step 3: Enqueue work after settlement-relevant mutations**
+- [ ] **Step 3: Enqueue work in mutation transactions**
 
 Authorize, capture, void, refund, reverse and manual repair update the queue in the same local transaction as the authorization mutation.
 
 - [ ] **Step 4: Claim bounded batches**
 
-Claim at most 100 due rows with `FOR UPDATE SKIP LOCKED`, set `locked_until`, inspect provider and ledger state, then reschedule or remove/resolve work.
+Claim at most 100 due rows with `FOR UPDATE SKIP LOCKED`, set `locked_until`, inspect provider and ledger state, then reschedule or resolve work.
 
-- [ ] **Step 5: Bound all repository access**
+- [ ] **Step 5: Remove N+1 reads**
 
-Remove `authorizationRepository.findAll()`. Fetch authorizations by the claimed IDs and ledger totals using grouped aggregate queries rather than one query per authorization.
+Remove `authorizationRepository.findAll()`. Fetch authorizations by claimed IDs and add one grouped ledger aggregate query returning capture/refund totals by authorization ID.
 
 - [ ] **Step 6: Add multi-replica and failure tests**
 
-Run two monitor instances concurrently. Assert no authorization is processed twice during the lease, failed work is retried after lease expiry, and a single bad provider record does not roll back the whole batch.
+Run two monitor instances concurrently. Assert no authorization is processed twice during the lease, failed work retries after lease expiry, and one bad provider record does not roll back the batch.
 
 - [ ] **Step 7: Run tests**
 
@@ -596,14 +639,18 @@ git commit -m "fix: reconcile settlement in bounded batches"
 - Create: `common/src/main/java/net/ftgo/common/messaging/JdbcMessageRetentionWorker.java`
 - Modify: `common/src/main/java/net/ftgo/common/messaging/OutboxMetricsConfiguration.java`
 - Test: `common/src/test/java/net/ftgo/common/messaging/JdbcMessageRetentionWorkerTest.java`
-- Add retention-index migrations:
-  - `order-service/.../V11__add_message_retention_indexes.sql`
-  - `consumer-service/.../V6__add_message_retention_indexes.sql`
-  - `restaurant-service/.../V5__add_message_retention_indexes.sql`
-  - `kitchen-service/.../V11__add_message_retention_indexes.sql`
-  - `accounting-service/.../V13__add_message_retention_indexes.sql`
-  - `delivery-service/.../V4__add_message_retention_indexes.sql`
-- Modify all service `application.yml` files
+- Create: `order-service/src/main/resources/db/migration/V11__add_message_retention_indexes.sql`
+- Create: `consumer-service/src/main/resources/db/migration/V6__add_message_retention_indexes.sql`
+- Create: `restaurant-service/src/main/resources/db/migration/V5__add_message_retention_indexes.sql`
+- Create: `kitchen-service/src/main/resources/db/migration/V11__add_message_retention_indexes.sql`
+- Create: `accounting-service/src/main/resources/db/migration/V13__add_message_retention_indexes.sql`
+- Create: `delivery-service/src/main/resources/db/migration/V4__add_message_retention_indexes.sql`
+- Modify: `order-service/src/main/resources/application.yml`
+- Modify: `consumer-service/src/main/resources/application.yml`
+- Modify: `restaurant-service/src/main/resources/application.yml`
+- Modify: `kitchen-service/src/main/resources/application.yml`
+- Modify: `accounting-service/src/main/resources/application.yml`
+- Modify: `delivery-service/src/main/resources/application.yml`
 - Modify: `docs/operations/phase-03-distributed-consistency-runbook.md`
 
 **Interfaces:**
@@ -620,11 +667,11 @@ Delete at most 500 rows per table per run. Outbox cleanup uses `created_at`; pro
 
 - [ ] **Step 3: Add indexes and migration tests**
 
-Indexes must support the cleanup predicates without scanning the whole table.
+Each migration adds an outbox `created_at` index and processed-command `(outcome, processed_at)` index when the table exists in that service.
 
 - [ ] **Step 4: Add safety validation**
 
-Startup rejects retention shorter than `P7D`. Production deployment keeps cleanup disabled until operators confirm Kafka retention and maximum replay windows are below the configured period.
+Startup rejects retention shorter than `P7D`. Production keeps cleanup disabled until operators confirm Kafka retention and maximum replay windows are below the configured period.
 
 - [ ] **Step 5: Add metrics**
 
@@ -651,7 +698,7 @@ git add common order-service consumer-service restaurant-service kitchen-service
 git commit -m "feat: add bounded messaging retention"
 ```
 
-**PR acceptance:** tables have an explicit, disabled-by-default cleanup lifecycle; each run is bounded, indexed and observable.
+**PR acceptance:** tables have a disabled-by-default cleanup lifecycle; each run is bounded, indexed and observable.
 
 ---
 
@@ -660,52 +707,73 @@ git commit -m "feat: add bounded messaging retention"
 **Branch:** `agent/remediation-09-mainline-platform`
 
 **Files:**
-- Modify every `.github/workflows/phase-*.yml`
+- Modify: `.github/workflows/phase-01-debezium-smoke.yml`
+- Modify: `.github/workflows/phase-01-fresh-stack.yml`
+- Modify: `.github/workflows/phase-01-full-test.yml`
+- Modify: `.github/workflows/phase-01-module-diagnostics.yml`
+- Modify: `.github/workflows/phase-01-verification.yml`
+- Modify: `.github/workflows/phase-02-core-order-flow-e2e.yml`
+- Modify: `.github/workflows/phase-02-core-order-flow.yml`
+- Modify: `.github/workflows/phase-02b-payment-settlement.yml`
+- Modify: `.github/workflows/phase-03-distributed-consistency.yml`
+- Modify: `.github/workflows/phase-03-distributed-failure-e2e.yml`
+- Modify: `.github/workflows/phase-03-operations.yml`
+- Modify: `.github/workflows/phase-03-order-history.yml`
+- Modify: `.github/workflows/phase-04-api-contract.yml`
+- Modify: `.github/workflows/phase-04-security-api.yml`
+- Modify: `.github/workflows/phase-04-web-diagnostic.yml`
 - Create: `.github/workflows/dev-merge-verification.yml`
 - Create: `.github/workflows/secret-scan.yml`
+- Create: `scripts/ci/scan-secrets.sh`
 - Modify: `build.gradle`
 - Modify: `README.md`
-- Modify all service `application.yml` files
-- Create/modify service `application-local.yml` files for local-only credentials
-- Modify Docker Compose and Kubernetes manifests to pass datasource secrets explicitly
-- Modify: `docs/operations/phase-04-security-api-runbook.md` or create it if absent
+- Modify all eight service `application.yml` files
+- Create all eight service `application-local.yml` files
+- Modify: `deployment/tests/docker-compose.core-order-flow.yml`
+- Modify production Docker Compose/Kubernetes manifests under `deployment/`
+- Create: `docs/operations/phase-04-security-api-runbook.md`
 
 **Interfaces:**
 - CI triggers: `pull_request` to `dev`, `push` to `dev`, `merge_group`, and `workflow_dispatch`
 - Production datasource variables: `*_DB_URL`, `*_DB_USERNAME`, `*_DB_PASSWORD`
+- Secret scanner command: `docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.24.3 detect --source /repo --no-banner`
 
 - [ ] **Step 1: Add workflow-contract tests**
 
-Extend Python workflow tests to require `push.branches: [dev]` and `merge_group` for all required checks and to reject branch-specific Phase 01 push triggers.
+Extend Python workflow tests to require `push.branches: [dev]` and `merge_group` for required checks and reject branch-specific Phase 01 push triggers.
 
 - [ ] **Step 2: Add merge-SHA verification**
 
-`dev-merge-verification.yml` runs full Gradle tests and the contract matrix on every push to `dev`; scheduled workflows run the expensive clean-stack E2E suites.
+`dev-merge-verification.yml` runs full Gradle tests and the contract matrix on every push to `dev`; scheduled workflows run expensive clean-stack E2E suites.
 
-- [ ] **Step 3: Configure required repository checks**
+- [ ] **Step 3: Configure repository protection**
 
-After workflow names stabilize, use GitHub branch protection for `dev`: require PRs, require the merge-verification checks, require conversation resolution and disallow force pushes. Change the repository default branch from `master` to `dev` only after CI is green on `dev`.
+After workflow names stabilize, require PRs and merge-verification checks for `dev`, require conversation resolution, disallow force pushes, then change the repository default branch from `master` to `dev` after a green `dev` push run.
 
 - [ ] **Step 4: Externalize datasource credentials**
 
-Base `application.yml` files must not contain `ftgo_user`, `ftgo_password` or `createDatabaseIfNotExist=true`. Local credentials belong only in `application-local.yml`; production profiles fail startup when secrets are absent.
+Base `application.yml` files contain no `ftgo_user`, `ftgo_password` or `createDatabaseIfNotExist=true`. Local credentials live in `application-local.yml`; production profiles fail startup when environment secrets are absent.
 
 - [ ] **Step 5: Add secret scanning**
 
-Run Gitleaks (or an equivalent pinned scanner) on PRs and pushes; fail on committed credentials and private keys. Add only test fixtures to an explicit reviewed allowlist.
+`secret-scan.yml` invokes `scripts/ci/scan-secrets.sh` on PR and push events. Test-only fixture exceptions are listed in `.gitleaks.toml` with exact path and reason.
 
 - [ ] **Step 6: Repair repository hygiene**
 
-Update README to Phase 04-remediation status, document `dev` as mainline, remove duplicate `HikariCP` declaration from `order-service`, and archive stale phase status text rather than presenting it as current.
+Update README to remediation status, document `dev` as mainline, remove the duplicate `HikariCP` declaration from `order-service`, and move stale status text to historical documentation.
 
 - [ ] **Step 7: Verify the exact merge SHA**
 
-Merge only after PR checks pass, then confirm the new `dev` merge SHA has successful merge-verification checks. Record run IDs and SHA in the plan completion section.
+Merge only after PR checks pass, then confirm the new `dev` merge SHA has successful merge-verification checks. Record run IDs and SHA in the completion record.
 
 - [ ] **Step 8: Commit**
 
 ```bash
-git add .github build.gradle README.md '*-service/src/main/resources' deployment docs
+git add .github scripts/ci build.gradle README.md api-gateway/src/main/resources \
+  order-service/src/main/resources consumer-service/src/main/resources \
+  restaurant-service/src/main/resources kitchen-service/src/main/resources \
+  accounting-service/src/main/resources delivery-service/src/main/resources \
+  order-history-service/src/main/resources deployment docs
 git commit -m "chore: protect dev and externalize production configuration"
 ```
 
@@ -723,28 +791,46 @@ git commit -m "chore: protect dev and externalize production configuration"
 - Final merged state: Spring Boot `4.0.7`, Spring Cloud `2025.1.2`
 - Gradle `8.14.3`
 - `io.spring.dependency-management` `1.1.7`
+- Eventuate platform BOM `2024.0.RELEASE`
 
 **Files:**
 - Modify: `build.gradle`
+- Modify: `common/build.gradle`
+- Modify: `api-gateway/build.gradle`
+- Modify: `order-service/build.gradle`
+- Modify: `consumer-service/build.gradle`
+- Modify: `restaurant-service/build.gradle`
+- Modify: `kitchen-service/build.gradle`
+- Modify: `accounting-service/build.gradle`
+- Modify: `delivery-service/build.gradle`
+- Modify: `order-history-service/build.gradle`
+- Modify: `e2e-tests/build.gradle`
 - Modify: `gradle/wrapper/gradle-wrapper.properties`
-- Modify: `gradle/wrapper/gradle-wrapper.jar`
-- Modify: `gradlew`, `gradlew.bat` if regenerated
-- Modify module source/config files required by Spring Boot 4 migration
-- Modify Dockerfiles and CI Java/Gradle cache configuration
+- Regenerate: `gradle/wrapper/gradle-wrapper.jar`, `gradlew`, `gradlew.bat`
+- Modify: `common/src/main/java/net/ftgo/common/security/FtgoJwtDecoders.java`
+- Modify: `common/src/main/java/net/ftgo/common/security/FtgoReactiveJwtDecoders.java`
+- Modify the eight security configuration files listed in Task 2 when required by Spring Security 7 APIs
+- Modify: `api-gateway/src/main/java/net/ftgo/gateway/config/GatewayConfiguration.java`
+- Modify: `delivery-service/src/main/java/net/ftgo/delivery/config/KafkaConsumerConfiguration.java`
+- Modify: `order-history-service/src/main/java/net/ftgo/orderhistory/config/KafkaConfiguration.java`
+- Modify: `accounting-service/src/main/java/net/ftgo/accounting/config/AccountingKafkaRetryConfiguration.java`
+- Modify all service `application.yml` files for renamed Boot 4 properties
+- Modify Dockerfiles and all GitHub workflow Gradle setup steps
 - Create: `deployment/tests/test_supported_dependency_baseline.py`
 - Create: `docs/operations/spring-platform-upgrade-runbook.md`
 
 **Interfaces:**
 - Keep existing REST, event, command and database contracts unchanged.
+- Resolve Eventuate through `io.eventuate.platform:eventuate-platform-dependencies:2024.0.RELEASE`; remove the separate core/sagas BOM declarations.
 - Eventuate compatibility is proved by compile, saga integration, lost-reply and real-stack E2E tests before merge.
 
 - [ ] **Step 1: Add a failing dependency-baseline test**
 
-The test parses `build.gradle` and wrapper properties and rejects Spring Boot `3.2.x`, Spring Cloud `2023.0.x`, Gradle below `8.14`, milestone repositories and duplicate explicitly versioned libraries already managed by the BOM.
+The test parses `build.gradle` and wrapper properties and rejects Spring Boot `3.2.x`, Spring Cloud `2023.0.x`, Gradle below `8.14`, the Spring milestone repository, duplicate BOMs and duplicate explicitly versioned libraries already managed by Boot/Eventuate BOMs.
 
 - [ ] **Step 2: Upgrade to the 3.5 bridge in an isolated commit**
 
-Set Boot `3.5.15`, Cloud `2025.0.3`, dependency-management `1.1.7`, Gradle `8.14.3`; remove the Spring milestone repository; compile and fix deprecations. This commit is an intermediate migration checkpoint and must not be released independently.
+Set Boot `3.5.15`, Cloud `2025.0.3`, dependency-management `1.1.7`, Gradle `8.14.3` and Eventuate platform `2024.0.RELEASE`; remove the milestone repository; compile and resolve every deprecation warning that becomes an error under Boot 4. This commit is a checkpoint and is not released independently.
 
 - [ ] **Step 3: Run the full suite on the bridge commit**
 
@@ -758,17 +844,17 @@ bash scripts/smoke/verify-distributed-consistency.sh --runs 2
 
 - [ ] **Step 4: Upgrade the final branch state to Boot 4**
 
-Set Boot `4.0.7` and Cloud `2025.1.2`. Apply official Boot 4 migration changes, including changed starter/module coordinates, servlet/reactive APIs and configuration properties. Keep Java 21.
+Set Boot `4.0.7` and Cloud `2025.1.2`. Update the listed Security, Gateway, Kafka and configuration files to the Boot 4/Spring Security 7 APIs. Keep Java 21 and Gradle 8.14.3.
 
 - [ ] **Step 5: Prove Eventuate compatibility**
 
-Run compile/tests for every Eventuate participant and orchestrator, saga integration tests, processed-command replay, outbox/CDC smoke and all real-stack workflows. Any Eventuate artifact that cannot run on Boot 4 must be upgraded through the Eventuate platform BOM and proven by the same contracts; do not merge with exclusions that disable saga tests.
+Run compile/tests for every Eventuate participant/orchestrator, saga integration tests, processed-command replay, outbox/CDC smoke and all real-stack workflows. Do not add exclusions that skip Eventuate or saga tests; a failing Eventuate compatibility test blocks the PR.
 
 - [ ] **Step 6: Run dependency and vulnerability checks**
 
-Generate dependency insight for Spring Security, Netty, Jackson, Kafka, MySQL and Testcontainers; run the repository vulnerability scanner; fail on known critical/high vulnerabilities without a documented non-reachable justification.
+Generate dependency insight for Spring Security, Netty, Jackson, Kafka, MySQL and Testcontainers; run the repository vulnerability scanner; fail on known critical/high vulnerabilities unless `docs/operations/spring-platform-upgrade-runbook.md` records the dependency path, non-reachability proof and removal deadline.
 
-- [ ] **Step 7: Run the complete final verification on one SHA**
+- [ ] **Step 7: Run complete final verification on one SHA**
 
 ```bash
 ./gradlew clean test --no-daemon --stacktrace
@@ -778,16 +864,23 @@ bash scripts/smoke/verify-payment-settlement.sh --runs 2
 bash scripts/smoke/verify-distributed-consistency.sh --runs 2
 ```
 
-All required GitHub workflows must finish successfully on the same final head SHA and again on the `dev` merge SHA.
+All required GitHub workflows finish successfully on the same final head SHA and again on the `dev` merge SHA.
 
 - [ ] **Step 8: Commit checkpoints**
 
 ```bash
-git commit -am "build: migrate to spring boot 3.5 bridge"
-git commit -am "build: migrate to supported spring boot 4 platform"
+git add build.gradle gradle common api-gateway order-service consumer-service \
+  restaurant-service kitchen-service accounting-service delivery-service \
+  order-history-service e2e-tests deployment docs .github
+git commit -m "build: migrate to spring boot 3.5 bridge"
+
+git add build.gradle gradle common api-gateway order-service consumer-service \
+  restaurant-service kitchen-service accounting-service delivery-service \
+  order-history-service e2e-tests deployment docs .github
+git commit -m "build: migrate to supported spring boot 4 platform"
 ```
 
-**PR acceptance:** final `dev` uses Boot `4.0.7`, Cloud `2025.1.2` and Gradle `8.14.3`; every saga, outbox, API and real-stack regression gate remains green.
+**PR acceptance:** final `dev` uses Boot `4.0.7`, Cloud `2025.1.2`, Eventuate platform `2024.0.RELEASE` and Gradle `8.14.3`; every saga, outbox, API and real-stack regression gate remains green.
 
 ---
 
@@ -821,10 +914,10 @@ Required abuse/regression scenarios:
 ## Rollout Order
 
 1. Merge PRs 1–3 immediately as security hotfixes.
-2. Merge PR 4 with additive migration before making `Idempotency-Key` mandatory at the Gateway.
-3. Merge PR 5 after clients are prepared for the canonical correlation header and RFC 9457 schema.
+2. Merge PR 4 with the additive migration before making `Idempotency-Key` mandatory at the Gateway.
+3. Merge PR 5 after clients accept the canonical correlation header and RFC 9457 schema.
 4. Merge PRs 6–7 behind settlement/reconciliation feature flags; canary Accounting first.
-5. Merge PR 8 with cleanup disabled; enable only after the runbook checks pass.
+5. Merge PR 8 with cleanup disabled; enable only after runbook checks pass.
 6. Merge PR 9 and switch default branch only after merge-SHA CI succeeds.
 7. Merge PR 10 last because it has the broadest compatibility blast radius.
 
