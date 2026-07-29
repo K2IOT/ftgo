@@ -7,6 +7,7 @@ import net.ftgo.common.channels.ChannelNames;
 import net.ftgo.common.messaging.DomainEventEnvelope;
 import net.ftgo.common.messaging.DomainEventMetadata;
 import net.ftgo.common.messaging.OutboxMetrics;
+import net.ftgo.common.observability.CorrelationContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -37,12 +38,22 @@ public class DomainEventPublisher {
 
     @Transactional
     public void publishRestaurantEvent(Long aggregateId, Object event) {
-        publishRestaurantEvent(aggregateId, 0L, DomainEventMetadata.empty(), event);
+        publishRestaurantEvent(
+            aggregateId,
+            0L,
+            CorrelationContext.currentMetadata(),
+            event
+        );
     }
 
     @Transactional
     public void publishRestaurantEvent(Long aggregateId, long aggregateVersion, Object event) {
-        publishRestaurantEvent(aggregateId, aggregateVersion, DomainEventMetadata.empty(), event);
+        publishRestaurantEvent(
+            aggregateId,
+            aggregateVersion,
+            CorrelationContext.currentMetadata(),
+            event
+        );
     }
 
     @Transactional
@@ -60,7 +71,7 @@ public class DomainEventPublisher {
                 "Restaurant",
                 aggregateId.toString(),
                 aggregateVersion,
-                metadata,
+                CorrelationContext.enrich(metadata),
                 event
             );
             String payload = objectMapper.writeValueAsString(envelope);
