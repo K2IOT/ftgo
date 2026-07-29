@@ -8,6 +8,7 @@ import net.ftgo.order.api.OrderLineItemRequest;
 import net.ftgo.order.api.ReviseOrderRequest;
 import org.junit.jupiter.api.Test;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -84,6 +85,25 @@ class OrderMutationIdempotencyServiceTest {
     }
 
     @Test
+    void existingProcessingClaimDoesNotRunMutationAgain() {
+        AtomicInteger mutations = new AtomicInteger();
+        byte[] hash = new byte[] {7, 8, 9};
+        store.seedProcessing(101L, "CREATE_ORDER", "create-in-flight", hash);
+
+        assertThrows(IdempotencyRequestInProgressException.class, () -> service.execute(
+            101L,
+            "CREATE_ORDER",
+            "create-in-flight",
+            hash,
+            () -> {
+                mutations.incrementAndGet();
+                return "{\"orderId\":9001}";
+            }
+        ));
+        assertEquals(0, mutations.get());
+    }
+
+    @Test
     void canonicalCreateHashExcludesPaymentTokenButIncludesBusinessPayload() {
         CreateOrderRequest first = createRequest("tok_secret_one", 1);
         CreateOrderRequest sameBusinessRequest = createRequest("tok_secret_two", 1);
@@ -127,13 +147,25 @@ class OrderMutationIdempotencyServiceTest {
     private static final class InMemoryApiIdempotencyStore implements ApiIdempotencyStore {
         private ApiIdempotencyRecord record;
 
+        void seedProcessing(Long consumerId, String operation, String key, byte[] requestHash) {
+            Instant now = Instant.now();
+            record = ApiIdempotencyRecord.processing(
+                consumerId,
+                operation,
+                key,
+                requestHash,
+                now,
+                now.plusSeconds(3600)
+            );
+        }
+
         @Override
         public boolean insertProcessing(
             Long consumerId,
             String operation,
             String key,
             byte[] requestHash,
-            java.time.Instant expiresAt
+            Instant expiresAt
         ) {
             if (record != null) {
                 return false;
@@ -143,7 +175,7 @@ class OrderMutationIdempotencyServiceTest {
                 operation,
                 key,
                 requestHash,
-                java.time.Instant.now(),
+                Instant.now(),
                 expiresAt
             );
             return true;
@@ -163,7 +195,7 @@ class OrderMutationIdempotencyServiceTest {
             String responseJson,
             Long resourceId
         ) {
-            record = record.completed(httpStatus, responseJson, resourceId, java.time.Instant.now());
+            record = record.completed(httpStatus, responseJson, resourceId, Instant.now());
         }
     }
 }
