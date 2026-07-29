@@ -242,6 +242,7 @@ run_cycle() {
   FTGO_E2E_JDBC_URL=jdbc:mysql://localhost:33306 \
   "${ROOT_DIR}/gradlew" --no-daemon :e2e-tests:test \
     --tests 'net.ftgo.e2e.CoreOrderFlowTest' \
+    --tests 'net.ftgo.e2e.OrderMutationIdempotencyE2ETest' \
     --tests 'net.ftgo.e2e.SecurityAuthorizationTest' \
     --tests 'net.ftgo.e2e.ApiAbuseTest' \
     --rerun-tasks --stacktrace
