@@ -1,5 +1,7 @@
 package net.ftgo.order.api;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.Valid;
 import net.ftgo.common.security.FtgoPrincipal;
 import net.ftgo.common.security.PrincipalAccess;
@@ -7,11 +9,14 @@ import net.ftgo.order.domain.DeliveryInfo;
 import net.ftgo.order.domain.Order;
 import net.ftgo.order.domain.OrderLineItem;
 import net.ftgo.order.domain.PaymentInfo;
+import net.ftgo.order.idempotency.IdempotentResult;
+import net.ftgo.order.idempotency.InvalidIdempotencyKeyException;
+import net.ftgo.order.idempotency.OrderMutationIdempotencyService;
 import net.ftgo.order.service.OrderService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
@@ -19,6 +24,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -31,19 +37,29 @@ import java.util.stream.Collectors;
 public class OrderController {
 
     private static final Logger logger = LoggerFactory.getLogger(OrderController.class);
+    private static final int MAX_IDEMPOTENCY_KEY_LENGTH = 255;
 
     private final OrderService orderService;
+    private final OrderMutationIdempotencyService idempotencyService;
+    private final ObjectMapper objectMapper;
 
     @Value("${ftgo.order.phase2-enabled:true}")
     private boolean phase2Enabled = true;
 
-    public OrderController(OrderService orderService) {
+    public OrderController(
+        OrderService orderService,
+        OrderMutationIdempotencyService idempotencyService,
+        ObjectMapper objectMapper
+    ) {
         this.orderService = orderService;
+        this.idempotencyService = idempotencyService;
+        this.objectMapper = objectMapper;
     }
 
     @PostMapping
-    public ResponseEntity<CreateOrderResponse> createOrder(
+    public ResponseEntity<String> createOrder(
         @Valid @RequestBody CreateOrderRequest request,
+        @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
         Authentication authentication
     ) {
         if (!phase2Enabled) {
@@ -54,6 +70,7 @@ public class OrderController {
 
         FtgoPrincipal principal = PrincipalAccess.require(authentication);
         Long consumerId = requireConsumerId(principal);
+        String key = requireIdempotencyKey(idempotencyKey);
 
         logger.info(
             "POST /orders - Creating order: actorSubject={}, consumerId={}, restaurantId={}, expectedMenuVersion={}",
@@ -63,34 +80,36 @@ public class OrderController {
             request.getExpectedMenuVersion()
         );
 
-        List<OrderLineItem> lineItems = request.getLineItems().stream()
-            .map(item -> new OrderLineItem(
-                item.getMenuItemId(),
-                item.getName(),
-                item.getPrice(),
-                item.getQuantity()
-            ))
-            .collect(Collectors.toList());
-
+        List<OrderLineItem> lineItems = toLineItems(request.getLineItems());
         DeliveryInfo deliveryInfo = new DeliveryInfo(
             request.getDeliveryAddress(),
             request.getDeliveryTime()
         );
         PaymentInfo paymentInfo = new PaymentInfo(request.getPaymentToken());
 
-        Long orderId = orderService.createOrder(
+        IdempotentResult<String> result = idempotencyService.execute(
             consumerId,
-            request.getRestaurantId(),
-            request.getExpectedMenuVersion(),
-            lineItems,
-            deliveryInfo,
-            paymentInfo
+            OrderMutationIdempotencyService.CREATE_ORDER,
+            key,
+            idempotencyService.hashCreate(consumerId, request),
+            () -> {
+                Long orderId = orderService.createOrder(
+                    consumerId,
+                    request.getRestaurantId(),
+                    request.getExpectedMenuVersion(),
+                    lineItems,
+                    deliveryInfo,
+                    paymentInfo
+                );
+                logger.info("Order created successfully: orderId={}", orderId);
+                return writeJson(new CreateOrderResponse(orderId));
+            }
         );
 
-        logger.info("Order created successfully: orderId={}", orderId);
         return ResponseEntity
-            .status(HttpStatus.CREATED)
-            .body(new CreateOrderResponse(orderId));
+            .status(result.httpStatus())
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(result.responseBody());
     }
 
     @GetMapping("/{orderId}")
@@ -113,26 +132,45 @@ public class OrderController {
     @PostMapping("/{orderId}/cancel")
     public ResponseEntity<Void> cancelOrder(
         @PathVariable Long orderId,
+        @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
         Authentication authentication
     ) {
         FtgoPrincipal principal = PrincipalAccess.require(authentication);
+        Long consumerId = idempotencyConsumerId(principal);
+        String key = requireIdempotencyKey(idempotencyKey);
+        String operation = OrderMutationIdempotencyService.cancelOperation(orderId);
+
         logger.info(
             "POST /orders/{}/cancel - Cancelling order for actorSubject={}",
             orderId,
             principal.subject()
         );
-        orderService.cancelOrder(orderId, principal);
-        logger.info("Order cancellation initiated: orderId={}", orderId);
-        return ResponseEntity.ok().build();
+        IdempotentResult<String> result = idempotencyService.execute(
+            consumerId,
+            operation,
+            key,
+            idempotencyService.hashCancel(consumerId, orderId),
+            () -> {
+                orderService.cancelOrder(orderId, principal);
+                logger.info("Order cancellation initiated: orderId={}", orderId);
+                return null;
+            }
+        );
+        return ResponseEntity.status(result.httpStatus()).build();
     }
 
     @PostMapping("/{orderId}/revise")
     public ResponseEntity<Void> reviseOrder(
         @PathVariable Long orderId,
         @Valid @RequestBody ReviseOrderRequest request,
+        @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
         Authentication authentication
     ) {
         FtgoPrincipal principal = PrincipalAccess.require(authentication);
+        Long consumerId = idempotencyConsumerId(principal);
+        String key = requireIdempotencyKey(idempotencyKey);
+        String operation = OrderMutationIdempotencyService.reviseOperation(orderId);
+
         logger.info(
             "POST /orders/{}/revise - Revising order with {} line items for actorSubject={}",
             orderId,
@@ -140,7 +178,23 @@ public class OrderController {
             principal.subject()
         );
 
-        List<OrderLineItem> revisedLineItems = request.getRevisedLineItems().stream()
+        List<OrderLineItem> revisedLineItems = toLineItems(request.getRevisedLineItems());
+        IdempotentResult<String> result = idempotencyService.execute(
+            consumerId,
+            operation,
+            key,
+            idempotencyService.hashRevise(consumerId, orderId, request),
+            () -> {
+                orderService.reviseOrder(orderId, revisedLineItems, principal);
+                logger.info("Order revision initiated: orderId={}", orderId);
+                return null;
+            }
+        );
+        return ResponseEntity.status(result.httpStatus()).build();
+    }
+
+    private List<OrderLineItem> toLineItems(List<OrderLineItemRequest> requests) {
+        return requests.stream()
             .map(item -> new OrderLineItem(
                 item.getMenuItemId(),
                 item.getName(),
@@ -148,10 +202,28 @@ public class OrderController {
                 item.getQuantity()
             ))
             .collect(Collectors.toList());
+    }
 
-        orderService.reviseOrder(orderId, revisedLineItems, principal);
-        logger.info("Order revision initiated: orderId={}", orderId);
-        return ResponseEntity.ok().build();
+    private String requireIdempotencyKey(String key) {
+        if (key == null || key.isBlank()) {
+            throw InvalidIdempotencyKeyException.required();
+        }
+        if (key.length() > MAX_IDEMPOTENCY_KEY_LENGTH
+            || !key.equals(key.trim())
+            || key.chars().anyMatch(Character::isISOControl)) {
+            throw InvalidIdempotencyKeyException.invalid();
+        }
+        return key;
+    }
+
+    private Long idempotencyConsumerId(FtgoPrincipal principal) {
+        if (principal.consumerId() != null) {
+            return principal.consumerId();
+        }
+        if (principal.roles().contains("ADMIN")) {
+            return 0L;
+        }
+        throw new AccessDeniedException("Authenticated consumer identity is required");
     }
 
     private Long requireConsumerId(FtgoPrincipal principal) {
@@ -163,5 +235,13 @@ public class OrderController {
             throw new AccessDeniedException("Authenticated consumer identity is required");
         }
         return principal.consumerId();
+    }
+
+    private String writeJson(Object value) {
+        try {
+            return objectMapper.writeValueAsString(value);
+        } catch (JsonProcessingException error) {
+            throw new IllegalStateException("Unable to serialize order response", error);
+        }
     }
 }
