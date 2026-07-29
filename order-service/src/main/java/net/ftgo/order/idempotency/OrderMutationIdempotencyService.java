@@ -55,6 +55,15 @@ public class OrderMutationIdempotencyService {
             now.plus(RECORD_TTL)
         );
 
+        if (inserted) {
+            return executeClaimOwnerMutation(
+                consumerId,
+                operation,
+                key,
+                mutation
+            );
+        }
+
         ApiIdempotencyRecord record = store.lock(consumerId, operation, key)
             .orElseThrow(() -> new IllegalStateException("Idempotency claim disappeared"));
 
@@ -71,10 +80,15 @@ public class OrderMutationIdempotencyService {
             );
         }
 
-        if (!inserted) {
-            throw new IdempotencyRequestInProgressException();
-        }
+        throw new IdempotencyRequestInProgressException();
+    }
 
+    private IdempotentResult<String> executeClaimOwnerMutation(
+        Long consumerId,
+        String operation,
+        String key,
+        Supplier<String> mutation
+    ) {
         String responseJson = mutation.get();
         int httpStatus = CREATE_ORDER.equals(operation) ? 201 : 200;
         Long resourceId = extractResourceId(operation, responseJson);
