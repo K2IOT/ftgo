@@ -5,12 +5,15 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import net.ftgo.e2e.support.TestIdentityProvider;
+import org.awaitility.Awaitility;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 
+import java.io.OutputStream;
 import java.math.BigDecimal;
+import java.net.Socket;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -19,6 +22,7 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -146,6 +150,7 @@ class OrderMutationIdempotencyE2ETest {
         assertSingleMutationArtifacts(gatewayOrderId, gatewayKey);
 
         verifyTwentyConcurrentCreatesReplayOneCommittedMutation(fixture);
+        verifyDroppedResponseRetryReplaysCommittedMutation(fixture);
     }
 
     private void verifyTwentyConcurrentCreatesReplayOneCommittedMutation(Fixture fixture)
@@ -188,6 +193,49 @@ class OrderMutationIdempotencyE2ETest {
         }
     }
 
+    private void verifyDroppedResponseRetryReplaysCommittedMutation(Fixture fixture)
+    throws Exception {
+    ObjectNode request = orderRequest(fixture, 1, 5);
+    String key = "remediation-04-dropped-response-" + UUID.randomUUID();
+
+    postAndDropResponse(request, fixture.consumerToken(), key);
+    HttpResponse<String> retry = postOrder(
+        ORDER_URL,
+        request,
+        fixture.consumerToken(),
+        key
+    );
+
+    assertThat(retry.statusCode()).isEqualTo(201);
+    long orderId = parse(retry.body()).path("orderId").asLong();
+    assertSingleMutationArtifacts(orderId, key);
+}
+
+private void postAndDropResponse(
+    JsonNode request,
+    String token,
+    String idempotencyKey
+) throws Exception {
+    URI uri = URI.create(ORDER_URL);
+    int port = uri.getPort() > 0 ? uri.getPort() : 80;
+    byte[] payload = JSON.writeValueAsBytes(request);
+    String headers = "POST /orders HTTP/1.1\r\n"
+        + "Host: " + uri.getHost() + ":" + port + "\r\n"
+        + "Authorization: Bearer " + token + "\r\n"
+        + "Idempotency-Key: " + idempotencyKey + "\r\n"
+        + "Content-Type: application/json\r\n"
+        + "Content-Length: " + payload.length + "\r\n"
+        + "Connection: close\r\n\r\n";
+
+    try (Socket socket = new Socket(uri.getHost(), port);
+         OutputStream output = socket.getOutputStream()) {
+        output.write(headers.getBytes(StandardCharsets.US_ASCII));
+        output.write(payload);
+        output.flush();
+        Thread.sleep(100L);
+    }
+}
+
     private Fixture createFixture() throws Exception {
         String suffix = UUID.randomUUID().toString().replace("-", "").substring(0, 12);
 
@@ -198,7 +246,8 @@ class OrderMutationIdempotencyE2ETest {
             .path("id")
             .asLong();
 
-        ObjectNode creditLimit = JSON.createObjectNode().put("creditLimit", "1000.00");
+        ObjectNode creditLimit = JSON.createObjectNode()
+            .put("creditLimit", new BigDecimal("1000.00"));
         assertThat(send(
             "PUT",
             CONSUMER_URL + "/admin/consumers/" + consumerId + "/credit-limit",
@@ -327,6 +376,19 @@ class OrderMutationIdempotencyE2ETest {
                 + "AND saga_data_json LIKE ?",
             "%\"orderId\":" + orderId + "%"
         )).isEqualTo(1L);
+        awaitSingleProviderAuthorization(orderId);
+    }
+
+    private void awaitSingleProviderAuthorization(long orderId) {
+        Awaitility.await()
+            .atMost(60, TimeUnit.SECONDS)
+            .pollInterval(Duration.ofMillis(250))
+            .untilAsserted(() -> assertThat(count(
+                "ftgo_accounting",
+                "SELECT COUNT(*) FROM simulated_provider_operations "
+                    + "WHERE order_id = ? AND operation_type = 'AUTHORIZE'",
+                orderId
+            )).isEqualTo(1L));
     }
 
     private HttpResponse<String> postOrder(
