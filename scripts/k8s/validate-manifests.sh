@@ -34,12 +34,16 @@ command -v docker >/dev/null 2>&1 || {
   exit 1
 }
 
-python -m unittest deployment.tests.test_phase05_kubernetes_contract -v
+python -m unittest \
+  deployment.tests.test_phase05_kubernetes_contract \
+  deployment.tests.test_phase05_security_contract \
+  -v
 
 for environment in "${environments[@]}"; do
   overlay="deployment/kubernetes/overlays/${environment}"
   rendered="$(mktemp)"
-  trap 'rm -f "${rendered}"' EXIT
+  secret_blocks="$(mktemp)"
+  trap 'rm -f "${rendered}" "${secret_blocks}"' EXIT
 
   echo "Rendering ${environment} overlay with kubectl kustomize"
   docker run --rm \
@@ -52,8 +56,16 @@ for environment in "${environments[@]}"; do
     echo "Rendered ${environment} overlay contains a latest image tag" >&2
     exit 1
   fi
-  if grep -Eq '^(data|stringData):' "${rendered}"; then
-    echo "Rendered ${environment} overlay contains inline Secret data" >&2
+
+  awk 'BEGIN { RS="---" } /(^|\n)kind:[[:space:]]+Secret([[:space:]]|$)/ { print }' \
+    "${rendered}" >"${secret_blocks}"
+  if grep -Eq '^[[:space:]]*(data|stringData):' "${secret_blocks}"; then
+    echo "Rendered ${environment} overlay contains inline Secret data|stringData" >&2
+    exit 1
+  fi
+
+  if grep -Ei '^[[:space:]]*value:[[:space:]]*.*(password|secret|token)' "${rendered}"; then
+    echo "Rendered ${environment} overlay contains a literal password|secret|token value" >&2
     exit 1
   fi
 
@@ -64,7 +76,7 @@ for environment in "${environments[@]}"; do
     -ignore-missing-schemas \
     -summary <"${rendered}"
 
-  rm -f "${rendered}"
+  rm -f "${rendered}" "${secret_blocks}"
   trap - EXIT
 done
 
