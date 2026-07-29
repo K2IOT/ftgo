@@ -3,6 +3,7 @@ kind: Kustomization
 namespace: ftgo-staging
 resources:
   - ../../base
+  - ../../istio
 replicas:
   - name: api-gateway
     count: 2
