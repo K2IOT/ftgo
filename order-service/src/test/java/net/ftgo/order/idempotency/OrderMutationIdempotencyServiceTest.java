@@ -22,6 +22,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class OrderMutationIdempotencyServiceTest {
 
+    private static final LocalDateTime DELIVERY_TIME = LocalDateTime.now()
+        .plusHours(2)
+        .withNano(0);
+
     private final InMemoryApiIdempotencyStore store = new InMemoryApiIdempotencyStore();
     private final OrderMutationIdempotencyService service = new OrderMutationIdempotencyService(
         store,
@@ -217,7 +221,7 @@ class OrderMutationIdempotencyServiceTest {
             7L,
             List.of(new OrderLineItemRequest(1L, "Pizza", new Money("20.00"), quantity)),
             new Address("123 Main St", "San Francisco", "CA", "94102"),
-            LocalDateTime.now().plusHours(2),
+            DELIVERY_TIME,
             paymentToken
         );
     }
