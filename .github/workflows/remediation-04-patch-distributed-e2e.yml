@@ -1,0 +1,54 @@
+name: Remediation 04 Patch Distributed E2E
+
+on:
+  pull_request:
+    branches: [dev]
+    paths:
+      - '.github/workflows/remediation-04-patch-distributed-e2e.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/remediation-04-order-api-idempotency'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/remediation-04-order-api-idempotency
+          fetch-depth: 0
+      - name: Apply narrow helper patch
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('e2e-tests/src/test/java/net/ftgo/e2e/DistributedConsistencyTest.java')
+          text = path.read_text(encoding='utf-8')
+          old = '''        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url))
+              .timeout(Duration.ofSeconds(30));
+          if (body == null) {
+          '''
+          new = '''        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url))
+              .timeout(Duration.ofSeconds(30));
+          if ((ORDER_URL + "/orders").equals(url)) {
+              builder.header("Idempotency-Key", "distributed-consistency-" + UUID.randomUUID());
+          }
+          if (body == null) {
+          '''
+          if text.count(old) != 1:
+              raise SystemExit(f'expected exactly one helper match, found {text.count(old)}')
+          path.write_text(text.replace(old, new), encoding='utf-8')
+
+          Path('.github/workflows/remediation-04-patch-distributed-e2e.yml').unlink()
+          PY
+      - name: Commit patch
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add e2e-tests/src/test/java/net/ftgo/e2e/DistributedConsistencyTest.java \
+            .github/workflows/remediation-04-patch-distributed-e2e.yml
+          git commit -m 'test: send idempotency keys in distributed consistency e2e'
+          git push origin HEAD:agent/remediation-04-order-api-idempotency
