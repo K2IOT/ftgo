@@ -67,6 +67,16 @@ class OrderHistoryAuthorizationServiceTest {
     }
 
     @Test
+    void rejectsOrderProjectionWithoutConsumerOwner() {
+        OrderHistoryRecord record = order("9001", null);
+
+        assertThrows(
+            AccessDeniedException.class,
+            () -> authorizationService.requireOrderAccess(record, consumer(101L))
+        );
+    }
+
+    @Test
     void permitsConsumerToReadOwnedOrder() {
         OrderHistoryRecord record = order("9001", 101L);
 
