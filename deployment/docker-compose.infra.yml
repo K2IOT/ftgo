@@ -94,29 +94,11 @@ services:
         condition: service_healthy
       kafka-3:
         condition: service_healthy
-    entrypoint: ["/bin/bash", "-ec"]
-    command: |
-      topics=(
-        net.ftgo.orderservice.domain.Order
-        net.ftgo.consumerservice.domain.Consumer
-        net.ftgo.restaurantservice.domain.Restaurant
-        net.ftgo.kitchenservice.domain.Ticket
-        net.ftgo.accountingservice.domain.Account
-        net.ftgo.deliveryservice.domain.Delivery
-        orderService
-        consumerService
-        kitchenService
-        accountingService
-        deliveryService
-        createOrderSagaReply
-        cancelOrderSagaReply
-        reviseOrderSagaReply
-      )
-      for topic in "$${topics[@]}"; do
-        kafka-topics --create --if-not-exists \
-          --bootstrap-server kafka-1:9092,kafka-2:9092,kafka-3:9092 \
-          --topic "$${topic}" --partitions 3 --replication-factor 3
-      done
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka-1:9092,kafka-2:9092,kafka-3:9092
+    entrypoint: ["/bin/bash", "/opt/ftgo/kafka-init.sh"]
+    volumes:
+      - ./kafka-init.sh:/opt/ftgo/kafka-init.sh:ro
     networks:
       - ftgo-network
 
