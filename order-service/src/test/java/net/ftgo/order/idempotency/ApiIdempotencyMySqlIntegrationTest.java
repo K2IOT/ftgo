@@ -8,8 +8,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
-import org.springframework.transaction.TransactionDefinition;
-import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.MySQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -40,7 +38,6 @@ class ApiIdempotencyMySqlIntegrationTest {
         .withPassword("ftgo_password");
 
     private static JdbcTemplate jdbcTemplate;
-    private static TransactionTemplate transactionTemplate;
     private static OrderMutationIdempotencyService service;
 
     @BeforeAll
@@ -50,12 +47,12 @@ class ApiIdempotencyMySqlIntegrationTest {
             MYSQL.getUsername(),
             MYSQL.getPassword()
         );
+        DataSourceTransactionManager transactionManager = new DataSourceTransactionManager(dataSource);
         jdbcTemplate = new JdbcTemplate(dataSource);
-        transactionTemplate = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
-        transactionTemplate.setIsolationLevel(TransactionDefinition.ISOLATION_READ_COMMITTED);
         service = new OrderMutationIdempotencyService(
             new JdbcApiIdempotencyStore(jdbcTemplate),
-            new ObjectMapper().findAndRegisterModules()
+            new ObjectMapper().findAndRegisterModules(),
+            transactionManager
         );
 
         jdbcTemplate.execute("""
@@ -111,7 +108,7 @@ class ApiIdempotencyMySqlIntegrationTest {
                 futures.add(executor.submit(() -> {
                     ready.countDown();
                     assertTrue(start.await(30, TimeUnit.SECONDS));
-                    return transactionTemplate.execute(status -> service.execute(
+                    return service.execute(
                         101L,
                         OrderMutationIdempotencyService.CREATE_ORDER,
                         "concurrent-create-key",
@@ -131,7 +128,7 @@ class ApiIdempotencyMySqlIntegrationTest {
                             }
                             return responseJson;
                         }
-                    ));
+                    );
                 }));
             }
 
@@ -171,21 +168,19 @@ class ApiIdempotencyMySqlIntegrationTest {
     void failedMutationRollsBackClaimAndBusinessWriteSoRetryCanSucceed() {
         byte[] hash = sha256Sized("rollback-create-request");
 
-        assertThrows(IllegalStateException.class, () -> transactionTemplate.execute(status ->
-            service.execute(
-                101L,
-                OrderMutationIdempotencyService.CREATE_ORDER,
-                "rollback-create-key",
-                hash,
-                () -> {
-                    jdbcTemplate.update(
-                        "INSERT INTO mutation_markers(marker_key, marker_value) VALUES (?, ?)",
-                        "rollback-marker",
-                        "must-roll-back"
-                    );
-                    throw new IllegalStateException("simulated saga start failure");
-                }
-            )
+        assertThrows(IllegalStateException.class, () -> service.execute(
+            101L,
+            OrderMutationIdempotencyService.CREATE_ORDER,
+            "rollback-create-key",
+            hash,
+            () -> {
+                jdbcTemplate.update(
+                    "INSERT INTO mutation_markers(marker_key, marker_value) VALUES (?, ?)",
+                    "rollback-marker",
+                    "must-roll-back"
+                );
+                throw new IllegalStateException("simulated saga start failure");
+            }
         ));
 
         assertEquals(0, jdbcTemplate.queryForObject(
@@ -197,7 +192,7 @@ class ApiIdempotencyMySqlIntegrationTest {
             Integer.class
         ));
 
-        IdempotentResult<String> retry = transactionTemplate.execute(status -> service.execute(
+        IdempotentResult<String> retry = service.execute(
             101L,
             OrderMutationIdempotencyService.CREATE_ORDER,
             "rollback-create-key",
@@ -210,7 +205,7 @@ class ApiIdempotencyMySqlIntegrationTest {
                 );
                 return "{\"orderId\":9002}";
             }
-        ));
+        );
 
         assertEquals(201, retry.httpStatus());
         assertEquals("{\"orderId\":9002}", retry.responseBody());
