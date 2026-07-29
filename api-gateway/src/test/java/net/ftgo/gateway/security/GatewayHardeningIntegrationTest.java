@@ -2,9 +2,11 @@ package net.ftgo.gateway.security;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.ApplicationContext;
+import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.http.HttpHeaders;
 import org.springframework.mock.http.server.reactive.MockServerHttpRequest;
 import org.springframework.mock.web.server.MockServerWebExchange;
@@ -45,7 +47,9 @@ class GatewayHardeningIntegrationTest {
             "actuatorSecurityWebFilterChain",
             "securityWebFilterChain"
         );
-        assertThat(chains).hasSize(2);
+        assertThat(chains)
+            .withFailMessage("Unexpected security chains: %s", securityChainOrigins(chains))
+            .hasSize(2);
 
         SecurityWebFilterChain actuator = chains.get("actuatorSecurityWebFilterChain");
         SecurityWebFilterChain application = chains.get("securityWebFilterChain");
@@ -112,6 +116,20 @@ class GatewayHardeningIntegrationTest {
             .header(HttpHeaders.AUTHORIZATION, "Bearer admin-token")
             .exchange()
             .expectStatus().isForbidden();
+    }
+
+    private Map<String, String> securityChainOrigins(Map<String, SecurityWebFilterChain> chains) {
+        ConfigurableApplicationContext context =
+            (ConfigurableApplicationContext) applicationContext;
+        return chains.keySet().stream().collect(java.util.stream.Collectors.toMap(
+            name -> name,
+            name -> {
+                BeanDefinition definition = context.getBeanFactory().getBeanDefinition(name);
+                return "factoryBean=" + definition.getFactoryBeanName()
+                    + ", factoryMethod=" + definition.getFactoryMethodName()
+                    + ", resource=" + definition.getResourceDescription();
+            }
+        ));
     }
 
     private boolean matches(SecurityWebFilterChain chain, String path) {
