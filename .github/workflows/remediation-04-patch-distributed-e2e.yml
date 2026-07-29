@@ -24,19 +24,22 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
+          import re
 
           path = Path('e2e-tests/src/test/java/net/ftgo/e2e/DistributedConsistencyTest.java')
           text = path.read_text(encoding='utf-8')
-          old = '''        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url))
-              .timeout(Duration.ofSeconds(30));
-          '''
-          new = old + '''        if ((ORDER_URL + "/orders").equals(url)) {
+          pattern = re.compile(
+              r'(private JsonNode post\(String url, JsonNode body\) \{\s+'
+              r'HttpRequest\.Builder builder = HttpRequest\.newBuilder\(URI\.create\(url\)\)\s+'
+              r'\.timeout\(Duration\.ofSeconds\(30\)\);)'
+          )
+          addition = '''\n        if ((ORDER_URL + "/orders").equals(url)) {
               builder.header("Idempotency-Key", "distributed-consistency-" + UUID.randomUUID());
-          }
-          '''
-          if text.count(old) != 1:
-              raise SystemExit(f'expected exactly one helper match, found {text.count(old)}')
-          path.write_text(text.replace(old, new), encoding='utf-8')
+          }'''
+          updated, matches = pattern.subn(lambda match: match.group(1) + addition, text)
+          if matches != 1:
+              raise SystemExit(f'expected exactly one helper match, found {matches}')
+          path.write_text(updated, encoding='utf-8')
 
           Path('.github/workflows/remediation-04-patch-distributed-e2e.yml').unlink()
           PY
