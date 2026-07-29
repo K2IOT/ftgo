@@ -120,7 +120,7 @@ class Phase05SecurityContractTest(unittest.TestCase):
         self.assertIn("action: ALLOW", authz)
         self.assertIn("principals:", authz)
         self.assertIn("/internal/*", authz)
-        self.assertIn("cluster.local/ns/ftgo-*/sa/api-gateway", authz)
+        self.assertIn("cluster.local/ns/ftgo-production/sa/api-gateway", authz)
 
     def test_overlays_include_mesh_and_production_kafka_acl_resources(self):
         for environment in ("dev", "staging", "production"):
