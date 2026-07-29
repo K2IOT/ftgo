@@ -44,12 +44,30 @@ class SecuritySmokeTest {
     }
 
     @Test
+    void rejectsAdminRoleWithInternalAudienceOnly() throws Exception {
+        mockMvc.perform(get("/api/admin/payment-settlement/security-probe").with(jwt().authorities(
+                new SimpleGrantedAuthority("ROLE_ADMIN"),
+                new SimpleGrantedAuthority("AUD_ftgo-internal")
+            )))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
     void permitsAdminTokenForSettlementEndpoint() throws Exception {
         mockMvc.perform(get("/api/admin/payment-settlement/security-probe").with(jwt().authorities(
                 new SimpleGrantedAuthority("ROLE_ADMIN"),
                 new SimpleGrantedAuthority("AUD_ftgo-api")
             )))
             .andExpect(status().isOk());
+    }
+
+    @Test
+    void deniesUnknownAuthenticatedRoute() throws Exception {
+        mockMvc.perform(get("/security/unknown").with(jwt().authorities(
+                new SimpleGrantedAuthority("ROLE_ADMIN"),
+                new SimpleGrantedAuthority("AUD_ftgo-api")
+            )))
+            .andExpect(status().isForbidden());
     }
 
     @Test
