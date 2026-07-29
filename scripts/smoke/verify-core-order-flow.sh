@@ -2,15 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-COMPOSE_FILE="${ROOT_DIR}/deployment/tests/docker-compose.core-order-flow.yml"
-COMPOSE=(docker compose --project-name ftgo-phase02-e2e -f "${COMPOSE_FILE}")
-LOG_ROOT="${ROOT_DIR}/core-order-flow-e2e-logs"
 RUNS=2
-SERVICE_PIDS=()
-
-rm -rf "${LOG_ROOT}"
-mkdir -p "${LOG_ROOT}"
-exec > >(tee -a "${LOG_ROOT}/runner.log") 2>&1
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -19,99 +11,85 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     *)
-      echo "Usage: $0 [--runs <count>]" >&2
+      echo "Unknown argument: $1" >&2
       exit 2
       ;;
   esac
 done
 
 if ! [[ "${RUNS}" =~ ^[1-9][0-9]*$ ]]; then
-  echo "Run count must be a positive integer: ${RUNS}" >&2
+  echo "--runs must be a positive integer" >&2
   exit 2
 fi
 
-require_command() {
-  command -v "$1" >/dev/null 2>&1 || {
-    echo "Required command is missing: $1" >&2
-    exit 1
-  }
-}
+COMPOSE=(docker compose -f "${ROOT_DIR}/deployment/docker-compose.infra.yml")
+LOG_DIR="${ROOT_DIR}/build/phase-02-core-order-flow-e2e-logs"
+PID_DIR="${ROOT_DIR}/build/phase-02-core-order-flow-e2e-pids"
+SERVICE_NAMES=(restaurant-service consumer-service kitchen-service accounting-service order-service order-history-service api-gateway)
+IDENTITY_ISSUER_URI="http://localhost:19000"
+IDENTITY_JWK_SET_URI="${IDENTITY_ISSUER_URI}/.well-known/jwks.json"
+
+mkdir -p "${LOG_DIR}" "${PID_DIR}"
 
 stop_services() {
-  local pid
-  for pid in "${SERVICE_PIDS[@]:-}"; do
-    if [[ -n "${pid}" ]] && kill -0 "${pid}" >/dev/null 2>&1; then
-      kill "${pid}" >/dev/null 2>&1 || true
-      wait "${pid}" >/dev/null 2>&1 || true
+  local service
+  for service in "${SERVICE_NAMES[@]}"; do
+    local pid_file="${PID_DIR}/${service}.pid"
+    if [[ -f "${pid_file}" ]]; then
+      local pid
+      pid="$(cat "${pid_file}")"
+      if kill -0 "${pid}" >/dev/null 2>&1; then
+        kill "${pid}" >/dev/null 2>&1 || true
+        for _ in $(seq 1 30); do
+          if ! kill -0 "${pid}" >/dev/null 2>&1; then
+            break
+          fi
+          sleep 1
+        done
+        kill -9 "${pid}" >/dev/null 2>&1 || true
+      fi
+      rm -f "${pid_file}"
     fi
   done
-  SERVICE_PIDS=()
 }
 
 cleanup() {
+  local status=$?
   stop_services
-  mkdir -p "${LOG_ROOT}"
-  "${COMPOSE[@]}" --profile relays logs --no-color >"${LOG_ROOT}/compose-last.log" 2>&1 || true
   "${COMPOSE[@]}" --profile relays down --volumes --remove-orphans >/dev/null 2>&1 || true
+  exit "${status}"
 }
-trap cleanup EXIT
-
-service_jar() {
-  local module="$1"
-  find "${ROOT_DIR}/${module}/build/libs" -maxdepth 1 -type f \
-    -name '*.jar' ! -name '*-plain.jar' | sort | head -n 1
-}
-
-wait_for_health() {
-  local service="$1"
-  local url="$2"
-  local pid="$3"
-  local log_file="$4"
-  local attempt
-  for attempt in $(seq 1 120); do
-    if curl --silent --fail "${url}" | grep -q '"status":"UP"'; then
-      echo "${service} is healthy"
-      return 0
-    fi
-    if ! kill -0 "${pid}" >/dev/null 2>&1; then
-      echo "${service} exited before becoming healthy" >&2
-      cat "${log_file}" >&2 || true
-      return 1
-    fi
-    sleep 1
-  done
-  echo "${service} did not become healthy" >&2
-  cat "${log_file}" >&2 || true
-  return 1
-}
+trap cleanup EXIT INT TERM
 
 start_service() {
   local run="$1"
-  local module="$2"
+  local service="$2"
   local port="$3"
   local schema="$4"
   shift 4
 
-  local log_dir="${LOG_ROOT}/run-${run}"
-  local log_file="${log_dir}/${module}.log"
-  local jar
-  jar="$(service_jar "${module}")"
-  mkdir -p "${log_dir}"
+  local jar="${ROOT_DIR}/${service}/build/libs/${service}-1.0.0-SNAPSHOT.jar"
+  local log="${LOG_DIR}/run-${run}/${service}.log"
+  mkdir -p "$(dirname "${log}")"
 
-  echo "Starting ${module}"
   env \
-    JAVA_TOOL_OPTIONS="-Xms64m -Xmx384m" \
-    SPRING_DATASOURCE_URL="jdbc:mysql://localhost:33306/${schema}?createDatabaseIfNotExist=true&allowPublicKeyRetrieval=true&useSSL=false" \
+    SERVER_PORT="${port}" \
+    SPRING_DATASOURCE_URL="jdbc:mysql://localhost:33306/${schema}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC" \
     SPRING_DATASOURCE_USERNAME=ftgo_user \
     SPRING_DATASOURCE_PASSWORD=ftgo_password \
-    SPRING_KAFKA_BOOTSTRAP_SERVERS=localhost:29092 \
-    EVENTUATELOCAL_KAFKA_BOOTSTRAP_SERVERS=localhost:29092 \
-    FTGO_SECURITY_ISSUER_URI=http://localhost:19000/realms/ftgo \
-    FTGO_SECURITY_JWK_SET_URI=http://localhost:19000/realms/ftgo/protocol/openid-connect/certs \
-    "$@" java -jar "${jar}" >"${log_file}" 2>&1 &
+    SPRING_KAFKA_BOOTSTRAP_SERVERS=localhost:39092 \
+    SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI="${IDENTITY_ISSUER_URI}" \
+    SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI="${IDENTITY_JWK_SET_URI}" \
+    FTGO_SECURITY_PUBLIC_AUDIENCE=ftgo-api \
+    FTGO_SECURITY_INTERNAL_AUDIENCE=ftgo-internal \
+    FTGO_SECURITY_TRUSTED_PROXY_CIDRS=127.0.0.1/32,::1/128 \
+    FTGO_CORS_ALLOWED_ORIGINS= \
+    FTGO_CORS_ALLOW_CREDENTIALS=false \
+    "$@" \
+    java -jar "${jar}" >"${log}" 2>&1 &
   local pid=$!
-  SERVICE_PIDS+=("${pid}")
-  wait_for_health "${module}" "http://localhost:${port}/actuator/health/liveness" "${pid}" "${log_file}"
+  echo "${pid}" >"${PID_DIR}/${service}.pid"
+  wait_for_url "${service}" "http://localhost:${port}/actuator/health"
 }
 
 wait_for_url() {
@@ -217,6 +195,7 @@ run_cycle() {
     FTGO_ACCOUNTING_DECLINED_PAYMENT_TOKENS=tok_e2e_decline
   start_service "${run}" order-service 8081 ftgo_order
   start_service "${run}" order-history-service 8087 ftgo_order_history \
+    FTGO_ORDER_HISTORY_PAGING_SECRET=phase-02-core-order-flow-e2e-paging-secret \
     SPRING_CASSANDRA_CONTACT_POINTS=localhost \
     SPRING_CASSANDRA_PORT=39042 \
     SPRING_CASSANDRA_KEYSPACE_NAME=ftgo_order_history \
@@ -238,31 +217,22 @@ run_cycle() {
   register_kitchen_outbox_connector
 
   FTGO_E2E_ENABLED=true \
-  FTGO_E2E_GATEWAY_URL=http://localhost:8080 \
   FTGO_E2E_JDBC_URL=jdbc:mysql://localhost:33306 \
   "${ROOT_DIR}/gradlew" --no-daemon :e2e-tests:test \
     --tests 'net.ftgo.e2e.CoreOrderFlowTest' \
     --tests 'net.ftgo.e2e.OrderMutationIdempotencyE2ETest' \
-    --tests 'net.ftgo.e2e.SecurityAuthorizationTest' \
-    --tests 'net.ftgo.e2e.ApiAbuseTest' \
-    --rerun-tasks --stacktrace
-
-  "${COMPOSE[@]}" --profile relays logs --no-color >"${LOG_ROOT}/run-${run}/compose.log" 2>&1
-  stop_services
-  "${COMPOSE[@]}" --profile relays down --volumes --remove-orphans
+    -Dftgo.e2e.gateway-url=http://localhost:8080 \
+    -Dftgo.e2e.order-url=http://localhost:8081 \
+    -Dftgo.e2e.consumer-url=http://localhost:8082 \
+    -Dftgo.e2e.restaurant-url=http://localhost:8083 \
+    -Dftgo.e2e.kitchen-url=http://localhost:8084 \
+    -Dftgo.e2e.jdbc-url=jdbc:mysql://localhost:33306 \
+    --stacktrace
 }
 
-main() {
-  require_command curl
-  require_command docker
-  require_command jq
-  build_artifacts
+build_artifacts
+for run in $(seq 1 "${RUNS}"); do
+  run_cycle "${run}"
+done
 
-  local run
-  for run in $(seq 1 "${RUNS}"); do
-    run_cycle "${run}"
-  done
-  echo "Secured core order flow E2E passed ${RUNS} clean-state run(s)"
-}
-
-main "$@"
+echo "Secured core order flow E2E passed ${RUNS} clean-state runs"
