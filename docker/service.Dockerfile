@@ -11,11 +11,12 @@ ARG GIT_SHA
 WORKDIR /workspace
 COPY . .
 
-RUN test -n "${SERVICE}" \
+RUN --mount=type=cache,target=/root/.gradle \
+    test -n "${SERVICE}" \
     && test -n "${VERSION}" \
     && test -n "${GIT_SHA}" \
     && chmod +x ./gradlew \
-    && --mount=type=cache,target=/root/.gradle ./gradlew --no-daemon ":${SERVICE}:bootJar" \
+    && ./gradlew --no-daemon ":${SERVICE}:bootJar" \
     && jar_path="$(find "${SERVICE}/build/libs" -maxdepth 1 -type f -name '*.jar' ! -name '*-plain.jar' -print -quit)" \
     && test -n "${jar_path}" \
     && cp "${jar_path}" /workspace/app.jar
