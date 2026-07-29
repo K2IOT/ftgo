@@ -129,7 +129,7 @@ class Phase05KubernetesContractTest(unittest.TestCase):
             overlay = self.read_required(
                 f"deployment/kubernetes/overlays/{environment}/kustomization.yaml"
             )
-            self.assertIn("../../../base", overlay)
+            self.assertIn("../../base", overlay)
             self.assertIn(f"namespace: ftgo-{environment}", overlay)
             self.assertIn("images:", overlay)
             self.assertIn("digest: sha256:", overlay)
