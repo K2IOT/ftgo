@@ -153,7 +153,7 @@ class OrderControllerIdempotencyTest {
             7L,
             List.of(new OrderLineItemRequest(1L, "Pizza", new Money("20.00"), 1)),
             new Address("123 Main St", "San Francisco", "CA", "94102"),
-            LocalDateTime.of(2026, 7, 30, 12, 0),
+            LocalDateTime.now().plusHours(2),
             "tok_visa_4242"
         );
     }
