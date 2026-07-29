@@ -4,6 +4,8 @@ import net.ftgo.orderhistory.domain.OrderHistoryRecord;
 
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
+import java.time.YearMonth;
+import java.time.ZoneOffset;
 import java.util.Base64;
 import java.util.Comparator;
 import java.util.List;
@@ -28,7 +30,7 @@ public class InMemoryOrderHistoryQueryStore implements OrderHistoryQueryStore {
     public QueryPage fetch(
         OrderHistoryQueryCriteria criteria,
         int pageSize,
-        String pagingState
+        OrderHistoryPageCursor cursor
     ) {
         OrderHistoryQueryCriteria.QueryKind kind = criteria.kind();
         LocalDateTime since = criteria.since() == null
@@ -45,12 +47,17 @@ public class InMemoryOrderHistoryQueryStore implements OrderHistoryQueryStore {
             .sorted(ORDERING)
             .toList();
 
-        int offset = decodeOffset(pagingState);
+        int offset = decodeOffset(cursor == null ? null : cursor.driverPagingState());
         if (offset > matching.size()) {
             throw new IllegalArgumentException("Paging state is outside the result set");
         }
         int end = Math.min(offset + pageSize, matching.size());
-        String next = end < matching.size() ? encodeOffset(end) : null;
+        OrderHistoryPageCursor next = end < matching.size()
+            ? new OrderHistoryPageCursor(
+                YearMonth.now(ZoneOffset.UTC),
+                encodeOffset(end)
+            )
+            : null;
         return new QueryPage(matching.subList(offset, end), next);
     }
 
