@@ -9,19 +9,19 @@ public interface OrderHistoryQueryStore {
     QueryPage fetch(
         OrderHistoryQueryCriteria criteria,
         int pageSize,
-        String pagingState
+        OrderHistoryPageCursor cursor
     );
 
     record QueryPage(
         List<OrderHistoryRecord> records,
-        String nextPagingState
+        OrderHistoryPageCursor nextCursor
     ) {
         public QueryPage {
             records = List.copyOf(records);
         }
 
         public boolean hasMore() {
-            return nextPagingState != null && !nextPagingState.isBlank();
+            return nextCursor != null;
         }
     }
 }
