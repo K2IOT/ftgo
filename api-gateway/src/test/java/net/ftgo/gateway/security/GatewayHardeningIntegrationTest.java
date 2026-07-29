@@ -4,15 +4,21 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.context.ApplicationContext;
 import org.springframework.http.HttpHeaders;
+import org.springframework.mock.http.server.reactive.MockServerHttpRequest;
+import org.springframework.mock.web.server.MockServerWebExchange;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder;
+import org.springframework.security.web.server.SecurityWebFilterChain;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import reactor.core.publisher.Mono;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
 
 @SpringBootTest(
@@ -24,8 +30,30 @@ class GatewayHardeningIntegrationTest {
     @Autowired
     private WebTestClient webTestClient;
 
+    @Autowired
+    private ApplicationContext applicationContext;
+
     @MockBean
     private ReactiveJwtDecoder jwtDecoder;
+
+    @Test
+    void registersScopedActuatorAndApplicationSecurityChains() {
+        Map<String, SecurityWebFilterChain> chains =
+            applicationContext.getBeansOfType(SecurityWebFilterChain.class);
+
+        assertThat(chains).containsKeys(
+            "actuatorSecurityWebFilterChain",
+            "securityWebFilterChain"
+        );
+        assertThat(chains).hasSize(2);
+
+        SecurityWebFilterChain actuator = chains.get("actuatorSecurityWebFilterChain");
+        SecurityWebFilterChain application = chains.get("securityWebFilterChain");
+        assertThat(matches(actuator, "/actuator/health/liveness")).isTrue();
+        assertThat(matches(actuator, "/orders/security-probe")).isFalse();
+        assertThat(matches(application, "/orders/security-probe")).isTrue();
+        assertThat(matches(application, "/security/unknown")).isTrue();
+    }
 
     @Test
     void anonymousLivenessIsAvailableWithoutComponentDetails() {
@@ -84,6 +112,12 @@ class GatewayHardeningIntegrationTest {
             .header(HttpHeaders.AUTHORIZATION, "Bearer admin-token")
             .exchange()
             .expectStatus().isForbidden();
+    }
+
+    private boolean matches(SecurityWebFilterChain chain, String path) {
+        return chain.matches(MockServerWebExchange.from(MockServerHttpRequest.get(path).build()))
+            .blockOptional()
+            .orElse(false);
     }
 
     private Jwt jwt(
