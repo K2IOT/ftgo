@@ -1,13 +1,16 @@
 package net.ftgo.orderhistory.api;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import net.ftgo.orderhistory.domain.OrderHistoryRecord;
 import net.ftgo.orderhistory.service.InMemoryOrderHistoryQueryStore;
+import net.ftgo.orderhistory.service.OrderHistoryPagingTokenCodec;
 import net.ftgo.orderhistory.service.OrderHistoryQueryCriteria;
 import net.ftgo.orderhistory.service.OrderHistoryQueryService;
 import net.ftgo.orderhistory.service.UnsupportedOrderHistoryQueryException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -37,7 +40,12 @@ class OrderHistoryPagingIntegrationTest {
             records.add(record);
         }
         queryService = new OrderHistoryQueryService(
-            new InMemoryOrderHistoryQueryStore(records)
+            new InMemoryOrderHistoryQueryStore(records),
+            new OrderHistoryPagingTokenCodec(
+                new ObjectMapper().findAndRegisterModules(),
+                "test-order-history-paging-secret-32-bytes",
+                Duration.ofMinutes(15)
+            )
         );
     }
 

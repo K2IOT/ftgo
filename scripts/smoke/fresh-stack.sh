@@ -159,7 +159,8 @@ run_service_startup_smoke() {
     SPRING_CASSANDRA_CONTACT_POINTS=localhost \
     SPRING_CASSANDRA_PORT=9042 \
     SPRING_CASSANDRA_LOCAL_DATACENTER=datacenter1 \
-    SPRING_CASSANDRA_KEYSPACE_NAME=ftgo_order_history
+    SPRING_CASSANDRA_KEYSPACE_NAME=ftgo_order_history \
+    FTGO_ORDER_HISTORY_PAGING_SECRET=test-order-history-paging-secret-32-bytes
   boot_and_assert "${run_number}" api-gateway 8080 \
     SPRING_DATA_REDIS_HOST=localhost \
     SPRING_DATA_REDIS_PORT=6379 \

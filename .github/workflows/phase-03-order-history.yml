@@ -58,6 +58,8 @@ jobs:
   paging-access-patterns:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      FTGO_ORDER_HISTORY_PAGING_SECRET: test-order-history-paging-secret-32-bytes
     steps:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
@@ -68,7 +70,7 @@ jobs:
           java-version: '21'
       - name: Verify Gradle 8.5 wrapper checksum
         run: bash scripts/ci/verify-gradle-wrapper.sh
-      - name: Run paging access-pattern contracts
+      - name: Run signed paging and access-pattern contracts
         id: gradle
         shell: bash
         run: |
@@ -76,6 +78,10 @@ jobs:
           chmod +x gradlew
           timeout 10m ./gradlew --no-daemon \
             :order-history-service:test \
+            --tests 'net.ftgo.orderhistory.service.OrderHistoryPagingTokenCodecTest' \
+            --tests 'net.ftgo.orderhistory.service.OrderHistoryQueryServicePagingSecurityTest' \
+            --tests 'net.ftgo.orderhistory.service.CassandraOrderHistoryQueryStoreTest' \
+            --tests 'net.ftgo.orderhistory.api.OrderHistoryPagingTokenMvcTest' \
             --tests 'net.ftgo.orderhistory.api.OrderHistoryPagingIntegrationTest' \
             --stacktrace --info 2>&1 | tee phase03-order-history-paging.log
           status=${PIPESTATUS[0]}

@@ -7,9 +7,14 @@ import org.springframework.stereotype.Service;
 public class OrderHistoryQueryService {
 
     private final OrderHistoryQueryStore queryStore;
+    private final OrderHistoryPagingTokenCodec pagingTokenCodec;
 
-    public OrderHistoryQueryService(OrderHistoryQueryStore queryStore) {
+    public OrderHistoryQueryService(
+        OrderHistoryQueryStore queryStore,
+        OrderHistoryPagingTokenCodec pagingTokenCodec
+    ) {
         this.queryStore = queryStore;
+        this.pagingTokenCodec = pagingTokenCodec;
     }
 
     public OrderHistoryResponse query(
@@ -22,17 +27,23 @@ public class OrderHistoryQueryService {
             throw new IllegalArgumentException("pageSize must be between 1 and 100");
         }
         criteria.kind();
+        OrderHistoryPageCursor cursor = pagingState == null || pagingState.isBlank()
+            ? null
+            : pagingTokenCodec.decode(pagingState, criteria, pageSize);
         OrderHistoryQueryStore.QueryPage page = queryStore.fetch(
             criteria,
             pageSize,
-            pagingState
+            cursor
         );
+        String nextPagingState = page.nextCursor() == null
+            ? null
+            : pagingTokenCodec.encode(criteria, pageSize, page.nextCursor());
         return new OrderHistoryResponse(
             page.records(),
             page.records().size(),
             pageSize,
             page.hasMore(),
-            page.nextPagingState()
+            nextPagingState
         );
     }
 }
