@@ -211,10 +211,11 @@ jobs:
           cache: gradle
       - name: Verify Gradle wrapper
         run: bash scripts/ci/verify-gradle-wrapper.sh
-      - name: Verify gateway JWT relay, versioning, media type, and hardening contracts
+      - name: Verify gateway JWT relay, CORS, versioning, media type, and hardening contracts
         run: |
           ./gradlew :api-gateway:test \
             --tests '*DownstreamTokenRelayTest' \
+            --tests '*CorsGatewayConfigurationTest' \
             --tests '*ApiVersioningFilterTest' \
             --tests '*JsonContentTypeFilterTest' \
             --tests '*ForwardedHeaderPolicyTest' \
