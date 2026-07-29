@@ -1,0 +1,153 @@
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: default-deny
+spec:
+  action: ALLOW
+  rules: []
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-api-gateway-ingress
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: api-gateway
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account
+              - cluster.local/ns/monitoring/sa/prometheus
+      to:
+        - operation:
+            paths:
+              - /api/*
+              - /actuator/health/*
+              - /actuator/prometheus
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-order-service
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: order-service
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/ftgo-production/sa/api-gateway
+              - cluster.local/ns/monitoring/sa/prometheus
+      to:
+        - operation:
+            paths:
+              - /api/*
+              - /actuator/health/*
+              - /actuator/prometheus
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-consumer-service
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: consumer-service
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/ftgo-production/sa/api-gateway
+      to:
+        - operation:
+            paths:
+              - /api/*
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/ftgo-production/sa/order-service
+      to:
+        - operation:
+            paths:
+              - /internal/*
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/monitoring/sa/prometheus
+      to:
+        - operation:
+            paths:
+              - /actuator/health/*
+              - /actuator/prometheus
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-restaurant-service
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: restaurant-service
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/ftgo-production/sa/api-gateway
+      to:
+        - operation:
+            paths:
+              - /api/*
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/ftgo-production/sa/order-service
+      to:
+        - operation:
+            paths:
+              - /internal/*
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/monitoring/sa/prometheus
+      to:
+        - operation:
+            paths:
+              - /actuator/health/*
+              - /actuator/prometheus
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-operational-services
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/part-of: ftgo
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/ftgo-production/sa/api-gateway
+              - cluster.local/ns/ftgo-production/sa/order-service
+      to:
+        - operation:
+            paths:
+              - /api/*
+              - /internal/*
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/monitoring/sa/prometheus
+      to:
+        - operation:
+            paths:
+              - /actuator/health/*
+              - /actuator/prometheus
