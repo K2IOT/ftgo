@@ -29,14 +29,10 @@ jobs:
           text = path.read_text(encoding='utf-8')
           old = '''        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url))
               .timeout(Duration.ofSeconds(30));
-          if (body == null) {
           '''
-          new = '''        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url))
-              .timeout(Duration.ofSeconds(30));
-          if ((ORDER_URL + "/orders").equals(url)) {
+          new = old + '''        if ((ORDER_URL + "/orders").equals(url)) {
               builder.header("Idempotency-Key", "distributed-consistency-" + UUID.randomUUID());
           }
-          if (body == null) {
           '''
           if text.count(old) != 1:
               raise SystemExit(f'expected exactly one helper match, found {text.count(old)}')
