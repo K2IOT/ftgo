@@ -1,3 +1,0 @@
-ftgo:
-  order-history:
-    paging-secret: test-order-history-paging-secret-32-bytes
