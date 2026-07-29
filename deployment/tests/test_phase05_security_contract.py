@@ -66,7 +66,11 @@ class Phase05SecurityContractTest(unittest.TestCase):
             ):
                 self.assertIn(required, external, service)
             self.assertNotIn("stringData:", external, service)
-            self.assertNotIn("data:", external.split("spec:", 1)[0], service)
+            self.assertNotRegex(
+                external.split("spec:", 1)[0],
+                r"(?m)^\s*(data|stringData):",
+                service,
+            )
             self.assertIn("external-secret.yaml", kustomization, service)
             self.assertIn("runtime-secret-patch.yaml", kustomization, service)
             self.assertIn("envFrom:", patch, service)
