@@ -10,6 +10,8 @@ import net.ftgo.order.domain.DeliveryInfo;
 import net.ftgo.order.domain.Order;
 import net.ftgo.order.domain.OrderLineItem;
 import net.ftgo.order.domain.PaymentInfo;
+import net.ftgo.order.idempotency.IdempotentResult;
+import net.ftgo.order.idempotency.OrderMutationIdempotencyService;
 import net.ftgo.order.service.OrderNotFoundException;
 import net.ftgo.order.service.OrderService;
 import org.junit.jupiter.api.BeforeEach;
@@ -28,8 +30,11 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.function.Supplier;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doNothing;
@@ -55,6 +60,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class OrderControllerTest {
 
     private static final Long CONSUMER_ID = 123L;
+    private static final String IDEMPOTENCY_KEY = "order-controller-test-key";
 
     @Autowired
     private MockMvc mockMvc;
@@ -68,6 +74,9 @@ class OrderControllerTest {
     @MockBean
     private OrderService orderService;
 
+    @MockBean
+    private OrderMutationIdempotencyService idempotencyService;
+
     private Order sampleOrder;
 
     @BeforeEach
@@ -75,6 +84,31 @@ class OrderControllerTest {
         sampleOrder = createSampleOrder();
         ReflectionTestUtils.setField(sampleOrder, "id", 1L);
         ReflectionTestUtils.setField(orderController, "phase2Enabled", true);
+
+        when(idempotencyService.hashCreate(anyLong(), any(CreateOrderRequest.class)))
+            .thenReturn(new byte[] {1});
+        when(idempotencyService.hashCancel(anyLong(), anyLong()))
+            .thenReturn(new byte[] {2});
+        when(idempotencyService.hashRevise(
+            anyLong(),
+            anyLong(),
+            any(ReviseOrderRequest.class)
+        )).thenReturn(new byte[] {3});
+        when(idempotencyService.execute(
+            anyLong(),
+            anyString(),
+            anyString(),
+            any(byte[].class),
+            org.mockito.ArgumentMatchers.<Supplier<String>>any()
+        )).thenAnswer(invocation -> {
+            String operation = invocation.getArgument(1);
+            Supplier<String> mutation = invocation.getArgument(4);
+            String response = mutation.get();
+            int status = OrderMutationIdempotencyService.CREATE_ORDER.equals(operation)
+                ? 201
+                : 200;
+            return new IdempotentResult<>(status, response, null, false);
+        });
     }
 
     @Test
@@ -90,6 +124,7 @@ class OrderControllerTest {
         )).thenReturn(1L);
 
         mockMvc.perform(post("/orders")
+                .header("Idempotency-Key", IDEMPOTENCY_KEY)
                 .with(authentication(consumerAuthentication(CONSUMER_ID)))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
@@ -139,6 +174,7 @@ class OrderControllerTest {
         )).thenReturn(2L);
 
         mockMvc.perform(post("/orders")
+                .header("Idempotency-Key", IDEMPOTENCY_KEY)
                 .with(authentication(consumerAuthentication(CONSUMER_ID)))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
@@ -158,6 +194,7 @@ class OrderControllerTest {
         );
 
         mockMvc.perform(post("/orders")
+                .header("Idempotency-Key", IDEMPOTENCY_KEY)
                 .with(authentication(consumerAuthentication(CONSUMER_ID)))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(invalid)))
@@ -191,6 +228,7 @@ class OrderControllerTest {
         doNothing().when(orderService).cancelOrder(eq(1L), any(FtgoPrincipal.class));
 
         mockMvc.perform(post("/orders/{orderId}/cancel", 1L)
+                .header("Idempotency-Key", IDEMPOTENCY_KEY)
                 .with(authentication(consumerAuthentication(CONSUMER_ID))))
             .andExpect(status().isOk());
 
@@ -204,6 +242,7 @@ class OrderControllerTest {
         )).when(orderService).cancelOrder(eq(1L), any(FtgoPrincipal.class));
 
         mockMvc.perform(post("/orders/{orderId}/cancel", 1L)
+                .header("Idempotency-Key", IDEMPOTENCY_KEY)
                 .with(authentication(consumerAuthentication(CONSUMER_ID))))
             .andExpect(status().isConflict())
             .andExpect(jsonPath("$.errorCode").value("CONFLICT"));
@@ -221,6 +260,7 @@ class OrderControllerTest {
         );
 
         mockMvc.perform(post("/orders/{orderId}/revise", 1L)
+                .header("Idempotency-Key", IDEMPOTENCY_KEY)
                 .with(authentication(consumerAuthentication(CONSUMER_ID)))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
@@ -247,6 +287,7 @@ class OrderControllerTest {
         );
 
         mockMvc.perform(post("/orders/{orderId}/revise", 1L)
+                .header("Idempotency-Key", IDEMPOTENCY_KEY)
                 .with(authentication(consumerAuthentication(CONSUMER_ID)))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
