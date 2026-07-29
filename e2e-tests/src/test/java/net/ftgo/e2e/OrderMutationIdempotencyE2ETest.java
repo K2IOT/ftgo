@@ -18,11 +18,11 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -194,47 +194,47 @@ class OrderMutationIdempotencyE2ETest {
     }
 
     private void verifyDroppedResponseRetryReplaysCommittedMutation(Fixture fixture)
-    throws Exception {
-    ObjectNode request = orderRequest(fixture, 1, 5);
-    String key = "remediation-04-dropped-response-" + UUID.randomUUID();
+        throws Exception {
+        ObjectNode request = orderRequest(fixture, 1, 5);
+        String key = "remediation-04-dropped-response-" + UUID.randomUUID();
 
-    postAndDropResponse(request, fixture.consumerToken(), key);
-    HttpResponse<String> retry = postOrder(
-        ORDER_URL,
-        request,
-        fixture.consumerToken(),
-        key
-    );
+        postAndDropResponse(request, fixture.consumerToken(), key);
+        HttpResponse<String> retry = postOrder(
+            ORDER_URL,
+            request,
+            fixture.consumerToken(),
+            key
+        );
 
-    assertThat(retry.statusCode()).isEqualTo(201);
-    long orderId = parse(retry.body()).path("orderId").asLong();
-    assertSingleMutationArtifacts(orderId, key);
-}
-
-private void postAndDropResponse(
-    JsonNode request,
-    String token,
-    String idempotencyKey
-) throws Exception {
-    URI uri = URI.create(ORDER_URL);
-    int port = uri.getPort() > 0 ? uri.getPort() : 80;
-    byte[] payload = JSON.writeValueAsBytes(request);
-    String headers = "POST /orders HTTP/1.1\r\n"
-        + "Host: " + uri.getHost() + ":" + port + "\r\n"
-        + "Authorization: Bearer " + token + "\r\n"
-        + "Idempotency-Key: " + idempotencyKey + "\r\n"
-        + "Content-Type: application/json\r\n"
-        + "Content-Length: " + payload.length + "\r\n"
-        + "Connection: close\r\n\r\n";
-
-    try (Socket socket = new Socket(uri.getHost(), port);
-         OutputStream output = socket.getOutputStream()) {
-        output.write(headers.getBytes(StandardCharsets.US_ASCII));
-        output.write(payload);
-        output.flush();
-        Thread.sleep(100L);
+        assertThat(retry.statusCode()).isEqualTo(201);
+        long orderId = parse(retry.body()).path("orderId").asLong();
+        assertSingleMutationArtifacts(orderId, key);
     }
-}
+
+    private void postAndDropResponse(
+        JsonNode request,
+        String token,
+        String idempotencyKey
+    ) throws Exception {
+        URI uri = URI.create(ORDER_URL);
+        int port = uri.getPort() > 0 ? uri.getPort() : 80;
+        byte[] payload = JSON.writeValueAsBytes(request);
+        String headers = "POST /orders HTTP/1.1\r\n"
+            + "Host: " + uri.getHost() + ":" + port + "\r\n"
+            + "Authorization: Bearer " + token + "\r\n"
+            + "Idempotency-Key: " + idempotencyKey + "\r\n"
+            + "Content-Type: application/json\r\n"
+            + "Content-Length: " + payload.length + "\r\n"
+            + "Connection: close\r\n\r\n";
+
+        try (Socket socket = new Socket(uri.getHost(), port);
+             OutputStream output = socket.getOutputStream()) {
+            output.write(headers.getBytes(StandardCharsets.US_ASCII));
+            output.write(payload);
+            output.flush();
+            Thread.sleep(100L);
+        }
+    }
 
     private Fixture createFixture() throws Exception {
         String suffix = UUID.randomUUID().toString().replace("-", "").substring(0, 12);
@@ -264,10 +264,9 @@ private void postAndDropResponse(
             Duration.ofMinutes(30)
         );
 
-        ObjectNode address = address("1 Remediation Street");
         ObjectNode restaurant = JSON.createObjectNode();
         restaurant.put("name", "Remediation 04 Restaurant " + suffix);
-        restaurant.set("address", address);
+        restaurant.set("address", address("1 Remediation Street"));
         restaurant.put("openingHours", "{\"daily\":\"00:00-23:59\"}");
         long restaurantId = postJson(
             RESTAURANT_URL + "/restaurants",
@@ -371,7 +370,7 @@ private void postAndDropResponse(
             Long.toString(orderId)
         )).isEqualTo(1L);
         assertThat(count(
-            "eventuate",
+            "ftgo_order",
             "SELECT COUNT(*) FROM saga_instance WHERE saga_type LIKE '%CreateOrderSaga%' "
                 + "AND saga_data_json LIKE ?",
             "%\"orderId\":" + orderId + "%"
