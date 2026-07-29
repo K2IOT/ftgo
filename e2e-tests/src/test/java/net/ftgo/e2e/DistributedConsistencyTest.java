@@ -621,6 +621,9 @@ class DistributedConsistencyTest {
     private JsonNode post(String url, JsonNode body) {
         HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url))
             .timeout(Duration.ofSeconds(30));
+        if ((ORDER_URL + "/orders").equals(url)) {
+    builder.header("Idempotency-Key", "distributed-consistency-" + UUID.randomUUID());
+}
         if (body == null) {
             builder.POST(HttpRequest.BodyPublishers.noBody());
         } else {
