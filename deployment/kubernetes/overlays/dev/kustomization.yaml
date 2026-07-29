@@ -3,6 +3,7 @@ kind: Kustomization
 namespace: ftgo-dev
 resources:
   - ../../base
+  - ../../istio
 replicas:
   - name: api-gateway
     count: 1
