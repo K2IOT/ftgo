@@ -249,7 +249,6 @@ public class OrderMutationIdempotencyService {
     ) {
         TransactionTemplate template = new TransactionTemplate(transactionManager);
         template.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
-        template.setIsolationLevel(TransactionDefinition.ISOLATION_READ_COMMITTED);
         return template;
     }
 }
