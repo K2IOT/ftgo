@@ -25,7 +25,7 @@ class Phase04ResourceServerContractTest(unittest.TestCase):
         self.assertIn("spring-security-oauth2-jose", service_block)
         self.assertIn("spring-security-test", service_block)
 
-    def test_every_http_service_declares_security_configuration(self):
+    def test_every_http_service_declares_fail_closed_security_configuration(self):
         for service in SERVICES:
             configurations = list(
                 (ROOT / service / "src/main/java").glob("**/config/SecurityConfiguration.java")
@@ -39,9 +39,14 @@ class Phase04ResourceServerContractTest(unittest.TestCase):
             self.assertIn("@EnableWebSecurity", source, service)
             self.assertIn("oauth2ResourceServer", source, service)
             self.assertIn("FtgoJwtAuthenticationConverter", source, service)
+            self.assertIn("FtgoAuthorizationManagers.publicApi", source, service)
+            self.assertIn("FtgoAuthorizationManagers.internalService", source, service)
             self.assertIn("JwtDecoder", source, service)
             self.assertIn('"/internal/**"', source, service)
             self.assertIn("ftgo-internal", source, service)
+            self.assertIn("publicAudience", source, service)
+            self.assertIn('.anyRequest().denyAll()', source, service)
+            self.assertNotIn('.anyRequest().authenticated()', source, service)
             self.assertIn('"/actuator/health/liveness"', source, service)
             self.assertIn('"/actuator/health/readiness"', source, service)
 
@@ -82,7 +87,7 @@ class Phase04ResourceServerContractTest(unittest.TestCase):
             "Admin consumer route must be evaluated before the general consumer route",
         )
 
-    def test_gateway_declares_request_and_forwarded_header_hardening(self):
+    def test_gateway_declares_request_forwarded_header_and_route_hardening(self):
         configuration = (ROOT / "api-gateway/src/main/resources/application.yml").read_text(
             encoding="utf-8"
         )
@@ -98,6 +103,33 @@ class Phase04ResourceServerContractTest(unittest.TestCase):
         self.assertIn('"/actuator/health/liveness"', security)
         self.assertIn('"/actuator/health/readiness"', security)
         self.assertIn('.pathMatchers("/actuator/**").hasRole("ADMIN")', security)
+        self.assertIn("publicApiAccess(publicAudience", security)
+        self.assertIn(".anyExchange().denyAll()", security)
+        self.assertNotIn(".anyExchange().authenticated()", security)
+
+    def test_gateway_cors_is_explicit_and_fail_closed(self):
+        cors = (ROOT / "api-gateway/src/main/java/net/ftgo/gateway/config/CorsGatewayConfiguration.java").read_text(
+            encoding="utf-8"
+        )
+        properties = (ROOT / "api-gateway/src/main/java/net/ftgo/gateway/config/GatewayCorsProperties.java").read_text(
+            encoding="utf-8"
+        )
+        docker = (ROOT / "api-gateway/src/main/resources/application-docker.yml").read_text(
+            encoding="utf-8"
+        )
+        k8s = (ROOT / "api-gateway/src/main/resources/application-k8s.yml").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("GatewayCorsProperties", cors)
+        self.assertIn("setAllowedOrigins", cors)
+        self.assertNotIn("setAllowedOriginPatterns", cors)
+        self.assertIn('allowedOrigins.contains("*")', cors)
+        self.assertIn("private boolean allowCredentials", properties)
+        self.assertIn("FTGO_CORS_ALLOWED_ORIGINS", docker)
+        self.assertIn("FTGO_CORS_ALLOWED_ORIGINS", k8s)
+        self.assertNotIn("allowed-origin-patterns", docker)
+        self.assertNotIn("allowed-origin-patterns", k8s)
 
     def test_gateway_exposes_versioned_public_api_without_duplicating_routes(self):
         version_filter = (

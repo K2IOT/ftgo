@@ -44,12 +44,30 @@ class SecuritySmokeTest {
     }
 
     @Test
+    void rejectsRestaurantRoleWithInternalAudienceOnly() throws Exception {
+        mockMvc.perform(get("/tickets/security-probe").with(jwt().authorities(
+                new SimpleGrantedAuthority("ROLE_RESTAURANT"),
+                new SimpleGrantedAuthority("AUD_ftgo-internal")
+            )))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
     void permitsRestaurantTokenForTicketEndpoint() throws Exception {
         mockMvc.perform(get("/tickets/security-probe").with(jwt().authorities(
                 new SimpleGrantedAuthority("ROLE_RESTAURANT"),
                 new SimpleGrantedAuthority("AUD_ftgo-api")
             )))
             .andExpect(status().isOk());
+    }
+
+    @Test
+    void deniesUnknownAuthenticatedRoute() throws Exception {
+        mockMvc.perform(get("/security/unknown").with(jwt().authorities(
+                new SimpleGrantedAuthority("ROLE_ADMIN"),
+                new SimpleGrantedAuthority("AUD_ftgo-api")
+            )))
+            .andExpect(status().isForbidden());
     }
 
     @Test

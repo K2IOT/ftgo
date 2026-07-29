@@ -130,6 +130,96 @@ class SecurityAuthorizationTest {
     }
 
     @Test
+    void internalAudienceCannotAccessPublicRoutes() throws Exception {
+        String internalConsumer = token(
+            "internal-consumer-" + consumerAId,
+            List.of("CONSUMER"),
+            List.of("ftgo-internal"),
+            Map.of("consumer_id", consumerAId),
+            Duration.ofMinutes(5)
+        );
+
+        assertStatus(send(
+            "GET",
+            CONSUMER_URL + "/consumers/" + consumerAId,
+            null,
+            internalConsumer
+        ), 403);
+        assertStatus(send(
+            "GET",
+            GATEWAY_URL + "/consumers/" + consumerAId,
+            null,
+            internalConsumer
+        ), 403);
+    }
+
+    @Test
+    void scopeAndLegacyAuthoritiesCannotGrantAdmin() throws Exception {
+        ObjectNode body = JSON.createObjectNode().put("creditLimit", "999999.00");
+        String scopeAdmin = token(
+            "scope-admin",
+            List.of(),
+            List.of("ftgo-api"),
+            Map.of("scope", "openid ADMIN SERVICE"),
+            Duration.ofMinutes(5)
+        );
+        String legacyAuthorityAdmin = token(
+            "legacy-authority-admin",
+            List.of(),
+            List.of("ftgo-api"),
+            Map.of("authorities", List.of("ROLE_ADMIN")),
+            Duration.ofMinutes(5)
+        );
+
+        assertStatus(send(
+            "PUT",
+            CONSUMER_URL + "/admin/consumers/" + consumerBId + "/credit-limit",
+            body,
+            scopeAdmin
+        ), 403);
+        assertStatus(send(
+            "PUT",
+            GATEWAY_URL + "/admin/consumers/" + consumerBId + "/credit-limit",
+            body,
+            legacyAuthorityAdmin
+        ), 403);
+    }
+
+    @Test
+    void unknownApplicationRoleIsRejected() throws Exception {
+        String unknownRole = token(
+            "unknown-role-user",
+            List.of("SUPERUSER"),
+            List.of("ftgo-api"),
+            Map.of(),
+            Duration.ofMinutes(5)
+        );
+
+        assertStatus(send(
+            "GET",
+            CONSUMER_URL + "/consumers/" + consumerAId,
+            null,
+            unknownRole
+        ), 401);
+    }
+
+    @Test
+    void authenticatedUnknownRoutesAreDeniedAtEdgeAndDirectPort() {
+        assertStatus(send(
+            "GET",
+            CONSUMER_URL + "/security/unknown",
+            null,
+            adminToken
+        ), 403);
+        assertStatus(send(
+            "GET",
+            GATEWAY_URL + "/security/unknown",
+            null,
+            adminToken
+        ), 403);
+    }
+
+    @Test
     void consumerCannotReadAnotherConsumerProfile() {
         assertStatus(send(
             "GET",

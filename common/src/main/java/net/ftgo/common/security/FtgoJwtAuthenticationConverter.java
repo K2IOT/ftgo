@@ -82,8 +82,6 @@ public final class FtgoJwtAuthenticationConverter implements Converter<Jwt, Abst
     private Set<String> extractRoles(Jwt jwt) {
         LinkedHashSet<String> result = new LinkedHashSet<>();
         addRoleValues(result, jwt.getClaim("roles"), "roles");
-        addRoleValues(result, jwt.getClaim("authorities"), "authorities");
-        addScopeRoles(result, jwt.getClaim("scope"));
 
         Object realmAccessValue = jwt.getClaim("realm_access");
         if (realmAccessValue != null) {
@@ -94,19 +92,6 @@ public final class FtgoJwtAuthenticationConverter implements Converter<Jwt, Abst
         }
 
         return Set.copyOf(result);
-    }
-
-    private void addScopeRoles(Set<String> target, Object value) {
-        if (value == null) {
-            return;
-        }
-        if (value instanceof String scope) {
-            for (String role : scope.trim().split("\\s+")) {
-                addRole(target, role, "scope");
-            }
-            return;
-        }
-        addRoleValues(target, value, "scope");
     }
 
     private void addRoleValues(Set<String> target, Object value, String claimName) {
@@ -139,6 +124,9 @@ public final class FtgoJwtAuthenticationConverter implements Converter<Jwt, Abst
         role = role.trim().toUpperCase(Locale.ROOT);
         if (role.isEmpty()) {
             throw new BadJwtException("Invalid " + claimName + " claim");
+        }
+        if (!FtgoRoles.isKnown(role)) {
+            throw new BadJwtException("Unknown application role " + role + " in " + claimName);
         }
         target.add(role);
     }

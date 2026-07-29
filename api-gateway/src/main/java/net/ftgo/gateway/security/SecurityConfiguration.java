@@ -8,17 +8,25 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.authorization.AuthorizationDecision;
+import org.springframework.security.authorization.ReactiveAuthorizationManager;
 import org.springframework.security.config.annotation.web.reactive.EnableWebFluxSecurity;
 import org.springframework.security.config.web.server.ServerHttpSecurity;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder;
 import org.springframework.security.web.server.SecurityWebFilterChain;
 import org.springframework.security.web.server.ServerAuthenticationEntryPoint;
+import org.springframework.security.web.server.authorization.AuthorizationContext;
 import org.springframework.security.web.server.authorization.ServerAccessDeniedHandler;
 import org.springframework.security.web.server.util.matcher.ServerWebExchangeMatchers;
 import reactor.core.publisher.Mono;
 
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Configuration
 @EnableWebFluxSecurity
@@ -46,46 +54,71 @@ public class SecurityConfiguration {
 
     @Bean
     @Order(1)
-    public SecurityWebFilterChain securityWebFilterChain(ServerHttpSecurity http) {
+    public SecurityWebFilterChain securityWebFilterChain(
+        ServerHttpSecurity http,
+        @Value("${ftgo.security.public-audience:ftgo-api}") String publicAudience
+    ) {
         FtgoJwtAuthenticationConverter converter = new FtgoJwtAuthenticationConverter("");
         return configureResourceServer(http, converter)
             .csrf(ServerHttpSecurity.CsrfSpec::disable)
             .authorizeExchange(exchanges -> exchanges
                 .pathMatchers("/fallback/**").permitAll()
 
-                .pathMatchers(HttpMethod.POST, "/orders").hasRole("CONSUMER")
-                .pathMatchers(HttpMethod.GET, "/orders/**").hasAnyRole("CONSUMER", "ADMIN")
-                .pathMatchers(HttpMethod.POST, "/orders/*/cancel").hasRole("CONSUMER")
-                .pathMatchers(HttpMethod.POST, "/orders/*/revise").hasRole("CONSUMER")
+                .pathMatchers(HttpMethod.POST, "/orders")
+                    .access(publicApiAccess(publicAudience, "CONSUMER"))
+                .pathMatchers(HttpMethod.GET, "/orders/**")
+                    .access(publicApiAccess(publicAudience, "CONSUMER", "ADMIN"))
+                .pathMatchers(HttpMethod.POST, "/orders/*/cancel")
+                    .access(publicApiAccess(publicAudience, "CONSUMER"))
+                .pathMatchers(HttpMethod.POST, "/orders/*/revise")
+                    .access(publicApiAccess(publicAudience, "CONSUMER"))
 
-                .pathMatchers("/admin/consumers/**").hasRole("ADMIN")
-                .pathMatchers(HttpMethod.POST, "/consumers").hasAnyRole("CONSUMER", "ADMIN")
-                .pathMatchers(HttpMethod.GET, "/consumers/**").hasAnyRole("CONSUMER", "ADMIN")
-                .pathMatchers(HttpMethod.PUT, "/consumers/**").hasAnyRole("CONSUMER", "ADMIN")
+                .pathMatchers("/admin/consumers/**")
+                    .access(publicApiAccess(publicAudience, "ADMIN"))
+                .pathMatchers(HttpMethod.POST, "/consumers")
+                    .access(publicApiAccess(publicAudience, "CONSUMER", "ADMIN"))
+                .pathMatchers(HttpMethod.GET, "/consumers/**")
+                    .access(publicApiAccess(publicAudience, "CONSUMER", "ADMIN"))
+                .pathMatchers(HttpMethod.PUT, "/consumers/**")
+                    .access(publicApiAccess(publicAudience, "CONSUMER", "ADMIN"))
 
-                .pathMatchers(HttpMethod.POST, "/restaurants").hasRole("ADMIN")
+                .pathMatchers(HttpMethod.POST, "/restaurants")
+                    .access(publicApiAccess(publicAudience, "ADMIN"))
                 .pathMatchers(HttpMethod.GET, "/restaurants/**").permitAll()
-                .pathMatchers(HttpMethod.PUT, "/restaurants/**").hasAnyRole("RESTAURANT", "ADMIN")
-                .pathMatchers(HttpMethod.DELETE, "/restaurants/**").hasAnyRole("RESTAURANT", "ADMIN")
-                .pathMatchers("/restaurants/*/menu-items/**").hasAnyRole("RESTAURANT", "ADMIN")
+                .pathMatchers(HttpMethod.PUT, "/restaurants/**")
+                    .access(publicApiAccess(publicAudience, "RESTAURANT", "ADMIN"))
+                .pathMatchers(HttpMethod.DELETE, "/restaurants/**")
+                    .access(publicApiAccess(publicAudience, "RESTAURANT", "ADMIN"))
+                .pathMatchers("/restaurants/*/menu-items/**")
+                    .access(publicApiAccess(publicAudience, "RESTAURANT", "ADMIN"))
 
-                .pathMatchers(HttpMethod.GET, "/tickets/**").hasAnyRole("RESTAURANT", "ADMIN")
-                .pathMatchers(HttpMethod.POST, "/tickets/*/accept").hasAnyRole("RESTAURANT", "ADMIN")
-                .pathMatchers(HttpMethod.POST, "/tickets/*/preparing").hasAnyRole("RESTAURANT", "ADMIN")
-                .pathMatchers(HttpMethod.POST, "/tickets/*/ready").hasAnyRole("RESTAURANT", "ADMIN")
+                .pathMatchers(HttpMethod.GET, "/tickets/**")
+                    .access(publicApiAccess(publicAudience, "RESTAURANT", "ADMIN"))
+                .pathMatchers(HttpMethod.POST, "/tickets/*/accept")
+                    .access(publicApiAccess(publicAudience, "RESTAURANT", "ADMIN"))
+                .pathMatchers(HttpMethod.POST, "/tickets/*/preparing")
+                    .access(publicApiAccess(publicAudience, "RESTAURANT", "ADMIN"))
+                .pathMatchers(HttpMethod.POST, "/tickets/*/ready")
+                    .access(publicApiAccess(publicAudience, "RESTAURANT", "ADMIN"))
 
-                .pathMatchers("/api/admin/payment-settlement/**").hasRole("ADMIN")
-                .pathMatchers("/accounts/**").hasRole("ADMIN")
+                .pathMatchers("/api/admin/payment-settlement/**", "/accounts/**")
+                    .access(publicApiAccess(publicAudience, "ADMIN"))
 
-                .pathMatchers(HttpMethod.GET, "/deliveries/**").hasAnyRole("COURIER", "ADMIN")
-                .pathMatchers(HttpMethod.POST, "/deliveries/*/assign").hasAnyRole("COURIER", "ADMIN")
-                .pathMatchers(HttpMethod.POST, "/deliveries/*/pickup").hasAnyRole("COURIER", "ADMIN")
-                .pathMatchers(HttpMethod.POST, "/deliveries/*/deliver").hasAnyRole("COURIER", "ADMIN")
+                .pathMatchers(HttpMethod.GET, "/deliveries/**")
+                    .access(publicApiAccess(publicAudience, "COURIER", "ADMIN"))
+                .pathMatchers(HttpMethod.POST, "/deliveries/*/assign")
+                    .access(publicApiAccess(publicAudience, "COURIER", "ADMIN"))
+                .pathMatchers(HttpMethod.POST, "/deliveries/*/pickup")
+                    .access(publicApiAccess(publicAudience, "COURIER", "ADMIN"))
+                .pathMatchers(HttpMethod.POST, "/deliveries/*/deliver")
+                    .access(publicApiAccess(publicAudience, "COURIER", "ADMIN"))
 
-                .pathMatchers(HttpMethod.GET, "/order-history/**").hasAnyRole("CONSUMER", "ADMIN")
-                .pathMatchers(HttpMethod.GET, "/order-details/**").hasAnyRole("CONSUMER", "ADMIN")
+                .pathMatchers(HttpMethod.GET, "/order-history/**")
+                    .access(publicApiAccess(publicAudience, "CONSUMER", "ADMIN"))
+                .pathMatchers(HttpMethod.GET, "/order-details/**")
+                    .access(publicApiAccess(publicAudience, "CONSUMER", "ADMIN"))
 
-                .anyExchange().authenticated()
+                .anyExchange().denyAll()
             )
             .build();
     }
@@ -102,6 +135,27 @@ public class SecurityConfiguration {
             jwkSetUri,
             List.of(publicAudience, internalAudience)
         );
+    }
+
+    private ReactiveAuthorizationManager<AuthorizationContext> publicApiAccess(
+        String publicAudience,
+        String... roles
+    ) {
+        String audienceAuthority = "AUD_" + publicAudience.trim();
+        Set<String> roleAuthorities = Arrays.stream(roles)
+            .map(role -> "ROLE_" + role.trim().toUpperCase(Locale.ROOT))
+            .collect(Collectors.toUnmodifiableSet());
+        return (authentication, context) -> authentication
+            .map(actor -> new AuthorizationDecision(
+                hasAuthority(actor, audienceAuthority)
+                    && roleAuthorities.stream().anyMatch(role -> hasAuthority(actor, role))
+            ))
+            .defaultIfEmpty(new AuthorizationDecision(false));
+    }
+
+    private boolean hasAuthority(Authentication authentication, String authorityName) {
+        return authentication.getAuthorities().stream()
+            .anyMatch(authority -> authority.getAuthority().equals(authorityName));
     }
 
     private ServerHttpSecurity configureResourceServer(

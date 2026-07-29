@@ -44,12 +44,30 @@ class SecuritySmokeTest {
     }
 
     @Test
+    void rejectsCourierRoleWithInternalAudienceOnly() throws Exception {
+        mockMvc.perform(get("/deliveries/security-probe").with(jwt().authorities(
+                new SimpleGrantedAuthority("ROLE_COURIER"),
+                new SimpleGrantedAuthority("AUD_ftgo-internal")
+            )))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
     void permitsCourierTokenForDeliveryEndpoint() throws Exception {
         mockMvc.perform(get("/deliveries/security-probe").with(jwt().authorities(
                 new SimpleGrantedAuthority("ROLE_COURIER"),
                 new SimpleGrantedAuthority("AUD_ftgo-api")
             )))
             .andExpect(status().isOk());
+    }
+
+    @Test
+    void deniesUnknownAuthenticatedRoute() throws Exception {
+        mockMvc.perform(get("/security/unknown").with(jwt().authorities(
+                new SimpleGrantedAuthority("ROLE_ADMIN"),
+                new SimpleGrantedAuthority("AUD_ftgo-api")
+            )))
+            .andExpect(status().isForbidden());
     }
 
     @Test
