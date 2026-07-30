@@ -1,6 +1,6 @@
 package net.ftgo.gateway.filter;
 
-import net.ftgo.common.web.CorrelationIdFilter;
+import net.ftgo.common.web.CorrelationIds;
 import net.ftgo.gateway.security.ForwardedHeaderPolicy;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -29,7 +29,7 @@ class GatewayCorrelationFilterTest {
         MockServerWebExchange exchange = MockServerWebExchange.from(
             MockServerHttpRequest.get("/orders/1")
                 .remoteAddress(new InetSocketAddress("127.0.0.1", 54321))
-                .header(CorrelationIdFilter.HEADER_NAME, "corr-12345678")
+                .header(CorrelationIds.HEADER_NAME, "corr-12345678")
                 .header("X-Request-Id", "legacy-request-id")
         );
         AtomicReference<ServerWebExchange> downstream = new AtomicReference<>();
@@ -41,12 +41,12 @@ class GatewayCorrelationFilterTest {
             .verifyComplete();
 
         assertThat(downstream.get().getRequest().getHeaders()
-            .getFirst(CorrelationIdFilter.HEADER_NAME)).isEqualTo("corr-12345678");
+            .getFirst(CorrelationIds.HEADER_NAME)).isEqualTo("corr-12345678");
         assertThat(downstream.get().getRequest().getHeaders().containsKey("X-Request-Id"))
             .isFalse();
         assertThat(exchange.getResponse().getHeaders()
-            .getFirst(CorrelationIdFilter.HEADER_NAME)).isEqualTo("corr-12345678");
-        assertThat(MDC.get("correlationId")).isNull();
+            .getFirst(CorrelationIds.HEADER_NAME)).isEqualTo("corr-12345678");
+        assertThat(MDC.get(CorrelationIds.MDC_KEY)).isNull();
     }
 
     @Test
@@ -56,7 +56,7 @@ class GatewayCorrelationFilterTest {
         MockServerWebExchange exchange = MockServerWebExchange.from(
             MockServerHttpRequest.get("/orders/1")
                 .remoteAddress(new InetSocketAddress("127.0.0.1", 54321))
-                .header(CorrelationIdFilter.HEADER_NAME, oversized)
+                .header(CorrelationIds.HEADER_NAME, oversized)
         );
         AtomicReference<ServerWebExchange> downstream = new AtomicReference<>();
 
@@ -67,11 +67,11 @@ class GatewayCorrelationFilterTest {
             .verifyComplete();
 
         String generated = downstream.get().getRequest().getHeaders()
-            .getFirst(CorrelationIdFilter.HEADER_NAME);
+            .getFirst(CorrelationIds.HEADER_NAME);
         assertThat(generated).isNotBlank().isNotEqualTo(oversized);
         assertThat(generated).matches("[A-Za-z0-9._:-]{8,128}");
         assertThat(exchange.getResponse().getHeaders()
-            .getFirst(CorrelationIdFilter.HEADER_NAME)).isEqualTo(generated);
+            .getFirst(CorrelationIds.HEADER_NAME)).isEqualTo(generated);
     }
 
     @Test
