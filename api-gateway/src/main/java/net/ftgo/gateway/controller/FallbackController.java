@@ -1,73 +1,75 @@
 package net.ftgo.gateway.controller;
 
+import net.ftgo.common.web.CorrelationIds;
+import net.ftgo.common.web.FtgoProblemDetail;
+import net.ftgo.gateway.handler.GatewayProblemResponses;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ServerWebExchange;
 
-import java.time.Instant;
-import java.util.LinkedHashMap;
-import java.util.Map;
+import java.net.URI;
 
-/**
- * Fallback controller for circuit breaker responses.
- * Provides graceful degradation when downstream services are unavailable.
- *
- * B4 FIX: Uses @RequestMapping(method = {GET, POST}) instead of dual
- * @GetMapping/@PostMapping annotations to avoid ambiguous handler mappings.
- */
+/** Circuit-breaker fallbacks using the public RFC 9457 error contract. */
 @RestController
 @RequestMapping("/fallback")
 public class FallbackController {
 
     @RequestMapping(value = "/orders", method = {RequestMethod.GET, RequestMethod.POST})
-    public ResponseEntity<Map<String, Object>> orderServiceFallback() {
-        return buildFallbackResponse("order-service", "Order service is temporarily unavailable. Please try again later.");
+    public ResponseEntity<FtgoProblemDetail> orderServiceFallback(ServerWebExchange exchange) {
+        return buildFallbackResponse(exchange, "order");
     }
 
     @RequestMapping(value = "/consumers", method = {RequestMethod.GET, RequestMethod.POST})
-    public ResponseEntity<Map<String, Object>> consumerServiceFallback() {
-        return buildFallbackResponse("consumer-service", "Consumer service is temporarily unavailable. Please try again later.");
+    public ResponseEntity<FtgoProblemDetail> consumerServiceFallback(ServerWebExchange exchange) {
+        return buildFallbackResponse(exchange, "consumer");
     }
 
     @RequestMapping(value = "/restaurants", method = {RequestMethod.GET, RequestMethod.POST})
-    public ResponseEntity<Map<String, Object>> restaurantServiceFallback() {
-        return buildFallbackResponse("restaurant-service", "Restaurant service is temporarily unavailable. Please try again later.");
+    public ResponseEntity<FtgoProblemDetail> restaurantServiceFallback(ServerWebExchange exchange) {
+        return buildFallbackResponse(exchange, "restaurant");
     }
 
     @RequestMapping(value = "/tickets", method = {RequestMethod.GET, RequestMethod.POST})
-    public ResponseEntity<Map<String, Object>> kitchenServiceFallback() {
-        return buildFallbackResponse("kitchen-service", "Kitchen service is temporarily unavailable. Please try again later.");
+    public ResponseEntity<FtgoProblemDetail> kitchenServiceFallback(ServerWebExchange exchange) {
+        return buildFallbackResponse(exchange, "kitchen");
     }
 
     @RequestMapping(value = "/accounts", method = {RequestMethod.GET, RequestMethod.POST})
-    public ResponseEntity<Map<String, Object>> accountingServiceFallback() {
-        return buildFallbackResponse("accounting-service", "Accounting service is temporarily unavailable. Please try again later.");
+    public ResponseEntity<FtgoProblemDetail> accountingServiceFallback(ServerWebExchange exchange) {
+        return buildFallbackResponse(exchange, "accounting");
     }
 
     @RequestMapping(value = "/deliveries", method = {RequestMethod.GET, RequestMethod.POST})
-    public ResponseEntity<Map<String, Object>> deliveryServiceFallback() {
-        return buildFallbackResponse("delivery-service", "Delivery service is temporarily unavailable. Please try again later.");
+    public ResponseEntity<FtgoProblemDetail> deliveryServiceFallback(ServerWebExchange exchange) {
+        return buildFallbackResponse(exchange, "delivery");
     }
 
-    @RequestMapping(value = "/order-history", method = {RequestMethod.GET})
-    public ResponseEntity<Map<String, Object>> orderHistoryServiceFallback() {
-        return buildFallbackResponse("order-history-service", "Order history service is temporarily unavailable. Please try again later.");
+    @RequestMapping(value = "/order-history", method = RequestMethod.GET)
+    public ResponseEntity<FtgoProblemDetail> orderHistoryServiceFallback(ServerWebExchange exchange) {
+        return buildFallbackResponse(exchange, "order history");
     }
 
-    /**
-     * Build a structured fallback response with timestamp and service identification.
-     */
-    private ResponseEntity<Map<String, Object>> buildFallbackResponse(String service, String message) {
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("error", "service_unavailable");
-        body.put("message", message);
-        body.put("service", service);
-        body.put("timestamp", Instant.now().toString());
-        body.put("status", HttpStatus.SERVICE_UNAVAILABLE.value());
-        return ResponseEntity
-                .status(HttpStatus.SERVICE_UNAVAILABLE)
-                .body(body);
+    private ResponseEntity<FtgoProblemDetail> buildFallbackResponse(
+        ServerWebExchange exchange,
+        String serviceName
+    ) {
+        String correlationId = GatewayProblemResponses.correlationId(exchange);
+        FtgoProblemDetail body = new FtgoProblemDetail(
+            URI.create("https://ftgo.example/problems/service-unavailable"),
+            "Downstream service unavailable",
+            HttpStatus.SERVICE_UNAVAILABLE.value(),
+            "The " + serviceName + " service is temporarily unavailable",
+            URI.create(exchange.getRequest().getPath().value()),
+            "SERVICE_UNAVAILABLE",
+            correlationId
+        );
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+            .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+            .header(CorrelationIds.HEADER_NAME, correlationId)
+            .body(body);
     }
 }
