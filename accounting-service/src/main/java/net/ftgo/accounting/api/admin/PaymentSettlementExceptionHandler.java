@@ -1,49 +1,79 @@
 package net.ftgo.accounting.api.admin;
 
+import jakarta.servlet.http.HttpServletRequest;
+import net.ftgo.accounting.settlement.RefundAmountExceedsCapturedException;
 import net.ftgo.accounting.settlement.SettlementGatewayTimeoutException;
 import net.ftgo.accounting.settlement.SettlementRetryExhaustedException;
+import net.ftgo.common.web.FtgoProblemDetail;
+import net.ftgo.common.web.FtgoProblemResponses;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
-import java.time.Instant;
-
 @RestControllerAdvice(assignableTypes = PaymentSettlementOperationsController.class)
 public class PaymentSettlementExceptionHandler {
 
+    @ExceptionHandler(RefundAmountExceedsCapturedException.class)
+    public ResponseEntity<FtgoProblemDetail> overRefund(
+        RefundAmountExceedsCapturedException error,
+        HttpServletRequest request
+    ) {
+        return FtgoProblemResponses.response(
+            HttpStatus.BAD_REQUEST,
+            "refund-amount-exceeds-captured",
+            "Refund amount exceeds captured amount",
+            "Refund total exceeds captured amount",
+            "REFUND_AMOUNT_EXCEEDS_CAPTURED",
+            request
+        );
+    }
+
     @ExceptionHandler(IllegalArgumentException.class)
-    public ResponseEntity<ErrorResponse> badRequest(IllegalArgumentException error) {
-        return response(HttpStatus.BAD_REQUEST, error);
+    public ResponseEntity<FtgoProblemDetail> badRequest(
+        IllegalArgumentException error,
+        HttpServletRequest request
+    ) {
+        return FtgoProblemResponses.response(
+            HttpStatus.BAD_REQUEST,
+            "payment-settlement-invalid",
+            "Invalid payment settlement request",
+            "The payment settlement request is invalid",
+            "PAYMENT_SETTLEMENT_INVALID",
+            request
+        );
     }
 
     @ExceptionHandler(IllegalStateException.class)
-    public ResponseEntity<ErrorResponse> conflict(IllegalStateException error) {
-        return response(HttpStatus.CONFLICT, error);
+    public ResponseEntity<FtgoProblemDetail> conflict(
+        IllegalStateException error,
+        HttpServletRequest request
+    ) {
+        return FtgoProblemResponses.response(
+            HttpStatus.CONFLICT,
+            "payment-settlement-conflict",
+            "Payment settlement conflict",
+            "The payment settlement request conflicts with current state",
+            "PAYMENT_SETTLEMENT_CONFLICT",
+            request
+        );
     }
 
     @ExceptionHandler({
         SettlementGatewayTimeoutException.class,
         SettlementRetryExhaustedException.class
     })
-    public ResponseEntity<ErrorResponse> providerUnavailable(RuntimeException error) {
-        return response(HttpStatus.SERVICE_UNAVAILABLE, error);
-    }
-
-    private ResponseEntity<ErrorResponse> response(HttpStatus status, RuntimeException error) {
-        return ResponseEntity.status(status).body(new ErrorResponse(
-            status.value(),
-            status.getReasonPhrase(),
-            error.getMessage(),
-            Instant.now()
-        ));
-    }
-
-    public record ErrorResponse(
-        int status,
-        String error,
-        String message,
-        Instant timestamp
+    public ResponseEntity<FtgoProblemDetail> providerUnavailable(
+        RuntimeException error,
+        HttpServletRequest request
     ) {
+        return FtgoProblemResponses.response(
+            HttpStatus.SERVICE_UNAVAILABLE,
+            "payment-provider-unavailable",
+            "Payment provider unavailable",
+            "The payment provider is temporarily unavailable",
+            "PAYMENT_PROVIDER_UNAVAILABLE",
+            request
+        );
     }
 }

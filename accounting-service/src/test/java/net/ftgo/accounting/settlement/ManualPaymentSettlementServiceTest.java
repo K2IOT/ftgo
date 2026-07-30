@@ -22,6 +22,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -98,26 +99,23 @@ class ManualPaymentSettlementServiceTest {
     }
 
     @Test
-    void overRefundIsRejectedBeforeLocalMutation() {
+    void overRefundIsRejectedBeforeProviderAndLocalMutation() {
         Account account = capturedAccount(102L, 702L, "25.00");
         when(accountRepository.findByAuthorizationId(702L)).thenReturn(Optional.of(account));
-        when(settlementGateway.refund(
-            702L,
-            102L,
-            new Money("30.00"),
-            "manual-refund-702-1"
-        )).thenThrow(new IllegalArgumentException("Refund total exceeds captured amount"));
 
         assertThatThrownBy(() -> service.refund(
             702L,
             new Money("30.00"),
             "too much",
             "manual-refund-702-1"
-        )).isInstanceOf(IllegalArgumentException.class)
+        )).isInstanceOf(RefundAmountExceedsCapturedException.class)
           .hasMessageContaining("exceeds captured amount");
 
+        verifyNoInteractions(settlementGateway, ledgerService, eventPublisher);
         assertThat(account.findAuthorizationById(702L).getStatus())
             .isEqualTo(AuthorizationStatus.CAPTURED);
+        assertThat(account.findAuthorizationById(702L).getRefundedAmount())
+            .isEqualTo(Money.ZERO);
     }
 
     @Test
