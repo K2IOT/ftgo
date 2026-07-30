@@ -2,7 +2,7 @@ package net.ftgo.gateway.handler;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import net.ftgo.common.web.CorrelationIdFilter;
+import net.ftgo.common.web.CorrelationIds;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
@@ -24,7 +24,7 @@ class GatewayProblemDetailContractTest {
         GlobalErrorHandler handler = new GlobalErrorHandler();
         MockServerWebExchange exchange = MockServerWebExchange.from(
             MockServerHttpRequest.get("/orders/42")
-                .header(CorrelationIdFilter.HEADER_NAME, "corr-gateway-1234")
+                .header(CorrelationIds.HEADER_NAME, "corr-gateway-1234")
         );
         WebClientRequestException error = new WebClientRequestException(
             new RuntimeException("jdbc:mysql://secret-host/password"),
@@ -35,7 +35,8 @@ class GatewayProblemDetailContractTest {
 
         handler.handle(exchange, error).block();
 
-        JsonNode body = JSON.readTree(exchange.getResponse().getBodyAsString().block());
+        String responseBody = exchange.getResponse().getBodyAsString().block();
+        JsonNode body = JSON.readTree(responseBody);
         assertThat(exchange.getResponse().getStatusCode()).isEqualTo(HttpStatus.BAD_GATEWAY);
         assertThat(exchange.getResponse().getHeaders().getContentType())
             .isEqualTo(MediaType.APPLICATION_PROBLEM_JSON);
@@ -46,7 +47,7 @@ class GatewayProblemDetailContractTest {
         assertThat(body.path("instance").asText()).isEqualTo("/orders/42");
         assertThat(body.path("errorCode").asText()).isEqualTo("SERVICE_UNAVAILABLE");
         assertThat(body.path("correlationId").asText()).isEqualTo("corr-gateway-1234");
-        assertThat(exchange.getResponse().getBodyAsString().block())
+        assertThat(responseBody)
             .doesNotContain("secret-host")
             .doesNotContain("RuntimeException");
     }
@@ -60,12 +61,13 @@ class GatewayProblemDetailContractTest {
 
         handler.handle(exchange, new IllegalStateException("payment-token-secret")).block();
 
-        JsonNode body = JSON.readTree(exchange.getResponse().getBodyAsString().block());
+        String responseBody = exchange.getResponse().getBodyAsString().block();
+        JsonNode body = JSON.readTree(responseBody);
         assertThat(exchange.getResponse().getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
         assertThat(body.path("errorCode").asText()).isEqualTo("INTERNAL_ERROR");
         assertThat(body.path("detail").asText()).isEqualTo("An unexpected error occurred");
         assertThat(body.path("correlationId").asText()).matches("[A-Za-z0-9._:-]{8,128}");
-        assertThat(exchange.getResponse().getBodyAsString().block())
+        assertThat(responseBody)
             .doesNotContain("payment-token-secret")
             .doesNotContain("IllegalStateException");
     }
