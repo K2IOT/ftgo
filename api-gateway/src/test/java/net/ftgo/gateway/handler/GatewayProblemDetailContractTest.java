@@ -3,12 +3,16 @@ package net.ftgo.gateway.handler;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import net.ftgo.common.web.CorrelationIds;
+import net.ftgo.gateway.controller.FallbackController;
+import net.ftgo.gateway.filter.GatewayCorrelationFilter;
+import net.ftgo.gateway.security.ForwardedHeaderPolicy;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.mock.http.server.reactive.MockServerHttpRequest;
 import org.springframework.mock.web.server.MockServerWebExchange;
+import org.springframework.test.web.reactive.server.WebTestClient;
 import org.springframework.web.reactive.function.client.WebClientRequestException;
 
 import java.net.URI;
@@ -27,7 +31,7 @@ class GatewayProblemDetailContractTest {
                 .header(CorrelationIds.HEADER_NAME, "corr-gateway-1234")
         );
         WebClientRequestException error = new WebClientRequestException(
-            new RuntimeException("jdbc:mysql://secret-host/password"),
+            new RuntimeException("internal downstream connection detail"),
             HttpMethod.GET,
             URI.create("http://order-service/orders/42"),
             org.springframework.http.HttpHeaders.EMPTY
@@ -48,8 +52,32 @@ class GatewayProblemDetailContractTest {
         assertThat(body.path("errorCode").asText()).isEqualTo("SERVICE_UNAVAILABLE");
         assertThat(body.path("correlationId").asText()).isEqualTo("corr-gateway-1234");
         assertThat(responseBody)
-            .doesNotContain("secret-host")
+            .doesNotContain("internal downstream connection detail")
             .doesNotContain("RuntimeException");
+    }
+
+    @Test
+    void circuitBreakerFallbackUsesStableCorrelatedRfc9457Response() {
+        WebTestClient client = WebTestClient.bindToController(new FallbackController())
+            .webFilter(new GatewayCorrelationFilter(new ForwardedHeaderPolicy("")))
+            .build();
+
+        client.get()
+            .uri("/fallback/orders")
+            .header(CorrelationIds.HEADER_NAME, "corr-fallback-1234")
+            .exchange()
+            .expectStatus().isEqualTo(HttpStatus.SERVICE_UNAVAILABLE)
+            .expectHeader().contentType(MediaType.APPLICATION_PROBLEM_JSON)
+            .expectHeader().valueEquals(CorrelationIds.HEADER_NAME, "corr-fallback-1234")
+            .expectBody()
+            .jsonPath("$.type").isEqualTo("https://ftgo.example/problems/service-unavailable")
+            .jsonPath("$.title").isEqualTo("Downstream service unavailable")
+            .jsonPath("$.status").isEqualTo(503)
+            .jsonPath("$.detail").isEqualTo("The order service is temporarily unavailable")
+            .jsonPath("$.instance").isEqualTo("/fallback/orders")
+            .jsonPath("$.errorCode").isEqualTo("SERVICE_UNAVAILABLE")
+            .jsonPath("$.correlationId").isEqualTo("corr-fallback-1234")
+            .jsonPath("$.timestamp").doesNotExist();
     }
 
     @Test
@@ -59,7 +87,7 @@ class GatewayProblemDetailContractTest {
             MockServerHttpRequest.get("/orders/42")
         );
 
-        handler.handle(exchange, new IllegalStateException("payment-token-secret")).block();
+        handler.handle(exchange, new IllegalStateException("internal payment detail")).block();
 
         String responseBody = exchange.getResponse().getBodyAsString().block();
         JsonNode body = JSON.readTree(responseBody);
@@ -68,7 +96,7 @@ class GatewayProblemDetailContractTest {
         assertThat(body.path("detail").asText()).isEqualTo("An unexpected error occurred");
         assertThat(body.path("correlationId").asText()).matches("[A-Za-z0-9._:-]{8,128}");
         assertThat(responseBody)
-            .doesNotContain("payment-token-secret")
+            .doesNotContain("internal payment detail")
             .doesNotContain("IllegalStateException");
     }
 }
