@@ -20,8 +20,22 @@ public final class GatewayProblemResponses {
     private static final Logger logger = LoggerFactory.getLogger(GatewayProblemResponses.class);
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final String TYPE_BASE = "https://ftgo.example/problems/";
+    private static final String CORRELATION_ATTRIBUTE =
+        GatewayProblemResponses.class.getName() + ".correlationId";
 
     private GatewayProblemResponses() {
+    }
+
+    public static String correlationId(ServerWebExchange exchange) {
+        Object existing = exchange.getAttribute(CORRELATION_ATTRIBUTE);
+        if (existing instanceof String correlationId && CorrelationIdFilter.isSafe(correlationId)) {
+            return correlationId;
+        }
+        String correlationId = CorrelationIdFilter.normalizeOrGenerate(
+            exchange.getRequest().getHeaders().getFirst(CorrelationIdFilter.HEADER_NAME)
+        );
+        exchange.getAttributes().put(CORRELATION_ATTRIBUTE, correlationId);
+        return correlationId;
     }
 
     public static Mono<Void> write(
@@ -36,9 +50,7 @@ public final class GatewayProblemResponses {
             return Mono.error(new IllegalStateException("Response is already committed"));
         }
 
-        String correlationId = CorrelationIdFilter.normalizeOrGenerate(
-            exchange.getRequest().getHeaders().getFirst(CorrelationIdFilter.HEADER_NAME)
-        );
+        String correlationId = correlationId(exchange);
         FtgoProblemDetail body = new FtgoProblemDetail(
             URI.create(TYPE_BASE + type),
             title,
