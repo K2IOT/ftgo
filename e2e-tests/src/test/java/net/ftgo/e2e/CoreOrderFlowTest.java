@@ -420,6 +420,9 @@ class CoreOrderFlowTest {
                 .timeout(Duration.ofSeconds(15))
                 .header("Content-Type", "application/json")
                 .header("Authorization", "Bearer " + token);
+            if ("POST".equals(method) && (ORDER_URL + "/orders").equals(url)) {
+                builder.header("Idempotency-Key", "core-order-flow-" + UUID.randomUUID());
+            }
             if ("GET".equals(method)) {
                 builder.GET();
             } else {

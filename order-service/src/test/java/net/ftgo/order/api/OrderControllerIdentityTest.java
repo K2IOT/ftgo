@@ -2,6 +2,8 @@ package net.ftgo.order.api;
 
 import net.ftgo.common.security.FtgoJwtAuthenticationConverter;
 import net.ftgo.order.config.SecurityConfiguration;
+import net.ftgo.order.idempotency.IdempotentResult;
+import net.ftgo.order.idempotency.OrderMutationIdempotencyService;
 import net.ftgo.order.service.OrderService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -16,6 +18,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.function.Supplier;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
@@ -44,6 +47,9 @@ class OrderControllerIdentityTest {
     @MockBean
     private OrderService orderService;
 
+    @MockBean
+    private OrderMutationIdempotencyService idempotencyService;
+
     @Test
     void derivesConsumerIdentityFromAuthenticatedPrincipal() throws Exception {
         when(orderService.createOrder(
@@ -54,9 +60,22 @@ class OrderControllerIdentityTest {
             any(),
             any()
         )).thenReturn(9001L);
+        when(idempotencyService.hashCreate(eq(101L), any(CreateOrderRequest.class)))
+            .thenReturn(new byte[] {1});
+        when(idempotencyService.execute(
+            eq(101L),
+            eq(OrderMutationIdempotencyService.CREATE_ORDER),
+            eq("identity-contract-create"),
+            any(byte[].class),
+            org.mockito.ArgumentMatchers.<Supplier<String>>any()
+        )).thenAnswer(invocation -> {
+            Supplier<String> mutation = invocation.getArgument(4);
+            return new IdempotentResult<>(201, mutation.get(), 9001L, false);
+        });
 
         String deliveryTime = LocalDateTime.now().plusHours(1).toString();
         mockMvc.perform(post("/orders")
+                .header("Idempotency-Key", "identity-contract-create")
                 .with(authentication(consumerAuthentication(101L)))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""

@@ -217,6 +217,7 @@ run_cycle() {
     FTGO_ACCOUNTING_DECLINED_PAYMENT_TOKENS=tok_e2e_decline
   start_service "${run}" order-service 8081 ftgo_order
   start_service "${run}" order-history-service 8087 ftgo_order_history \
+    FTGO_ORDER_HISTORY_PAGING_SECRET=phase-02-core-order-flow-e2e-paging-secret \
     SPRING_CASSANDRA_CONTACT_POINTS=localhost \
     SPRING_CASSANDRA_PORT=39042 \
     SPRING_CASSANDRA_KEYSPACE_NAME=ftgo_order_history \
@@ -244,6 +245,13 @@ run_cycle() {
     --tests 'net.ftgo.e2e.CoreOrderFlowTest' \
     --tests 'net.ftgo.e2e.SecurityAuthorizationTest' \
     --tests 'net.ftgo.e2e.ApiAbuseTest' \
+    --tests 'net.ftgo.e2e.OrderMutationIdempotencyE2ETest' \
+    -Dftgo.e2e.gateway-url=http://localhost:8080 \
+    -Dftgo.e2e.order-url=http://localhost:8081 \
+    -Dftgo.e2e.consumer-url=http://localhost:8082 \
+    -Dftgo.e2e.restaurant-url=http://localhost:8083 \
+    -Dftgo.e2e.kitchen-url=http://localhost:8084 \
+    -Dftgo.e2e.jdbc-url=jdbc:mysql://localhost:33306 \
     --rerun-tasks --stacktrace
 
   "${COMPOSE[@]}" --profile relays logs --no-color >"${LOG_ROOT}/run-${run}/compose.log" 2>&1
