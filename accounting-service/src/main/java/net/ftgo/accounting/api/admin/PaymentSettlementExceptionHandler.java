@@ -1,6 +1,7 @@
 package net.ftgo.accounting.api.admin;
 
 import jakarta.servlet.http.HttpServletRequest;
+import net.ftgo.accounting.settlement.RefundAmountExceedsCapturedException;
 import net.ftgo.accounting.settlement.SettlementGatewayTimeoutException;
 import net.ftgo.accounting.settlement.SettlementRetryExhaustedException;
 import net.ftgo.common.web.FtgoProblemDetail;
@@ -12,6 +13,21 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @RestControllerAdvice(assignableTypes = PaymentSettlementOperationsController.class)
 public class PaymentSettlementExceptionHandler {
+
+    @ExceptionHandler(RefundAmountExceedsCapturedException.class)
+    public ResponseEntity<FtgoProblemDetail> overRefund(
+        RefundAmountExceedsCapturedException error,
+        HttpServletRequest request
+    ) {
+        return FtgoProblemResponses.response(
+            HttpStatus.BAD_REQUEST,
+            "refund-amount-exceeds-captured",
+            "Refund amount exceeds captured amount",
+            "Refund total exceeds captured amount",
+            "REFUND_AMOUNT_EXCEEDS_CAPTURED",
+            request
+        );
+    }
 
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<FtgoProblemDetail> badRequest(
