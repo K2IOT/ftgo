@@ -33,6 +33,19 @@ class OrderIdempotencyContractTest(unittest.TestCase):
         self.assertNotIn("drop table", sql)
         self.assertNotIn("drop column", sql)
 
+    def test_core_order_flow_harness_uses_the_dedicated_e2e_compose_model(self):
+        script = ROOT / "scripts/smoke/verify-core-order-flow.sh"
+        self.assertTrue(script.exists(), f"missing core E2E harness: {script}")
+        text = script.read_text(encoding="utf-8")
+
+        self.assertIn("deployment/tests/docker-compose.core-order-flow.yml", text)
+        self.assertNotIn("deployment/docker-compose.infra.yml", text)
+        self.assertIn("mysql redis scylla zookeeper kafka connect", text)
+        self.assertIn("'net.ftgo.e2e.CoreOrderFlowTest'", text)
+        self.assertIn("'net.ftgo.e2e.SecurityAuthorizationTest'", text)
+        self.assertIn("'net.ftgo.e2e.ApiAbuseTest'", text)
+        self.assertIn("'net.ftgo.e2e.OrderMutationIdempotencyE2ETest'", text)
+
 
 if __name__ == "__main__":
     unittest.main()
