@@ -1,6 +1,6 @@
 package net.ftgo.gateway.filter;
 
-import net.ftgo.common.web.CorrelationIdFilter;
+import net.ftgo.common.web.CorrelationIds;
 import net.ftgo.gateway.security.ForwardedHeaderPolicy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,8 +27,8 @@ public final class GatewayCorrelationFilter implements WebFilter, Ordered {
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
-        String correlationId = CorrelationIdFilter.normalizeOrGenerate(
-            exchange.getRequest().getHeaders().getFirst(CorrelationIdFilter.HEADER_NAME)
+        String correlationId = CorrelationIds.normalizeOrGenerate(
+            exchange.getRequest().getHeaders().getFirst(CorrelationIds.HEADER_NAME)
         );
         String clientAddress = forwardedHeaderPolicy.resolveClientAddress(exchange);
         long startedAt = System.nanoTime();
@@ -36,13 +36,13 @@ public final class GatewayCorrelationFilter implements WebFilter, Ordered {
         ServerWebExchange correlated = exchange.mutate()
             .request(request -> request.headers(headers -> {
                 headers.remove(LEGACY_REQUEST_ID);
-                headers.set(CorrelationIdFilter.HEADER_NAME, correlationId);
+                headers.set(CorrelationIds.HEADER_NAME, correlationId);
             }))
             .build();
-        correlated.getResponse().getHeaders().set(CorrelationIdFilter.HEADER_NAME, correlationId);
+        correlated.getResponse().getHeaders().set(CorrelationIds.HEADER_NAME, correlationId);
 
         return Mono.defer(() -> {
-            MDC.put(CorrelationIdFilter.MDC_KEY, correlationId);
+            MDC.put(CorrelationIds.MDC_KEY, correlationId);
             logger.info(
                 "Gateway request started method={} path={} clientAddress={} correlationId={}",
                 correlated.getRequest().getMethod(),
@@ -63,7 +63,7 @@ public final class GatewayCorrelationFilter implements WebFilter, Ordered {
                     durationMillis,
                     correlationId
                 );
-                MDC.remove(CorrelationIdFilter.MDC_KEY);
+                MDC.remove(CorrelationIds.MDC_KEY);
             });
         });
     }
