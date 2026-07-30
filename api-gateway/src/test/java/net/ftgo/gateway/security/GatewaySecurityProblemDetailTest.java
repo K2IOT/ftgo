@@ -2,7 +2,7 @@ package net.ftgo.gateway.security;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import net.ftgo.common.web.CorrelationIdFilter;
+import net.ftgo.common.web.CorrelationIds;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -22,14 +22,15 @@ class GatewaySecurityProblemDetailTest {
         SecurityConfiguration configuration = new SecurityConfiguration();
         MockServerWebExchange exchange = MockServerWebExchange.from(
             MockServerHttpRequest.get("/orders/1")
-                .header(CorrelationIdFilter.HEADER_NAME, "corr-auth-1234")
+                .header(CorrelationIds.HEADER_NAME, "corr-auth-1234")
         );
 
         configuration.problemAuthenticationEntryPoint()
             .commence(exchange, new BadCredentialsException("raw token detail"))
             .block();
 
-        JsonNode body = JSON.readTree(exchange.getResponse().getBodyAsString().block());
+        String responseBody = exchange.getResponse().getBodyAsString().block();
+        JsonNode body = JSON.readTree(responseBody);
         assertThat(exchange.getResponse().getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
         assertThat(exchange.getResponse().getHeaders().getContentType())
             .isEqualTo(MediaType.APPLICATION_PROBLEM_JSON);
@@ -42,8 +43,7 @@ class GatewaySecurityProblemDetailTest {
         assertThat(body.path("correlationId").asText()).isEqualTo("corr-auth-1234");
         assertThat(exchange.getResponse().getHeaders().getFirst("WWW-Authenticate"))
             .contains("Bearer");
-        assertThat(exchange.getResponse().getBodyAsString().block())
-            .doesNotContain("raw token detail");
+        assertThat(responseBody).doesNotContain("raw token detail");
     }
 
     @Test
@@ -51,21 +51,21 @@ class GatewaySecurityProblemDetailTest {
         SecurityConfiguration configuration = new SecurityConfiguration();
         MockServerWebExchange exchange = MockServerWebExchange.from(
             MockServerHttpRequest.get("/admin/consumers/1")
-                .header(CorrelationIdFilter.HEADER_NAME, "corr-denied-1234")
+                .header(CorrelationIds.HEADER_NAME, "corr-denied-1234")
         );
 
         configuration.problemAccessDeniedHandler()
             .handle(exchange, new AccessDeniedException("sensitive policy detail"))
             .block();
 
-        JsonNode body = JSON.readTree(exchange.getResponse().getBodyAsString().block());
+        String responseBody = exchange.getResponse().getBodyAsString().block();
+        JsonNode body = JSON.readTree(responseBody);
         assertThat(exchange.getResponse().getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
         assertThat(exchange.getResponse().getHeaders().getContentType())
             .isEqualTo(MediaType.APPLICATION_PROBLEM_JSON);
         assertThat(body.path("errorCode").asText()).isEqualTo("FORBIDDEN");
         assertThat(body.path("detail").asText()).isEqualTo("Access to this resource is forbidden");
         assertThat(body.path("correlationId").asText()).isEqualTo("corr-denied-1234");
-        assertThat(exchange.getResponse().getBodyAsString().block())
-            .doesNotContain("sensitive policy detail");
+        assertThat(responseBody).doesNotContain("sensitive policy detail");
     }
 }
