@@ -24,6 +24,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.function.Supplier;
 
 @Service
@@ -74,17 +75,66 @@ public class OrderMutationIdempotencyService {
             return executeInTransaction(consumerId, operation, key, requestHash, mutation);
         }
 
+        AttemptMode mode = AttemptMode.CLAIM;
         CannotAcquireLockException lastLockFailure = null;
         for (int attempt = 1; attempt <= MAX_TRANSACTION_ATTEMPTS; attempt++) {
             try {
-                return Objects.requireNonNull(transactionTemplate.execute(status ->
-                    executeInTransaction(consumerId, operation, key, requestHash, mutation)
-                ));
+                AttemptMode currentMode = mode;
+                TransactionAttempt transactionAttempt = Objects.requireNonNull(
+                    transactionTemplate.execute(status -> {
+                        if (currentMode == AttemptMode.CLAIM) {
+                            Instant now = Instant.now();
+                            boolean inserted = store.insertProcessing(
+                                consumerId,
+                                operation,
+                                key,
+                                requestHash,
+                                now.plus(RECORD_TTL)
+                            );
+                            if (inserted) {
+                                return TransactionAttempt.completed(executeClaimOwnerMutation(
+                                    consumerId,
+                                    operation,
+                                    key,
+                                    mutation
+                                ));
+                            }
+
+                            // INSERT IGNORE can retain duplicate-key locks until transaction end.
+                            // Roll back this loser transaction before waiting on the owner row so
+                            // concurrent replayers do not deadlock each other on SELECT FOR UPDATE.
+                            status.setRollbackOnly();
+                            return TransactionAttempt.retry(AttemptMode.REPLAY);
+                        }
+
+                        Optional<ApiIdempotencyRecord> record = store.lock(
+                            consumerId,
+                            operation,
+                            key
+                        );
+                        if (record.isEmpty()) {
+                            // The previous claim owner rolled back. Release this transaction and
+                            // compete for the claim again in a fresh transaction.
+                            status.setRollbackOnly();
+                            return TransactionAttempt.retry(AttemptMode.CLAIM);
+                        }
+                        return TransactionAttempt.completed(replay(record.get(), requestHash));
+                    })
+                );
+
+                if (transactionAttempt.result() != null) {
+                    return transactionAttempt.result();
+                }
+                mode = Objects.requireNonNull(transactionAttempt.nextMode());
             } catch (CannotAcquireLockException lockFailure) {
                 lastLockFailure = lockFailure;
             }
         }
-        throw Objects.requireNonNull(lastLockFailure);
+
+        if (lastLockFailure != null) {
+            throw lastLockFailure;
+        }
+        throw new IllegalStateException("Unable to resolve idempotency claim");
     }
 
     private IdempotentResult<String> executeInTransaction(
@@ -114,7 +164,13 @@ public class OrderMutationIdempotencyService {
 
         ApiIdempotencyRecord record = store.lock(consumerId, operation, key)
             .orElseThrow(() -> new IllegalStateException("Idempotency claim disappeared"));
+        return replay(record, requestHash);
+    }
 
+    private IdempotentResult<String> replay(
+        ApiIdempotencyRecord record,
+        byte[] requestHash
+    ) {
         if (!MessageDigest.isEqual(record.requestHash(), requestHash)) {
             throw new IdempotencyKeyConflictException();
         }
@@ -250,5 +306,23 @@ public class OrderMutationIdempotencyService {
         TransactionTemplate template = new TransactionTemplate(transactionManager);
         template.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
         return template;
+    }
+
+    private enum AttemptMode {
+        CLAIM,
+        REPLAY
+    }
+
+    private record TransactionAttempt(
+        IdempotentResult<String> result,
+        AttemptMode nextMode
+    ) {
+        private static TransactionAttempt completed(IdempotentResult<String> result) {
+            return new TransactionAttempt(Objects.requireNonNull(result), null);
+        }
+
+        private static TransactionAttempt retry(AttemptMode nextMode) {
+            return new TransactionAttempt(null, Objects.requireNonNull(nextMode));
+        }
     }
 }
