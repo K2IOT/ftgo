@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import net.ftgo.common.web.CorrelationIdFilter;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.mock.http.server.reactive.MockServerHttpRequest;
@@ -11,7 +12,6 @@ import org.springframework.mock.web.server.MockServerWebExchange;
 import org.springframework.web.reactive.function.client.WebClientRequestException;
 
 import java.net.URI;
-import java.net.http.HttpRequest;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -28,7 +28,7 @@ class GatewayProblemDetailContractTest {
         );
         WebClientRequestException error = new WebClientRequestException(
             new RuntimeException("jdbc:mysql://secret-host/password"),
-            HttpRequest.newBuilder(URI.create("http://order-service/orders/42")).GET().build().method(),
+            HttpMethod.GET,
             URI.create("http://order-service/orders/42"),
             org.springframework.http.HttpHeaders.EMPTY
         );
