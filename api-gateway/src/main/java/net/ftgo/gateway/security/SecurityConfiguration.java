@@ -2,12 +2,12 @@ package net.ftgo.gateway.security;
 
 import net.ftgo.common.security.FtgoJwtAuthenticationConverter;
 import net.ftgo.common.security.FtgoReactiveJwtDecoders;
+import net.ftgo.gateway.handler.GatewayProblemResponses;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpMethod;
-import org.springframework.http.HttpStatus;
 import org.springframework.security.authorization.AuthorizationDecision;
 import org.springframework.security.authorization.ReactiveAuthorizationManager;
 import org.springframework.security.config.annotation.web.reactive.EnableWebFluxSecurity;
@@ -21,7 +21,6 @@ import org.springframework.security.web.server.authorization.ServerAccessDeniedH
 import org.springframework.security.web.server.util.matcher.ServerWebExchangeMatchers;
 import reactor.core.publisher.Mono;
 
-import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
@@ -164,38 +163,36 @@ public class SecurityConfiguration {
     ) {
         return http.oauth2ResourceServer(oauth2 -> oauth2
             .jwt(jwt -> jwt.jwtAuthenticationConverter(token -> Mono.just(converter.convert(token))))
-            .authenticationEntryPoint(jsonAuthenticationEntryPoint())
-            .accessDeniedHandler(jsonAccessDeniedHandler())
+            .authenticationEntryPoint(problemAuthenticationEntryPoint())
+            .accessDeniedHandler(problemAccessDeniedHandler())
         );
     }
 
-    private ServerAuthenticationEntryPoint jsonAuthenticationEntryPoint() {
+    ServerAuthenticationEntryPoint problemAuthenticationEntryPoint() {
         return (exchange, error) -> {
-            exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
-            exchange.getResponse().getHeaders().set("Content-Type", "application/json");
             exchange.getResponse().getHeaders().set(
                 "WWW-Authenticate",
                 "Bearer realm=\"ftgo\", error=\"unauthorized\""
             );
-            byte[] body = """
-                {"error":"unauthorized","message":"Authentication required","status":401}"""
-                .getBytes(StandardCharsets.UTF_8);
-            return exchange.getResponse().writeWith(Mono.just(
-                exchange.getResponse().bufferFactory().wrap(body)
-            ));
+            return GatewayProblemResponses.write(
+                exchange,
+                org.springframework.http.HttpStatus.UNAUTHORIZED,
+                "unauthorized",
+                "Authentication required",
+                "Authentication is required to access this resource",
+                "UNAUTHORIZED"
+            );
         };
     }
 
-    private ServerAccessDeniedHandler jsonAccessDeniedHandler() {
-        return (exchange, denied) -> {
-            exchange.getResponse().setStatusCode(HttpStatus.FORBIDDEN);
-            exchange.getResponse().getHeaders().set("Content-Type", "application/json");
-            byte[] body = """
-                {"error":"forbidden","message":"Access denied","status":403}"""
-                .getBytes(StandardCharsets.UTF_8);
-            return exchange.getResponse().writeWith(Mono.just(
-                exchange.getResponse().bufferFactory().wrap(body)
-            ));
-        };
+    ServerAccessDeniedHandler problemAccessDeniedHandler() {
+        return (exchange, denied) -> GatewayProblemResponses.write(
+            exchange,
+            org.springframework.http.HttpStatus.FORBIDDEN,
+            "forbidden",
+            "Access denied",
+            "Access to this resource is forbidden",
+            "FORBIDDEN"
+        );
     }
 }
