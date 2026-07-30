@@ -2,7 +2,7 @@ package net.ftgo.gateway.handler;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import net.ftgo.common.web.CorrelationIdFilter;
+import net.ftgo.common.web.CorrelationIds;
 import net.ftgo.common.web.FtgoProblemDetail;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -28,11 +28,11 @@ public final class GatewayProblemResponses {
 
     public static String correlationId(ServerWebExchange exchange) {
         Object existing = exchange.getAttribute(CORRELATION_ATTRIBUTE);
-        if (existing instanceof String correlationId && CorrelationIdFilter.isSafe(correlationId)) {
+        if (existing instanceof String correlationId && CorrelationIds.isSafe(correlationId)) {
             return correlationId;
         }
-        String correlationId = CorrelationIdFilter.normalizeOrGenerate(
-            exchange.getRequest().getHeaders().getFirst(CorrelationIdFilter.HEADER_NAME)
+        String correlationId = CorrelationIds.normalizeOrGenerate(
+            exchange.getRequest().getHeaders().getFirst(CorrelationIds.HEADER_NAME)
         );
         exchange.getAttributes().put(CORRELATION_ATTRIBUTE, correlationId);
         return correlationId;
@@ -63,7 +63,7 @@ public final class GatewayProblemResponses {
 
         exchange.getResponse().setStatusCode(status);
         exchange.getResponse().getHeaders().setContentType(MediaType.APPLICATION_PROBLEM_JSON);
-        exchange.getResponse().getHeaders().set(CorrelationIdFilter.HEADER_NAME, correlationId);
+        exchange.getResponse().getHeaders().set(CorrelationIds.HEADER_NAME, correlationId);
         try {
             byte[] bytes = JSON.writeValueAsBytes(body);
             DataBuffer buffer = exchange.getResponse().bufferFactory().wrap(bytes);
