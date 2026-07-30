@@ -60,6 +60,13 @@ public class ManualPaymentSettlementService {
             );
         }
 
+        boolean replay = authorization.getRefunds().stream()
+            .anyMatch(refund -> refund.getRequestId().equals(requestId));
+        if (!replay && authorization.getRefundedAmount().add(amount)
+            .isGreaterThan(authorization.getAmount())) {
+            throw new RefundAmountExceedsCapturedException();
+        }
+
         SettlementDecision settlement = settlementGateway.refund(
             authorizationId,
             authorization.getOrderId(),
