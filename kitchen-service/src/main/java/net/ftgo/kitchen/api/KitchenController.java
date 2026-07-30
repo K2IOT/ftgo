@@ -1,5 +1,9 @@
 package net.ftgo.kitchen.api;
 
+import jakarta.servlet.http.HttpServletRequest;
+import net.ftgo.common.web.CorrelationIdFilter;
+import net.ftgo.common.web.FtgoProblemDetail;
+import net.ftgo.common.web.FtgoProblemResponses;
 import net.ftgo.kitchen.domain.Ticket;
 import net.ftgo.kitchen.domain.TicketState;
 import net.ftgo.kitchen.repository.TicketRepository;
@@ -66,7 +70,8 @@ public class KitchenController {
     @PostMapping("/{ticketId}/accept")
     public ResponseEntity<?> acceptTicket(
         @PathVariable Long ticketId,
-        Authentication authentication
+        Authentication authentication,
+        HttpServletRequest request
     ) {
         logger.info("Accepting ticket {}", ticketId);
         try {
@@ -75,24 +80,19 @@ public class KitchenController {
         } catch (AccessDeniedException denied) {
             throw denied;
         } catch (IllegalArgumentException error) {
-            logger.error("Failed to accept ticket {}: {}", ticketId, error.getMessage());
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                .body(new ErrorResponse(error.getMessage()));
+            return ticketNotFound(ticketId, request);
         } catch (IllegalStateException error) {
-            logger.error("Invalid state transition for ticket {}: {}", ticketId, error.getMessage());
-            return ResponseEntity.status(HttpStatus.CONFLICT)
-                .body(new ErrorResponse(error.getMessage()));
+            return ticketConflict(ticketId, request);
         } catch (Exception error) {
-            logger.error("Unexpected error accepting ticket {}", ticketId, error);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(new ErrorResponse("Internal error accepting ticket"));
+            return unexpected("accept", ticketId, request, error);
         }
     }
 
     @PostMapping("/{ticketId}/preparing")
     public ResponseEntity<?> markPreparing(
         @PathVariable Long ticketId,
-        Authentication authentication
+        Authentication authentication,
+        HttpServletRequest request
     ) {
         logger.info("Marking ticket {} as preparing", ticketId);
         try {
@@ -101,24 +101,19 @@ public class KitchenController {
         } catch (AccessDeniedException denied) {
             throw denied;
         } catch (IllegalArgumentException error) {
-            logger.error("Failed to mark ticket {} as preparing: {}", ticketId, error.getMessage());
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                .body(new ErrorResponse(error.getMessage()));
+            return ticketNotFound(ticketId, request);
         } catch (IllegalStateException error) {
-            logger.error("Invalid state transition for ticket {}: {}", ticketId, error.getMessage());
-            return ResponseEntity.status(HttpStatus.CONFLICT)
-                .body(new ErrorResponse(error.getMessage()));
+            return ticketConflict(ticketId, request);
         } catch (Exception error) {
-            logger.error("Unexpected error marking ticket {} as preparing", ticketId, error);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(new ErrorResponse("Internal error marking ticket as preparing"));
+            return unexpected("mark preparing", ticketId, request, error);
         }
     }
 
     @PostMapping("/{ticketId}/ready")
     public ResponseEntity<?> markReady(
         @PathVariable Long ticketId,
-        Authentication authentication
+        Authentication authentication,
+        HttpServletRequest request
     ) {
         logger.info("Marking ticket {} as ready", ticketId);
         try {
@@ -127,33 +122,67 @@ public class KitchenController {
         } catch (AccessDeniedException denied) {
             throw denied;
         } catch (IllegalArgumentException error) {
-            logger.error("Failed to mark ticket {} as ready: {}", ticketId, error.getMessage());
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                .body(new ErrorResponse(error.getMessage()));
+            return ticketNotFound(ticketId, request);
         } catch (IllegalStateException error) {
-            logger.error("Invalid state transition for ticket {}: {}", ticketId, error.getMessage());
-            return ResponseEntity.status(HttpStatus.CONFLICT)
-                .body(new ErrorResponse(error.getMessage()));
+            return ticketConflict(ticketId, request);
         } catch (Exception error) {
-            logger.error("Unexpected error marking ticket {} as ready", ticketId, error);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(new ErrorResponse("Internal error marking ticket as ready"));
+            return unexpected("mark ready", ticketId, request, error);
         }
     }
 
-    public static class ErrorResponse {
-        private String error;
+    private ResponseEntity<FtgoProblemDetail> ticketNotFound(
+        Long ticketId,
+        HttpServletRequest request
+    ) {
+        String correlationId = CorrelationIdFilter.current(request);
+        logger.warn("Kitchen ticket not found ticketId={} correlationId={}", ticketId, correlationId);
+        return FtgoProblemResponses.response(
+            HttpStatus.NOT_FOUND,
+            "kitchen-ticket-not-found",
+            "Ticket not found",
+            "The kitchen ticket was not found",
+            "KITCHEN_TICKET_NOT_FOUND",
+            request
+        );
+    }
 
-        public ErrorResponse(String error) {
-            this.error = error;
-        }
+    private ResponseEntity<FtgoProblemDetail> ticketConflict(
+        Long ticketId,
+        HttpServletRequest request
+    ) {
+        String correlationId = CorrelationIdFilter.current(request);
+        logger.warn("Kitchen ticket state conflict ticketId={} correlationId={}", ticketId, correlationId);
+        return FtgoProblemResponses.response(
+            HttpStatus.CONFLICT,
+            "kitchen-ticket-conflict",
+            "Ticket state conflict",
+            "Ticket cannot be changed from its current state",
+            "KITCHEN_TICKET_CONFLICT",
+            request
+        );
+    }
 
-        public String getError() {
-            return error;
-        }
-
-        public void setError(String error) {
-            this.error = error;
-        }
+    private ResponseEntity<FtgoProblemDetail> unexpected(
+        String operation,
+        Long ticketId,
+        HttpServletRequest request,
+        Exception error
+    ) {
+        String correlationId = CorrelationIdFilter.current(request);
+        logger.error(
+            "Unexpected kitchen operation failure operation={} ticketId={} correlationId={}",
+            operation,
+            ticketId,
+            correlationId,
+            error
+        );
+        return FtgoProblemResponses.response(
+            HttpStatus.INTERNAL_SERVER_ERROR,
+            "kitchen-operation-failed",
+            "Kitchen operation failed",
+            "The kitchen operation could not be completed",
+            "KITCHEN_OPERATION_FAILED",
+            request
+        );
     }
 }
