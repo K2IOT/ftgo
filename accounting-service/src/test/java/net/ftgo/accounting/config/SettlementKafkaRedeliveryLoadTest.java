@@ -8,6 +8,8 @@ import io.eventuate.tram.messaging.consumer.MessageSubscription;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import net.ftgo.accounting.settlement.SettlementGatewayTimeoutException;
+import org.apache.kafka.clients.admin.Admin;
+import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -15,6 +17,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.test.EmbeddedKafkaBroker;
 import org.springframework.kafka.test.context.EmbeddedKafka;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.TestPropertySource;
@@ -22,12 +25,14 @@ import org.springframework.test.context.junit.jupiter.SpringJUnitConfig;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.LockSupport;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -52,6 +57,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class SettlementKafkaRedeliveryLoadTest {
 
     static final String TOPIC = "settlement-redelivery-load-test";
+    private static final String GROUP_ID = "settlement-redelivery-load";
     private static final int TIMEOUT_COMMANDS = 20;
 
     @Autowired
@@ -59,6 +65,9 @@ class SettlementKafkaRedeliveryLoadTest {
 
     @Autowired
     private KafkaTemplate<Object, Object> kafkaTemplate;
+
+    @Autowired
+    private EmbeddedKafkaBroker embeddedKafkaBroker;
 
     @Autowired
     private MeterRegistry meterRegistry;
@@ -82,7 +91,7 @@ class SettlementKafkaRedeliveryLoadTest {
         Map<String, AtomicInteger> terminalReplyCounts = new ConcurrentHashMap<>();
 
         subscription = messageConsumer.subscribe(
-            "settlement-redelivery-load",
+            GROUP_ID,
             Set.of(TOPIC),
             message -> {
                 String messageId = message.getId();
@@ -117,6 +126,7 @@ class SettlementKafkaRedeliveryLoadTest {
             }
         );
 
+        awaitStableAssignment(GROUP_ID, 4, Duration.ofSeconds(10));
         send(3, "warmup");
         assertThat(warmupCompleted.await(10, TimeUnit.SECONDS)).isTrue();
 
@@ -149,6 +159,48 @@ class SettlementKafkaRedeliveryLoadTest {
                 .mapToDouble(counter -> counter.count())
                 .sum()
         ).isEqualTo(TIMEOUT_COMMANDS * 3.0);
+    }
+
+    private void awaitStableAssignment(
+        String groupId,
+        int expectedMembers,
+        Duration timeout
+    ) throws Exception {
+        long deadline = System.nanoTime() + timeout.toNanos();
+        Exception lastFailure = null;
+        try (Admin admin = Admin.create(Map.of(
+            AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG,
+            embeddedKafkaBroker.getBrokersAsString()
+        ))) {
+            while (System.nanoTime() < deadline) {
+                try {
+                    var description = admin.describeConsumerGroups(List.of(groupId))
+                        .all()
+                        .get(1, TimeUnit.SECONDS)
+                        .get(groupId);
+                    int assignedPartitions = description.members().stream()
+                        .mapToInt(member -> member.assignment().topicPartitions().size())
+                        .sum();
+                    if (description.members().size() == expectedMembers
+                        && assignedPartitions == expectedMembers) {
+                        return;
+                    }
+                } catch (Exception exception) {
+                    lastFailure = exception;
+                }
+                LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(25));
+                if (Thread.interrupted()) {
+                    throw new InterruptedException(
+                        "Interrupted while waiting for Kafka consumer assignment"
+                    );
+                }
+            }
+        }
+        throw new AssertionError(
+            "Kafka group " + groupId + " did not stabilize at "
+                + expectedMembers + " members/partitions within " + timeout,
+            lastFailure
+        );
     }
 
     private void send(int partition, String messageId) throws Exception {
