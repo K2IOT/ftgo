@@ -19,6 +19,7 @@ import net.ftgo.accounting.settlement.SettlementDecision;
 import net.ftgo.accounting.settlement.SettlementGateway;
 import net.ftgo.accounting.settlement.SettlementGatewayTimeoutException;
 import net.ftgo.common.Money;
+import net.ftgo.common.channels.ChannelNames;
 import net.ftgo.common.messaging.IdempotentCommandExecutor;
 import net.ftgo.common.orderflow.commands.CaptureAuthorizationCommand;
 import net.ftgo.testsupport.InMemoryProcessedCommandStore;
@@ -63,7 +64,7 @@ import static org.mockito.Mockito.when;
     SettlementKafkaRedeliveryIntegrationTest.TestBeans.class
 })
 @EmbeddedKafka(
-    partitions = 4,
+    partitions = 1,
     topics = {
         SettlementKafkaRedeliveryIntegrationTest.TOPIC,
         SettlementKafkaRedeliveryIntegrationTest.TOPIC + ".DLT"
@@ -78,7 +79,7 @@ import static org.mockito.Mockito.when;
 @DirtiesContext
 class SettlementKafkaRedeliveryIntegrationTest {
 
-    static final String TOPIC = "settlement-redelivery-test";
+    static final String TOPIC = ChannelNames.ACCOUNTING_SERVICE_COMMAND_CHANNEL;
     private static final String GROUP_ID = "settlement-redelivery-integration";
     private static final String CONSUMER_NAME = "accounting-service";
 
