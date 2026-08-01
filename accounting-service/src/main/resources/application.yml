@@ -46,6 +46,9 @@ ftgo:
     internal-audience: ${FTGO_SECURITY_INTERNAL_AUDIENCE:ftgo-internal}
   accounting:
     declined-payment-tokens: ${FTGO_ACCOUNTING_DECLINED_PAYMENT_TOKENS:}
+    kafka:
+      concurrency: ${FTGO_ACCOUNTING_KAFKA_CONCURRENCY:4}
+      topic-partitions: ${FTGO_ACCOUNTING_KAFKA_TOPIC_PARTITIONS:4}
     settlement:
       deny-request-ids: ${FTGO_ACCOUNTING_SETTLEMENT_DENY_REQUEST_IDS:}
       timeout-once-request-ids: ${FTGO_ACCOUNTING_SETTLEMENT_TIMEOUT_ONCE_REQUEST_IDS:}
