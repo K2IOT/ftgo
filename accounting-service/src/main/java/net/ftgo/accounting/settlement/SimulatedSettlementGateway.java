@@ -19,6 +19,7 @@ public class SimulatedSettlementGateway implements SettlementGateway {
 
     public static final String PROVIDER_DECLINED = "SIMULATED_PROVIDER_DECLINED";
     public static final String PROVIDER_TIMEOUT = "SIMULATED_PROVIDER_TIMEOUT";
+    public static final int MAX_DELIVERY_ATTEMPTS = 4;
 
     private final SimulatedProviderPaymentRepository paymentRepository;
     private final SimulatedProviderOperationRepository operationRepository;
@@ -43,7 +44,10 @@ public class SimulatedSettlementGateway implements SettlementGateway {
     @Override
     @Transactional(
         propagation = Propagation.REQUIRES_NEW,
-        noRollbackFor = SettlementGatewayTimeoutException.class
+        noRollbackFor = {
+            SettlementGatewayTimeoutException.class,
+            SettlementRetryExhaustedException.class
+        }
     )
     public SettlementDecision authorize(
         Long authorizationId,
@@ -85,7 +89,10 @@ public class SimulatedSettlementGateway implements SettlementGateway {
     @Override
     @Transactional(
         propagation = Propagation.REQUIRES_NEW,
-        noRollbackFor = SettlementGatewayTimeoutException.class
+        noRollbackFor = {
+            SettlementGatewayTimeoutException.class,
+            SettlementRetryExhaustedException.class
+        }
     )
     public SettlementDecision capture(Long authorizationId, Long orderId, String requestId) {
         SimulatedProviderPayment payment = requirePayment(authorizationId, orderId);
@@ -107,7 +114,10 @@ public class SimulatedSettlementGateway implements SettlementGateway {
     @Override
     @Transactional(
         propagation = Propagation.REQUIRES_NEW,
-        noRollbackFor = SettlementGatewayTimeoutException.class
+        noRollbackFor = {
+            SettlementGatewayTimeoutException.class,
+            SettlementRetryExhaustedException.class
+        }
     )
     public SettlementDecision voidAuthorization(
         Long authorizationId,
@@ -133,7 +143,10 @@ public class SimulatedSettlementGateway implements SettlementGateway {
     @Override
     @Transactional(
         propagation = Propagation.REQUIRES_NEW,
-        noRollbackFor = SettlementGatewayTimeoutException.class
+        noRollbackFor = {
+            SettlementGatewayTimeoutException.class,
+            SettlementRetryExhaustedException.class
+        }
     )
     public SettlementDecision refund(
         Long authorizationId,
@@ -167,7 +180,10 @@ public class SimulatedSettlementGateway implements SettlementGateway {
     @Override
     @Transactional(
         propagation = Propagation.REQUIRES_NEW,
-        noRollbackFor = SettlementGatewayTimeoutException.class
+        noRollbackFor = {
+            SettlementGatewayTimeoutException.class,
+            SettlementRetryExhaustedException.class
+        }
     )
     public SettlementDecision synchronize(SettlementTarget target, String requestId) {
         return execute(
@@ -216,7 +232,8 @@ public class SimulatedSettlementGateway implements SettlementGateway {
                 amount.getAmount()
             );
             if (existing.getOutcome() == SimulatedProviderOperation.Outcome.APPROVED
-                || existing.getOutcome() == SimulatedProviderOperation.Outcome.DENIED) {
+                || existing.getOutcome() == SimulatedProviderOperation.Outcome.DENIED
+                || existing.getOutcome() == SimulatedProviderOperation.Outcome.RETRY_EXHAUSTED) {
                 return existing.decision();
             }
             if (timeoutAlwaysRequestIds.contains(requestId)) {
@@ -252,9 +269,21 @@ public class SimulatedSettlementGateway implements SettlementGateway {
     }
 
     private SettlementDecision recordTimeoutAndThrow(SimulatedProviderOperation operation) {
+        SettlementGatewayTimeoutException timeout = new SettlementGatewayTimeoutException(
+            PROVIDER_TIMEOUT
+        );
         operation.recordTimeout(PROVIDER_TIMEOUT);
+        if (operation.getAttemptCount() >= MAX_DELIVERY_ATTEMPTS) {
+            operation.markRetryExhausted(PROVIDER_TIMEOUT);
+            operationRepository.saveAndFlush(operation);
+            throw new SettlementRetryExhaustedException(
+                operation.getOperationType().name(),
+                operation.getAttemptCount(),
+                timeout
+            );
+        }
         operationRepository.saveAndFlush(operation);
-        throw new SettlementGatewayTimeoutException(PROVIDER_TIMEOUT);
+        throw timeout;
     }
 
     private SimulatedProviderPayment requirePayment(Long authorizationId, Long orderId) {
@@ -290,7 +319,9 @@ public class SimulatedSettlementGateway implements SettlementGateway {
     }
 
     private static Set<String> csv(String configured) {
-        if (configured == null || configured.isBlank()) return Set.of();
+        if (configured == null || configured.isBlank()) {
+            return Set.of();
+        }
         return Arrays.stream(configured.split(","))
             .map(String::trim)
             .filter(value -> !value.isEmpty())
