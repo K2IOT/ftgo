@@ -32,7 +32,8 @@ public class SimulatedProviderOperation {
     public enum Outcome {
         APPROVED,
         DENIED,
-        TIMEOUT
+        TIMEOUT,
+        RETRY_EXHAUSTED
     }
 
     @Id
@@ -89,8 +90,12 @@ public class SimulatedProviderOperation {
         if (requestId == null || requestId.isBlank()) {
             throw new IllegalArgumentException("Request ID cannot be blank");
         }
-        if (authorizationId == null) throw new IllegalArgumentException("Authorization ID cannot be null");
-        if (operationType == null) throw new IllegalArgumentException("Operation type cannot be null");
+        if (authorizationId == null) {
+            throw new IllegalArgumentException("Authorization ID cannot be null");
+        }
+        if (operationType == null) {
+            throw new IllegalArgumentException("Operation type cannot be null");
+        }
         if (amount == null || amount.signum() < 0) {
             throw new IllegalArgumentException("Operation amount cannot be negative");
         }
@@ -127,6 +132,18 @@ public class SimulatedProviderOperation {
         updatedAt = LocalDateTime.now();
     }
 
+    public void markRetryExhausted(String timeoutReason) {
+        if (attemptCount <= 0) {
+            throw new IllegalStateException(
+                "Cannot exhaust provider retry before an attempt has been recorded"
+            );
+        }
+        outcome = Outcome.RETRY_EXHAUSTED;
+        reason = timeoutReason;
+        providerReference = null;
+        updatedAt = LocalDateTime.now();
+    }
+
     public void approve(String reference) {
         attemptCount++;
         outcome = Outcome.APPROVED;
@@ -150,9 +167,17 @@ public class SimulatedProviderOperation {
         if (outcome == Outcome.DENIED) {
             return SettlementDecision.denied(reason);
         }
-        throw new SettlementGatewayTimeoutException(reason == null
-            ? "Simulated settlement timeout"
-            : reason);
+        SettlementGatewayTimeoutException timeout = new SettlementGatewayTimeoutException(
+            reason == null ? "Simulated settlement timeout" : reason
+        );
+        if (outcome == Outcome.RETRY_EXHAUSTED) {
+            throw new SettlementRetryExhaustedException(
+                operationType.name(),
+                attemptCount,
+                timeout
+            );
+        }
+        throw timeout;
     }
 
     public Long getId() { return id; }
@@ -170,8 +195,12 @@ public class SimulatedProviderOperation {
 
     @PrePersist
     protected void onCreate() {
-        if (createdAt == null) createdAt = LocalDateTime.now();
-        if (updatedAt == null) updatedAt = createdAt;
+        if (createdAt == null) {
+            createdAt = LocalDateTime.now();
+        }
+        if (updatedAt == null) {
+            updatedAt = createdAt;
+        }
     }
 
     @PreUpdate
