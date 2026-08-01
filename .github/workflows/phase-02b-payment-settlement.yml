@@ -45,7 +45,7 @@ jobs:
       - name: Verify Kafka-backed settlement redelivery
         run: |
           ./gradlew :accounting-service:test \
-            --tests 'net.ftgo.accounting.config.SettlementKafkaRedeliveryIntegrationTest' \
+            --tests 'net.ftgo.accounting.messaging.SettlementKafkaRedeliveryIntegrationTest' \
             --tests 'net.ftgo.accounting.config.SettlementKafkaRedeliveryLoadTest' \
             --no-daemon --stacktrace
 
