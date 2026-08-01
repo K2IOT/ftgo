@@ -167,9 +167,17 @@ public class AccountingKafkaRetryConfiguration {
     @Primary
     MessageConsumerImplementation accountingMessageConsumerImplementation(
         @Qualifier("accountingKafkaListenerContainerFactory")
-        ConcurrentKafkaListenerContainerFactory<String, byte[]> containerFactory
+        ConcurrentKafkaListenerContainerFactory<String, byte[]> containerFactory,
+        @Qualifier("accountingKafkaAdmin") KafkaAdmin kafkaAdmin,
+        @Qualifier("accountingServiceCommandTopic") NewTopic commandTopic,
+        @Qualifier("accountingServiceCommandDeadLetterTopic") NewTopic deadLetterTopic
     ) {
-        return new SpringKafkaMessageConsumerImplementation(containerFactory);
+        return new SpringKafkaMessageConsumerImplementation(
+            containerFactory,
+            kafkaAdmin,
+            commandTopic,
+            deadLetterTopic
+        );
     }
 
     static long[] parseRetryDelays(String configured) {
@@ -204,19 +212,32 @@ public class AccountingKafkaRetryConfiguration {
         implements MessageConsumerImplementation {
 
         private final ConcurrentKafkaListenerContainerFactory<String, byte[]> containerFactory;
+        private final KafkaAdmin kafkaAdmin;
+        private final NewTopic commandTopic;
+        private final NewTopic deadLetterTopic;
         private final EventuateKafkaMultiMessageConverter multiMessageConverter =
             new EventuateKafkaMultiMessageConverter();
         private final List<ConcurrentMessageListenerContainer<String, byte[]>> containers =
             new CopyOnWriteArrayList<>();
         private final AtomicInteger containerSequence = new AtomicInteger();
         private final AtomicBoolean closed = new AtomicBoolean();
+        private final AtomicBoolean topicsReady = new AtomicBoolean();
 
         SpringKafkaMessageConsumerImplementation(
-            ConcurrentKafkaListenerContainerFactory<String, byte[]> containerFactory
+            ConcurrentKafkaListenerContainerFactory<String, byte[]> containerFactory,
+            KafkaAdmin kafkaAdmin,
+            NewTopic commandTopic,
+            NewTopic deadLetterTopic
         ) {
             this.containerFactory = Objects.requireNonNull(
                 containerFactory,
                 "containerFactory"
+            );
+            this.kafkaAdmin = Objects.requireNonNull(kafkaAdmin, "kafkaAdmin");
+            this.commandTopic = Objects.requireNonNull(commandTopic, "commandTopic");
+            this.deadLetterTopic = Objects.requireNonNull(
+                deadLetterTopic,
+                "deadLetterTopic"
             );
         }
 
@@ -236,6 +257,8 @@ public class AccountingKafkaRetryConfiguration {
                 throw new IllegalArgumentException("At least one channel is required");
             }
             Objects.requireNonNull(handler, "handler");
+
+            ensureTopicsReady();
 
             ConcurrentMessageListenerContainer<String, byte[]> container =
                 containerFactory.createContainer(channels.toArray(String[]::new));
@@ -275,6 +298,19 @@ public class AccountingKafkaRetryConfiguration {
                 new ArrayList<>(containers);
             containers.clear();
             snapshot.forEach(ConcurrentMessageListenerContainer::stop);
+        }
+
+        private void ensureTopicsReady() {
+            if (topicsReady.get()) {
+                return;
+            }
+            synchronized (topicsReady) {
+                if (topicsReady.get()) {
+                    return;
+                }
+                kafkaAdmin.createOrModifyTopics(commandTopic, deadLetterTopic);
+                topicsReady.set(true);
+            }
         }
 
         private List<Message> decode(byte[] payload) {
