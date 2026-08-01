@@ -145,6 +145,7 @@ class SettlementKafkaRedeliveryLoadTest {
         assertThat(
             meterRegistry.find("ftgo_accounting_settlement_redelivery_total")
                 .counters()
+                .stream()
                 .mapToDouble(counter -> counter.count())
                 .sum()
         ).isEqualTo(TIMEOUT_COMMANDS * 3.0);
