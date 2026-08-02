@@ -145,24 +145,39 @@ class SimulatedSettlementGatewayTest {
     }
 
     @Test
-    void permanentTimeoutRemainsRetryableWithoutChangingProviderState() {
+    void permanentTimeoutBecomesStableTerminalFailureOnFourthDelivery() {
         gateway.authorize(205L, 105L, new Money("50.00"), "authorize-105");
         gateway.capture(205L, 105L, "capture-105");
 
-        assertThatThrownBy(() -> gateway.refund(
-            205L,
-            105L,
-            new Money("10.00"),
-            "timeout-always-refund"
-        )).isInstanceOf(SettlementGatewayTimeoutException.class);
-        assertThatThrownBy(() -> gateway.refund(
-            205L,
-            105L,
-            new Money("10.00"),
-            "timeout-always-refund"
-        )).isInstanceOf(SettlementGatewayTimeoutException.class);
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            assertThatThrownBy(() -> gateway.refund(
+                205L,
+                105L,
+                new Money("10.00"),
+                "timeout-always-refund"
+            )).isInstanceOf(SettlementGatewayTimeoutException.class);
+        }
 
+        assertThatThrownBy(() -> gateway.refund(
+            205L,
+            105L,
+            new Money("10.00"),
+            "timeout-always-refund"
+        )).isInstanceOf(SettlementRetryExhaustedException.class)
+          .hasMessage("Settlement REFUND exhausted after 4 attempts");
+
+        assertThatThrownBy(() -> gateway.refund(
+            205L,
+            105L,
+            new Money("10.00"),
+            "timeout-always-refund"
+        )).isInstanceOf(SettlementRetryExhaustedException.class)
+          .hasMessage("Settlement REFUND exhausted after 4 attempts");
+
+        SimulatedProviderOperation operation = operations.get("timeout-always-refund");
+        assertThat(operation.getAttemptCount()).isEqualTo(4);
+        assertThat(operation.getOutcome())
+            .isEqualTo(SimulatedProviderOperation.Outcome.RETRY_EXHAUSTED);
         assertThat(gateway.find(205L).orElseThrow().refundedAmount()).isEqualTo(Money.ZERO);
-        assertThat(operations.get("timeout-always-refund").getAttemptCount()).isEqualTo(2);
     }
 }

@@ -14,6 +14,7 @@ import net.ftgo.accounting.settlement.PaymentLedgerService;
 import net.ftgo.accounting.settlement.SettlementDecision;
 import net.ftgo.accounting.settlement.SettlementGateway;
 import net.ftgo.accounting.settlement.SettlementGatewayTimeoutException;
+import net.ftgo.accounting.settlement.SettlementRetryExhaustedException;
 import net.ftgo.common.Money;
 import net.ftgo.common.messaging.IdempotentCommandExecutor;
 import net.ftgo.common.orderflow.commands.AuthorizeCardCommand;
@@ -80,7 +81,9 @@ class AccountingSettlementCommandHandlersTest {
         when(accountRepository.findByConsumerId(301L)).thenReturn(Optional.empty());
         when(accountRepository.saveAndFlush(any(Account.class))).thenAnswer(invocation -> {
             Account account = invocation.getArgument(0);
-            if (account.getId() == null) ReflectionTestUtils.setField(account, "id", 501L);
+            if (account.getId() == null) {
+                ReflectionTestUtils.setField(account, "id", 501L);
+            }
             for (Authorization authorization : account.getAuthorizations()) {
                 if (authorization.getId() == null) {
                     ReflectionTestUtils.setField(authorization, "id", 701L);
@@ -218,6 +221,45 @@ class AccountingSettlementCommandHandlersTest {
     }
 
     @Test
+    void terminalRetryExhaustionIsCachedAsStableFailureReply() {
+        Account account = accountWithAuthorization(105L, 705L, new Money("55.00"));
+        when(accountRepository.findByAuthorizationId(705L)).thenReturn(Optional.of(account));
+        when(settlementGateway.capture(705L, 105L, "timeout-always-capture-105"))
+            .thenThrow(new SettlementRetryExhaustedException(
+                "CAPTURE",
+                4,
+                new SettlementGatewayTimeoutException("timeout")
+            ));
+
+        CommandMessage<CaptureAuthorizationCommand> command = message(
+            "command-capture-105",
+            new CaptureAuthorizationCommand(105L, 705L, "timeout-always-capture-105")
+        );
+
+        Message first = handlers.handleCaptureAuthorization(command);
+        Message duplicate = handlers.handleCaptureAuthorization(command);
+
+        assertThat(first.getPayload()).isEqualTo(duplicate.getPayload());
+        assertThat(first.getHeaders()).isEqualTo(duplicate.getHeaders());
+        assertThat(first.getPayload()).contains(
+            "Settlement CAPTURE exhausted after 4 attempts"
+        );
+        assertThat(processedCommands.findCompleted(
+            "accounting-service",
+            "command-capture-105"
+        )).isPresent();
+        verify(settlementGateway, times(1)).capture(
+            705L,
+            105L,
+            "timeout-always-capture-105"
+        );
+        verify(accountRepository, never()).saveAndFlush(account);
+        verify(paymentLedgerService, never()).append(
+            anyLong(), anyLong(), anyLong(), any(), any(), any(), any()
+        );
+    }
+
+    @Test
     void partialRefundWritesOnlyTheRefundAmount() {
         Account account = accountWithAuthorization(104L, 704L, new Money("100.00"));
         account.captureAuthorization(104L, 704L, "capture-104");
@@ -268,6 +310,11 @@ class AccountingSettlementCommandHandlersTest {
     }
 
     private <T extends Command> CommandMessage<T> message(String id, T command) {
-        return new CommandMessage<>(id, command, Map.of(), org.mockito.Mockito.mock(Message.class));
+        return new CommandMessage<>(
+            id,
+            command,
+            Map.of(),
+            org.mockito.Mockito.mock(Message.class)
+        );
     }
 }

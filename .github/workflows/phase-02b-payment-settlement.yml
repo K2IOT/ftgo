@@ -42,6 +42,13 @@ jobs:
       - name: Verify Gradle wrapper
         run: bash scripts/ci/verify-gradle-wrapper.sh
 
+      - name: Verify Kafka-backed settlement redelivery
+        run: |
+          ./gradlew :accounting-service:test \
+            --tests 'net.ftgo.accounting.messaging.SettlementKafkaRedeliveryIntegrationTest' \
+            --tests 'net.ftgo.accounting.config.SettlementKafkaRedeliveryLoadTest' \
+            --no-daemon --stacktrace
+
       - name: Verify accounting settlement
         run: ./gradlew :accounting-service:clean :accounting-service:test --no-daemon --stacktrace
 

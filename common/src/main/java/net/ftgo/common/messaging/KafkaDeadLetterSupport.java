@@ -14,6 +14,7 @@ import org.springframework.util.backoff.BackOff;
 import org.springframework.util.backoff.BackOffExecution;
 
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.Objects;
 
 /** Shared bounded retry, DLT routing, metadata and metrics for event consumers. */
@@ -33,6 +34,14 @@ public final class KafkaDeadLetterSupport {
         KafkaTemplate<Object, Object> kafkaTemplate,
         MeterRegistry meterRegistry
     ) {
+        return errorHandler(kafkaTemplate, meterRegistry, retryBackOff());
+    }
+
+    public static DefaultErrorHandler errorHandler(
+        KafkaTemplate<Object, Object> kafkaTemplate,
+        MeterRegistry meterRegistry,
+        BackOff backOff
+    ) {
         DeadLetterPublishingRecoverer recoverer = new DeadLetterPublishingRecoverer(
             kafkaTemplate,
             (record, exception) -> deadLetterDestination(record)
@@ -41,7 +50,10 @@ public final class KafkaDeadLetterSupport {
         recoverer.setHeadersFunction((record, exception) ->
             deadLetterHeaders(record, exception, meterRegistry));
 
-        DefaultErrorHandler handler = new DefaultErrorHandler(recoverer, retryBackOff());
+        DefaultErrorHandler handler = new DefaultErrorHandler(
+            recoverer,
+            Objects.requireNonNull(backOff, "backOff")
+        );
         handler.addNotRetryableExceptions(
             NonRetryableEventException.class,
             IllegalArgumentException.class,
@@ -52,15 +64,29 @@ public final class KafkaDeadLetterSupport {
     }
 
     public static BackOff retryBackOff() {
+        return retryBackOff(RETRY_INTERVALS_MS);
+    }
+
+    public static BackOff retryBackOff(long... retryIntervalsMs) {
+        Objects.requireNonNull(retryIntervalsMs, "retryIntervalsMs");
+        if (retryIntervalsMs.length == 0) {
+            throw new IllegalArgumentException("At least one retry interval is required");
+        }
+        long[] intervals = Arrays.copyOf(retryIntervalsMs, retryIntervalsMs.length);
+        for (long interval : intervals) {
+            if (interval < 0) {
+                throw new IllegalArgumentException("Retry intervals cannot be negative");
+            }
+        }
         return () -> new BackOffExecution() {
             private int index;
 
             @Override
             public long nextBackOff() {
-                if (index >= RETRY_INTERVALS_MS.length) {
+                if (index >= intervals.length) {
                     return STOP;
                 }
-                return RETRY_INTERVALS_MS[index++];
+                return intervals[index++];
             }
         };
     }
