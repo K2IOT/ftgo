@@ -10,7 +10,7 @@ CREATE TABLE settlement_reconciliation_work (
     CONSTRAINT fk_settlement_reconciliation_work_authorization
         FOREIGN KEY (authorization_id) REFERENCES authorizations(id) ON DELETE CASCADE,
     INDEX idx_settlement_reconciliation_work_due
-        (next_attempt_at, locked_until, authorization_id)
+        (next_attempt_at, authorization_id, locked_until)
 );
 
 INSERT INTO settlement_reconciliation_work (authorization_id, next_attempt_at)
