@@ -30,6 +30,13 @@ ftgo:
   security:
     public-audience: ${FTGO_SECURITY_PUBLIC_AUDIENCE:ftgo-api}
     internal-audience: ${FTGO_SECURITY_INTERNAL_AUDIENCE:ftgo-internal}
+  messaging:
+    retention:
+      enabled: ${FTGO_MESSAGE_RETENTION_ENABLED:false}
+      outbox-retention: ${FTGO_MESSAGE_RETENTION_OUTBOX_RETENTION:P30D}
+      completed-command-retention: ${FTGO_MESSAGE_RETENTION_COMPLETED_COMMAND_RETENTION:P30D}
+      batch-size: ${FTGO_MESSAGE_RETENTION_BATCH_SIZE:500}
+      interval: ${FTGO_MESSAGE_RETENTION_INTERVAL:PT10M}
 
 server:
   port: 8086
