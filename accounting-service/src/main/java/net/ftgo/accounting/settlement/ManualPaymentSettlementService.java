@@ -10,6 +10,7 @@ import net.ftgo.common.Money;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 
 @Service
@@ -19,17 +20,20 @@ public class ManualPaymentSettlementService {
     private final SettlementGateway settlementGateway;
     private final PaymentLedgerService ledgerService;
     private final DomainEventPublisher eventPublisher;
+    private final SettlementReconciliationWorkRepository reconciliationWorkRepository;
 
     public ManualPaymentSettlementService(
         AccountRepository accountRepository,
         SettlementGateway settlementGateway,
         PaymentLedgerService ledgerService,
-        DomainEventPublisher eventPublisher
+        DomainEventPublisher eventPublisher,
+        SettlementReconciliationWorkRepository reconciliationWorkRepository
     ) {
         this.accountRepository = accountRepository;
         this.settlementGateway = settlementGateway;
         this.ledgerService = ledgerService;
         this.eventPublisher = eventPublisher;
+        this.reconciliationWorkRepository = reconciliationWorkRepository;
     }
 
     @Transactional
@@ -98,6 +102,7 @@ public class ManualPaymentSettlementService {
             amount.getAmount(),
             settlement.providerReference()
         );
+        reconciliationWorkRepository.enqueue(authorizationId, Instant.now());
         if (changed) {
             eventPublisher.publishAccountEvent(
                 account.getId(),
