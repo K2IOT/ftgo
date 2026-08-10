@@ -16,6 +16,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -59,30 +60,19 @@ class SettlementReconciliationBatchTest {
         when(settlementGateway.find(anyLong())).thenAnswer(invocation -> {
             Long authorizationId = invocation.getArgument(0);
             Authorization authorization = authorizations.get(authorizationId);
-            return java.util.Optional.of(new ProviderSettlementSnapshot(
-                authorizationId,
-                authorization.getOrderId(),
-                authorization.getAmount(),
-                Money.ZERO,
-                Money.ZERO,
-                ProviderSettlementStatus.AUTHORIZED,
-                "provider-" + authorizationId
-            ));
+            return Optional.of(providerSnapshot(authorization));
         });
         when(authorizationRepository.findAll()).thenThrow(new AssertionError(
             "Settlement reconciliation must not perform a full authorization table scan"
         ));
 
-        SettlementReconciler reconciler = new SettlementReconciler(
+        SettlementReconciliationMonitor monitor = monitor(
             authorizationRepository,
             settlementGateway,
             discrepancyRepository,
             ledgerRepository,
-            workRepository,
-            new SimpleMeterRegistry(),
-            Clock.fixed(NOW, ZoneOffset.UTC)
+            workRepository
         );
-        SettlementReconciliationMonitor monitor = new SettlementReconciliationMonitor(reconciler);
 
         assertThat(monitor.reconcile().inspected()).isEqualTo(100);
         assertThat(monitor.reconcile().inspected()).isEqualTo(100);
@@ -100,6 +90,82 @@ class SettlementReconciliationBatchTest {
             any(SettlementReconciliationWork.class),
             eq(NOW.plus(Duration.ofHours(24))),
             eq(NOW)
+        );
+    }
+
+    @Test
+    void badProviderRecordDoesNotRollBackOtherClaimedWork() {
+        AuthorizationRepository authorizationRepository = mock(AuthorizationRepository.class);
+        SettlementGateway settlementGateway = mock(SettlementGateway.class);
+        SettlementDiscrepancyRepository discrepancyRepository = mock(
+            SettlementDiscrepancyRepository.class
+        );
+        PaymentLedgerEntryRepository ledgerRepository = mock(PaymentLedgerEntryRepository.class);
+        SettlementReconciliationWorkRepository workRepository = mock(
+            SettlementReconciliationWorkRepository.class
+        );
+        Map<Long, Authorization> authorizations = authorizations(2);
+        List<SettlementReconciliationWork> claimed = claims(1, 2);
+
+        when(workRepository.claimDue(100, NOW, Duration.ofMinutes(2))).thenReturn(claimed);
+        when(authorizationRepository.findAllById(any()))
+            .thenReturn(List.of(authorizations.get(1L), authorizations.get(2L)));
+        when(ledgerRepository.sumSettlementTotalsByAuthorizationIds(any()))
+            .thenReturn(List.of());
+        when(discrepancyRepository.findByAuthorizationIdIn(any()))
+            .thenReturn(List.of());
+        when(settlementGateway.find(1L)).thenThrow(new IllegalStateException("provider unavailable"));
+        when(settlementGateway.find(2L)).thenReturn(Optional.of(providerSnapshot(authorizations.get(2L))));
+
+        SettlementReconciliationReport report = monitor(
+            authorizationRepository,
+            settlementGateway,
+            discrepancyRepository,
+            ledgerRepository,
+            workRepository
+        ).reconcile();
+
+        assertThat(report.inspected()).isEqualTo(2);
+        verify(workRepository).recordFailure(
+            claimed.get(0),
+            "provider unavailable",
+            NOW
+        );
+        verify(workRepository).reschedule(
+            claimed.get(1),
+            NOW.plus(Duration.ofHours(24)),
+            NOW
+        );
+    }
+
+    private SettlementReconciliationMonitor monitor(
+        AuthorizationRepository authorizationRepository,
+        SettlementGateway settlementGateway,
+        SettlementDiscrepancyRepository discrepancyRepository,
+        PaymentLedgerEntryRepository ledgerRepository,
+        SettlementReconciliationWorkRepository workRepository
+    ) {
+        SettlementReconciler reconciler = new SettlementReconciler(
+            authorizationRepository,
+            settlementGateway,
+            discrepancyRepository,
+            ledgerRepository,
+            workRepository,
+            new SimpleMeterRegistry(),
+            Clock.fixed(NOW, ZoneOffset.UTC)
+        );
+        return new SettlementReconciliationMonitor(reconciler);
+    }
+
+    private ProviderSettlementSnapshot providerSnapshot(Authorization authorization) {
+        return new ProviderSettlementSnapshot(
+            authorization.getId(),
+            authorization.getOrderId(),
+            authorization.getAmount(),
+            Money.ZERO,
+            Money.ZERO,
+            ProviderSettlementStatus.AUTHORIZED,
+            "provider-" + authorization.getId()
         );
     }
 
