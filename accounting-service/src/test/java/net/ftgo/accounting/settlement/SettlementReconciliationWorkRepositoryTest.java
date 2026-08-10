@@ -59,7 +59,7 @@ class SettlementReconciliationWorkRepositoryTest {
                         FOREIGN KEY (authorization_id) REFERENCES authorizations(id)
                         ON DELETE CASCADE,
                     INDEX idx_test_reconciliation_due
-                        (next_attempt_at, locked_until, authorization_id)
+                        (next_attempt_at, authorization_id, locked_until)
                 )
                 """);
         }
