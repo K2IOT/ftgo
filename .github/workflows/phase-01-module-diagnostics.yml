@@ -3,7 +3,7 @@ name: Phase 01 Module Diagnostics
 on:
   push:
     branches:
-      - agent/ftgo-phase-01-runtime-foundation
+      - dev
     paths:
       - '.github/workflows/phase-01-module-diagnostics.yml'
       - 'gradle/wrapper/**'
@@ -39,6 +39,7 @@ on:
       - 'accounting-service/**'
       - 'delivery-service/**'
       - 'order-history-service/**'
+  merge_group:
   workflow_dispatch:
 
 permissions:
