@@ -1,6 +1,21 @@
 name: Phase 04 API Contract
 
 on:
+  push:
+    branches: [dev]
+    paths:
+      - 'common/**'
+      - 'api-gateway/**'
+      - 'order-service/**'
+      - 'consumer-service/**'
+      - 'restaurant-service/**'
+      - 'kitchen-service/**'
+      - 'accounting-service/**'
+      - 'delivery-service/**'
+      - 'order-history-service/**'
+      - 'e2e-tests/**'
+      - 'deployment/tests/test_phase04_*.py'
+      - '.github/workflows/phase-04-api-contract.yml'
   pull_request:
     branches: [dev]
     paths:
@@ -16,6 +31,7 @@ on:
       - 'e2e-tests/**'
       - 'deployment/tests/test_phase04_*.py'
       - '.github/workflows/phase-04-api-contract.yml'
+  merge_group:
   workflow_dispatch:
 
 permissions:
