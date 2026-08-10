@@ -189,6 +189,62 @@ ftgo_outbox_publish_error_total{service}
 
 Kafka/connector health and consumer lag remain the delivery source of truth.
 
+## Messaging Retention Lifecycle
+
+Messaging retention is available for the `outbox` table in Order, Consumer, Restaurant, Kitchen, Accounting and Delivery, and for `processed_commands` in Consumer, Kitchen and Accounting. Cleanup is intentionally disabled by default.
+
+Defaults:
+
+```text
+FTGO_MESSAGE_RETENTION_ENABLED=false
+FTGO_MESSAGE_RETENTION_OUTBOX_RETENTION=P30D
+FTGO_MESSAGE_RETENTION_COMPLETED_COMMAND_RETENTION=P30D
+FTGO_MESSAGE_RETENTION_BATCH_SIZE=500
+FTGO_MESSAGE_RETENTION_INTERVAL=PT10M
+```
+
+Both retention periods must be at least `P7D`. Startup validation rejects shorter periods. Each scheduled run deletes at most 500 rows from each existing table. Outbox rows are eligible only when `created_at` is older than the configured cutoff. Processed commands are eligible only when `processed_at` is older than the configured cutoff and `outcome <> 'PROCESSING'`.
+
+**Never manually delete a `processed_commands` row whose outcome is `PROCESSING`.** Active claims protect command idempotency and may still be referenced by an in-flight saga or replayed Kafka record.
+
+### Pre-enable and dry-run checks
+
+Keep `FTGO_MESSAGE_RETENTION_ENABLED=false` while performing these checks:
+
+1. Confirm Kafka topic retention and the maximum supported replay/recovery window are both shorter than the configured database retention periods. Keep a safety margin; do not set database retention equal to the longest possible replay window.
+2. Confirm Debezium connectors are `RUNNING`, have no sustained source-record lag, and are not recovering a backlog older than the proposed outbox cutoff.
+3. Confirm Kafka consumer lag is healthy for the affected service topics. A growing or unbounded lag is a stop condition.
+4. Inspect `ftgo_outbox_oldest_age_seconds{service}` and `ftgo_outbox_cleanup_eligible_count{service}`. The cleanup-eligible gauge is the outbox dry-run signal while deletion remains disabled.
+5. For Consumer, Kitchen and Accounting, run a read-only count using the same completed-command predicate before enablement: `processed_at < <cutoff> AND outcome <> 'PROCESSING'`. Do not convert this inspection into a manual `DELETE`.
+6. Confirm the retention indexes from the service Flyway migration exist before enabling cleanup.
+
+### Enablement
+
+Enable one service at a time by setting `FTGO_MESSAGE_RETENTION_ENABLED=true` and rolling/restarting that service. Leave the retention periods, batch size and interval at their defaults for the initial rollout unless a reviewed operating requirement says otherwise.
+
+After enablement, watch:
+
+```text
+ftgo_message_retention_deleted_rows_total{service,table}
+ftgo_message_retention_failures_total{service,table}
+ftgo_message_retention_last_success_epoch_seconds{service,table}
+ftgo_message_retention_cleanup_duration_seconds{service,table}
+```
+
+Expected behavior is bounded progress: no more than the configured batch size is deleted from a table in one run, and repeated runs gradually drain eligible rows. Metric labels are limited to service and table; event IDs and payload values must never be labels.
+
+Before enabling the next service, confirm that connector lag and Kafka consumer lag remain healthy, cleanup failures are zero or understood, and database latency has not materially regressed.
+
+### Retention rollback
+
+If cleanup causes unexpected load, retention-policy uncertainty, connector lag, or elevated failures:
+
+1. Set `FTGO_MESSAGE_RETENTION_ENABLED=false` for the affected service and roll/restart it so the scheduled worker is no longer created.
+2. Keep the additive retention indexes in place; they are safe to retain and are not a rollback hazard.
+3. Re-check Debezium connector health, Kafka lag and the replay window before considering re-enable.
+4. Preserve all remaining outbox and processed-command rows for diagnosis. Do not manually delete active command claims.
+5. If already-deleted rows were still required for replay, stop further replay attempts and follow the incident recovery process; disabling cleanup prevents additional deletion but cannot restore deleted data.
+
 ## Deployment Order
 
 1. Apply additive SQL and Scylla schema changes.
@@ -200,6 +256,8 @@ Kafka/connector health and consumer lag remain the delivery source of truth.
 7. Enable Order History pending reconciliation and query-table writes.
 8. Enable saga monitor, operator API and outbox metrics.
 9. Keep legacy payload compatibility for one release window.
+10. Apply message-retention indexes and deploy retention-capable binaries with cleanup disabled.
+11. Complete the messaging retention pre-enable checks before enabling cleanup one service at a time.
 
 ## Verification
 
@@ -210,6 +268,8 @@ Targeted commands:
 ./gradlew :delivery-service:test --tests '*EventIdentityTest' --tests '*DeadLetterPublishingTest'
 ./gradlew :order-history-service:test --tests '*EventIdentityTest' --tests '*DeadLetterPublishingTest' --tests '*OutOfOrderEventIntegrationTest' --tests '*OrderHistoryPagingIntegrationTest'
 ./gradlew :order-service:test --tests '*OrderOperationReconcilerTest'
+./gradlew :common:test --tests '*JdbcMessageRetentionWorkerTest'
+./gradlew :order-service:test :consumer-service:test :restaurant-service:test :kitchen-service:test :accounting-service:test :delivery-service:test --tests '*MigrationTest'
 ```
 
 Live distributed-failure validation:
@@ -222,12 +282,13 @@ Both clean-state cycles must pass with identical outcomes.
 
 ## Rollback
 
-1. Stop new envelope producers before reverting Debezium identity mapping.
-2. Keep additive columns and tables; do not drop them during rollback.
-3. Restore the previous connector configuration only after confirming no new envelope-only consumers depend on the event ID header.
-4. Disable scheduled pending reconciliation if it is causing load, but preserve `pending_order_events`.
-5. Disable operator repair routes at the network layer before disabling the monitor.
-6. Roll back application binaries in reverse deployment order.
-7. Preserve DLT, processed-command, pending-event and order-operation records for diagnosis.
+1. Disable messaging retention first if it is enabled for any service.
+2. Stop new envelope producers before reverting Debezium identity mapping.
+3. Keep additive columns, tables and retention indexes; do not drop them during rollback.
+4. Restore the previous connector configuration only after confirming no new envelope-only consumers depend on the event ID header.
+5. Disable scheduled pending reconciliation if it is causing load, but preserve `pending_order_events`.
+6. Disable operator repair routes at the network layer before disabling the monitor.
+7. Roll back application binaries in reverse deployment order.
+8. Preserve DLT, processed-command, pending-event and order-operation records for diagnosis.
 
-Do not roll back by deleting idempotency or pending rows. That can convert a recoverable incident into duplicate financial or fulfillment actions.
+Do not roll back by deleting idempotency, active command claims or pending rows. That can convert a recoverable incident into duplicate financial or fulfillment actions.

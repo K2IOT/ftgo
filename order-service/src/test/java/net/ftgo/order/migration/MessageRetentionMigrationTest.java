@@ -1,0 +1,31 @@
+package net.ftgo.order.migration;
+
+import net.ftgo.testsupport.MySqlMigrationVerifier;
+import org.junit.jupiter.api.Test;
+import org.springframework.jdbc.core.JdbcTemplate;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+class MessageRetentionMigrationTest {
+
+    @Test
+    void freshSchemaContainsMessageRetentionIndexes() {
+        MySqlMigrationVerifier.migrateAndValidate(
+            "order-service-retention-indexes",
+            "filesystem:src/main/resources/db/migration",
+            jdbc -> assertThat(indexColumns(jdbc, "outbox", "idx_outbox_created_at"))
+                .isEqualTo("created_at")
+        );
+    }
+
+    private static String indexColumns(JdbcTemplate jdbc, String table, String index) {
+        return jdbc.queryForObject(
+            "select group_concat(column_name order by seq_in_index separator ',') " +
+                "from information_schema.statistics " +
+                "where table_schema = database() and table_name = ? and index_name = ?",
+            String.class,
+            table,
+            index
+        );
+    }
+}

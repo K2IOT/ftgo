@@ -1,4 +1,5 @@
 dependencies {
     implementation 'io.eventuate.tram.sagas:eventuate-tram-sagas-spring-participant'
     implementation 'io.eventuate.tram.core:eventuate-tram-spring-jdbc-kafka'
+    testImplementation testFixtures(project(':common'))
 }
