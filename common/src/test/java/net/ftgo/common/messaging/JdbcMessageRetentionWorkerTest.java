@@ -1,6 +1,6 @@
 package net.ftgo.common.messaging;
 
-import io.micrometer.core.instrument.SimpleMeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
