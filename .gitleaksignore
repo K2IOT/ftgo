@@ -1,0 +1,4 @@
+# False positives: deterministic idempotency-key examples in the Phase 02B operations runbook.
+# These fingerprints identify two historical generic-api-key findings; no path/rule-wide exemption is used.
+befd67d2f8cae6cf4a6e0c6edccea5b539855af5:docs/operations/phase-02b-payment-settlement-runbook.md:generic-api-key:181
+befd67d2f8cae6cf4a6e0c6edccea5b539855af5:docs/operations/phase-02b-payment-settlement-runbook.md:generic-api-key:213
