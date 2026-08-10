@@ -15,6 +15,10 @@ public interface SettlementDiscrepancyRepository
         Collection<SettlementDiscrepancyStatus> statuses
     );
 
+    List<SettlementDiscrepancy> findByAuthorizationIdIn(
+        Collection<Long> authorizationIds
+    );
+
     List<SettlementDiscrepancy> findByAuthorizationIdOrderByFirstDetectedAtDesc(
         Long authorizationId
     );
