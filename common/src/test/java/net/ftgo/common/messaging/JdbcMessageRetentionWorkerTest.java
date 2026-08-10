@@ -192,8 +192,8 @@ class JdbcMessageRetentionWorkerTest {
             .withPropertyValues("ftgo.messaging.retention.outbox-retention=P6D")
             .run(context -> {
                 assertThat(context).hasFailed();
-                assertThat(context.getStartupFailure())
-                    .hasMessageContaining("outboxRetention");
+                assertThat(rootCause(context.getStartupFailure()).getMessage())
+                    .contains("outboxRetention must be at least P7D");
             });
     }
 
@@ -204,8 +204,8 @@ class JdbcMessageRetentionWorkerTest {
             .withPropertyValues("ftgo.messaging.retention.batch-size=501")
             .run(context -> {
                 assertThat(context).hasFailed();
-                assertThat(context.getStartupFailure())
-                    .hasMessageContaining("batchSize");
+                assertThat(rootCause(context.getStartupFailure()).getMessage())
+                    .contains("batchSize", "less than or equal to 500");
             });
     }
 
@@ -268,5 +268,13 @@ class JdbcMessageRetentionWorkerTest {
             .tag("table", table)
             .gauge()
             .value();
+    }
+
+    private static Throwable rootCause(Throwable failure) {
+        Throwable current = failure;
+        while (current.getCause() != null) {
+            current = current.getCause();
+        }
+        return current;
     }
 }
