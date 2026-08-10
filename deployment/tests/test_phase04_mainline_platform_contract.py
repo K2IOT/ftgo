@@ -23,6 +23,10 @@ ALL_PHASE_WORKFLOWS = (
     "phase-04-web-diagnostic.yml",
 )
 
+PHASE01_WORKFLOWS = tuple(
+    name for name in ALL_PHASE_WORKFLOWS if name.startswith("phase-01-")
+)
+
 REQUIRED_MERGE_CHECKS = (
     "phase-01-full-test.yml",
     "phase-01-verification.yml",
@@ -47,21 +51,23 @@ class Phase04MainlinePlatformContractTest(unittest.TestCase):
     def workflow(self, name):
         return (WORKFLOW_ROOT / name).read_text(encoding="utf-8")
 
-    def test_phase_workflows_target_dev_instead_of_historical_agent_branches(self):
+    def test_phase_workflows_target_dev_pull_requests_and_remain_dispatchable(self):
         for name in ALL_PHASE_WORKFLOWS:
             source = self.workflow(name)
             self.assertIn("pull_request:", source, name)
-            self.assertIn("- dev", source, name)
+            self.assertIn("dev", source, name)
             self.assertIn("workflow_dispatch:", source, name)
+
+    def test_phase01_push_triggers_no_longer_target_historical_agent_branch(self):
+        for name in PHASE01_WORKFLOWS:
+            source = self.workflow(name)
             self.assertNotIn("agent/ftgo-phase-01-runtime-foundation", source, name)
-            self.assertNotIn("agent/ftgo-phase-02", source, name)
-            self.assertNotIn("agent/ftgo-phase-03", source, name)
 
     def test_required_checks_run_for_dev_push_and_merge_queue(self):
         for name in REQUIRED_MERGE_CHECKS:
             source = self.workflow(name)
             push = source[source.index("push:"):source.index("pull_request:")]
-            self.assertIn("- dev", push, name)
+            self.assertIn("dev", push, name)
             self.assertIn("merge_group:", source, name)
 
     def test_dev_merge_verification_retests_exact_dev_sha(self):
@@ -72,8 +78,9 @@ class Phase04MainlinePlatformContractTest(unittest.TestCase):
         self.assertIn("./gradlew --no-daemon clean test", source)
         self.assertIn("python3 -m unittest discover -s deployment/tests -p 'test_*.py' -v", source)
         self.assertIn("github.sha", source)
+        self.assertIn("git rev-parse HEAD", source)
 
-    def test_secret_scanning_is_enforced_on_pr_and_dev_push(self):
+    def test_secret_scanning_is_enforced_on_pr_dev_push_and_merge_queue(self):
         workflow = self.workflow("secret-scan.yml")
         scanner = (ROOT / "scripts/ci/scan-secrets.sh").read_text(encoding="utf-8")
         self.assertIn("pull_request:", workflow)
@@ -100,9 +107,14 @@ class Phase04MainlinePlatformContractTest(unittest.TestCase):
             source = local.read_text(encoding="utf-8")
             self.assertIn("spring:", source, service)
 
+    def test_order_service_does_not_duplicate_hikaricp_dependency(self):
+        build = (ROOT / "build.gradle").read_text(encoding="utf-8")
+        block = build[build.index("project(':order-service')"):build.index("project(':consumer-service')")]
+        self.assertEqual(1, block.count("implementation 'com.zaxxer:HikariCP'"))
+
     def test_repository_documents_dev_as_mainline(self):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
-        self.assertIn("dev", readme)
+        self.assertIn("`dev` is the integration mainline", readme)
         self.assertIn("Phase 04", readme)
 
 
