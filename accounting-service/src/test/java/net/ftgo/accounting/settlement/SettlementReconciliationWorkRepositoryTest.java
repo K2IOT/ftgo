@@ -71,8 +71,7 @@ class SettlementReconciliationWorkRepositoryTest {
             statement.executeUpdate("DELETE FROM settlement_reconciliation_work");
             statement.executeUpdate("DELETE FROM authorizations");
         }
-        connection = newConnection();
-        connection.setAutoCommit(false);
+        connection = claimConnection();
         repository = repository(connection);
     }
 
@@ -119,8 +118,7 @@ class SettlementReconciliationWorkRepositoryTest {
 
         List<SettlementReconciliationWork> firstReplica = repository.claimDue(1, NOW, LEASE);
 
-        try (Connection secondConnection = newConnection()) {
-            secondConnection.setAutoCommit(false);
+        try (Connection secondConnection = claimConnection()) {
             SettlementReconciliationWorkRepository secondRepository = repository(secondConnection);
             List<SettlementReconciliationWork> secondReplica = secondRepository.claimDue(
                 2,
@@ -178,6 +176,13 @@ class SettlementReconciliationWorkRepositoryTest {
     private SettlementReconciliationWorkRepository repository(Connection connection) {
         SingleConnectionDataSource dataSource = new SingleConnectionDataSource(connection, true);
         return new SettlementReconciliationWorkRepository(new JdbcTemplate(dataSource));
+    }
+
+    private static Connection claimConnection() throws Exception {
+        Connection connection = newConnection();
+        connection.setTransactionIsolation(Connection.TRANSACTION_READ_COMMITTED);
+        connection.setAutoCommit(false);
+        return connection;
     }
 
     private static Connection newConnection() throws Exception {
