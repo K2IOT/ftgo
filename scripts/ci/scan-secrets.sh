@@ -7,4 +7,4 @@ cd "$repo_root"
 docker run --rm \
   -v "$PWD:/repo" \
   zricethezav/gitleaks:v8.24.3 \
-  detect --source /repo --no-banner --redact
+  detect --source /repo --no-banner --redact --verbose
