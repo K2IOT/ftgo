@@ -2,6 +2,7 @@ package net.ftgo.accounting.settlement;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.sql.Timestamp;
@@ -42,7 +43,7 @@ public class SettlementReconciliationWorkRepository {
         );
     }
 
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public List<SettlementReconciliationWork> claimDue(
         int batchSize,
         Instant now,
