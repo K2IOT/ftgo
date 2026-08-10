@@ -8,6 +8,7 @@ import net.ftgo.accounting.payment.PaymentAuthorizationGateway;
 import net.ftgo.accounting.repository.AccountRepository;
 import net.ftgo.accounting.settlement.PaymentLedgerService;
 import net.ftgo.accounting.settlement.SettlementGateway;
+import net.ftgo.accounting.settlement.SettlementReconciliationWorkRepository;
 import net.ftgo.common.Money;
 import net.ftgo.common.channels.ChannelNames;
 import net.ftgo.common.messaging.IdempotentCommandExecutor;
@@ -67,6 +68,7 @@ class CreateOrderSagaSharedContractTest {
             mock(PaymentAuthorizationGateway.class),
             mock(SettlementGateway.class),
             mock(PaymentLedgerService.class),
+            mock(SettlementReconciliationWorkRepository.class),
             mock(IdempotentCommandExecutor.class)
         ).commandHandlers();
 
