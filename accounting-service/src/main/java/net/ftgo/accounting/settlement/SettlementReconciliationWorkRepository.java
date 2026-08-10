@@ -15,6 +15,8 @@ import java.util.List;
 @Repository
 public class SettlementReconciliationWorkRepository {
 
+    private static final int MAX_BATCH_SIZE = 100;
+
     private final JdbcTemplate jdbcTemplate;
 
     public SettlementReconciliationWorkRepository(JdbcTemplate jdbcTemplate) {
@@ -52,6 +54,7 @@ public class SettlementReconciliationWorkRepository {
         if (batchSize <= 0) {
             throw new IllegalArgumentException("Batch size must be positive");
         }
+        int claimLimit = Math.min(batchSize, MAX_BATCH_SIZE);
         Instant claimedAt = micros(now);
         Instant lockedUntil = micros(claimedAt.plus(lease));
         List<SettlementReconciliationWork> due = jdbcTemplate.query(
@@ -81,7 +84,7 @@ public class SettlementReconciliationWorkRepository {
             ),
             Timestamp.from(claimedAt),
             Timestamp.from(claimedAt),
-            batchSize
+            claimLimit
         );
         if (due.isEmpty()) {
             return List.of();
