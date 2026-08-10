@@ -4,9 +4,9 @@ spring:
   autoconfigure:
     exclude: org.springframework.boot.autoconfigure.kafka.KafkaAutoConfiguration
   datasource:
-    url: jdbc:mysql://localhost:3307/ftgo_consumer?createDatabaseIfNotExist=true
-    username: ftgo_user
-    password: ftgo_password
+    url: ${CONSUMER_DB_URL}
+    username: ${CONSUMER_DB_USERNAME}
+    password: ${CONSUMER_DB_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
       maximum-pool-size: 20

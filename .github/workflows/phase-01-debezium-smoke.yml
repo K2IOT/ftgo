@@ -3,7 +3,7 @@ name: Phase 01 Debezium CDC Smoke
 on:
   push:
     branches:
-      - agent/ftgo-phase-01-runtime-foundation
+      - dev
     paths:
       - '.github/workflows/phase-01-debezium-smoke.yml'
       - 'deployment/configure-debezium.sh'
@@ -19,6 +19,7 @@ on:
       - 'deployment/debezium/connectors/**'
       - 'deployment/tests/docker-compose.debezium-smoke.yml'
       - 'deployment/tests/run-debezium-smoke.sh'
+  merge_group:
   workflow_dispatch:
 
 permissions:

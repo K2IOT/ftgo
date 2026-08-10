@@ -1,0 +1,8 @@
+spring:
+  config:
+    activate:
+      on-profile: local
+  datasource:
+    url: jdbc:mysql://localhost:3310/ftgo_accounting?createDatabaseIfNotExist=true
+    username: ftgo_user
+    password: ftgo_password

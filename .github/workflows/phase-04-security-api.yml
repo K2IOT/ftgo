@@ -1,6 +1,21 @@
 name: Phase 04 Security and API
 
 on:
+  push:
+    branches: [dev]
+    paths:
+      - 'common/**'
+      - 'api-gateway/**'
+      - 'order-service/**'
+      - 'consumer-service/**'
+      - 'restaurant-service/**'
+      - 'kitchen-service/**'
+      - 'accounting-service/**'
+      - 'delivery-service/**'
+      - 'order-history-service/**'
+      - 'e2e-tests/**'
+      - 'deployment/tests/test_phase04_*.py'
+      - '.github/workflows/phase-04-security-api.yml'
   pull_request:
     branches: [dev]
     paths:
@@ -16,7 +31,7 @@ on:
       - 'e2e-tests/**'
       - 'deployment/tests/test_phase04_*.py'
       - '.github/workflows/phase-04-security-api.yml'
-
+  merge_group:
   workflow_dispatch:
 
 permissions:
@@ -43,6 +58,8 @@ jobs:
         run: bash scripts/ci/verify-gradle-wrapper.sh
       - name: Verify resource server and gateway architecture contracts
         run: python -m unittest deployment.tests.test_phase04_resource_server_contract -v
+      - name: Verify mainline platform contracts
+        run: python -m unittest deployment.tests.test_phase04_mainline_platform_contract -v
       - name: Compile gateway and every HTTP service
         run: |
           ./gradlew \

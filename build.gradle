@@ -108,7 +108,6 @@ project(':order-service') {
         testImplementation project(':consumer-service')
         testImplementation project(':kitchen-service')
         testImplementation project(':accounting-service')
-        implementation 'com.zaxxer:HikariCP'
     }
 }
 
