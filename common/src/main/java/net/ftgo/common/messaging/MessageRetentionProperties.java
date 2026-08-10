@@ -1,10 +1,10 @@
 package net.ftgo.common.messaging;
 
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import org.springframework.boot.context.properties.ConfigurationProperties;
-import org.springframework.boot.convert.DurationMin;
 import org.springframework.validation.annotation.Validated;
 
 import java.time.Duration;
@@ -13,14 +13,14 @@ import java.time.Duration;
 @ConfigurationProperties(prefix = "ftgo.messaging.retention")
 public class MessageRetentionProperties {
 
+    private static final Duration MINIMUM_RETENTION = Duration.ofDays(7);
+
     private boolean enabled = false;
 
     @NotNull
-    @DurationMin(days = 7)
     private Duration outboxRetention = Duration.ofDays(30);
 
     @NotNull
-    @DurationMin(days = 7)
     private Duration completedCommandRetention = Duration.ofDays(30);
 
     @Min(1)
@@ -28,8 +28,23 @@ public class MessageRetentionProperties {
     private int batchSize = 500;
 
     @NotNull
-    @DurationMin(seconds = 1)
     private Duration interval = Duration.ofMinutes(10);
+
+    @AssertTrue(message = "outboxRetention must be at least P7D")
+    public boolean isOutboxRetentionValid() {
+        return outboxRetention == null || outboxRetention.compareTo(MINIMUM_RETENTION) >= 0;
+    }
+
+    @AssertTrue(message = "completedCommandRetention must be at least P7D")
+    public boolean isCompletedCommandRetentionValid() {
+        return completedCommandRetention == null
+            || completedCommandRetention.compareTo(MINIMUM_RETENTION) >= 0;
+    }
+
+    @AssertTrue(message = "interval must be greater than zero")
+    public boolean isIntervalValid() {
+        return interval == null || !interval.isZero() && !interval.isNegative();
+    }
 
     public boolean isEnabled() {
         return enabled;
