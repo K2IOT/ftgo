@@ -2,9 +2,9 @@ spring:
   application:
     name: delivery-service
   datasource:
-    url: jdbc:mysql://localhost:3311/ftgo_delivery?createDatabaseIfNotExist=true
-    username: ftgo_user
-    password: ftgo_password
+    url: ${DELIVERY_DB_URL}
+    username: ${DELIVERY_DB_USERNAME}
+    password: ${DELIVERY_DB_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
       maximum-pool-size: 20
