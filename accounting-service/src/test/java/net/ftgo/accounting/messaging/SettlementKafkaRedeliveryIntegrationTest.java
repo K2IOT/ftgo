@@ -18,6 +18,7 @@ import net.ftgo.accounting.settlement.PaymentLedgerService;
 import net.ftgo.accounting.settlement.SettlementDecision;
 import net.ftgo.accounting.settlement.SettlementGateway;
 import net.ftgo.accounting.settlement.SettlementGatewayTimeoutException;
+import net.ftgo.accounting.settlement.SettlementReconciliationWorkRepository;
 import net.ftgo.common.Money;
 import net.ftgo.common.channels.ChannelNames;
 import net.ftgo.common.messaging.IdempotentCommandExecutor;
@@ -101,6 +102,8 @@ class SettlementKafkaRedeliveryIntegrationTest {
         mock(PaymentAuthorizationGateway.class);
     private final SettlementGateway settlementGateway = mock(SettlementGateway.class);
     private final PaymentLedgerService paymentLedgerService = mock(PaymentLedgerService.class);
+    private final SettlementReconciliationWorkRepository reconciliationWorkRepository =
+        mock(SettlementReconciliationWorkRepository.class);
 
     private InMemoryProcessedCommandStore processedCommands;
     private AccountingServiceCommandHandlers handlers;
@@ -115,6 +118,7 @@ class SettlementKafkaRedeliveryIntegrationTest {
             paymentAuthorizationGateway,
             settlementGateway,
             paymentLedgerService,
+            reconciliationWorkRepository,
             new IdempotentCommandExecutor(processedCommands)
         );
     }

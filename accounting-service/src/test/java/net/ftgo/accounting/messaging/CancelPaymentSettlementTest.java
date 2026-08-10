@@ -11,6 +11,7 @@ import net.ftgo.accounting.settlement.PaymentLedgerEntry;
 import net.ftgo.accounting.settlement.PaymentLedgerService;
 import net.ftgo.accounting.settlement.SettlementDecision;
 import net.ftgo.accounting.settlement.SettlementGateway;
+import net.ftgo.accounting.settlement.SettlementReconciliationWorkRepository;
 import net.ftgo.common.Money;
 import net.ftgo.common.messaging.IdempotentCommandExecutor;
 import net.ftgo.common.orderflow.commands.ReverseAuthorizationCommand;
@@ -22,12 +23,14 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -51,6 +54,9 @@ class CancelPaymentSettlementTest {
     @Mock
     private PaymentLedgerService ledgerService;
 
+    @Mock
+    private SettlementReconciliationWorkRepository reconciliationWorkRepository;
+
     private AccountingServiceCommandHandlers handlers;
 
     @BeforeEach
@@ -61,6 +67,7 @@ class CancelPaymentSettlementTest {
             authorizationGateway,
             settlementGateway,
             ledgerService,
+            reconciliationWorkRepository,
             new IdempotentCommandExecutor(new InMemoryProcessedCommandStore())
         );
     }
@@ -105,6 +112,7 @@ class CancelPaymentSettlementTest {
             new Money("25.00").getAmount(),
             "provider-void-701"
         );
+        verify(reconciliationWorkRepository, times(1)).enqueue(eq(701L), any(Instant.class));
         verify(eventPublisher, times(1)).publishAccountEvent(
             anyLong(), anyLong(), any(AuthorizationVoidedEvent.class)
         );
@@ -151,6 +159,7 @@ class CancelPaymentSettlementTest {
             new Money("70.00").getAmount(),
             "provider-refund-702-cancel"
         );
+        verify(reconciliationWorkRepository).enqueue(eq(702L), any(Instant.class));
         verify(eventPublisher).publishAccountEvent(
             anyLong(), anyLong(), any(PaymentRefundedEvent.class)
         );
@@ -183,6 +192,7 @@ class CancelPaymentSettlementTest {
         verify(ledgerService, never()).append(
             anyLong(), anyLong(), anyLong(), any(), any(), any(), any()
         );
+        verify(reconciliationWorkRepository, never()).enqueue(anyLong(), any(Instant.class));
     }
 
     private Account account(

@@ -14,12 +14,14 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.Instant;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -40,6 +42,9 @@ class ManualPaymentSettlementServiceTest {
     @Mock
     private DomainEventPublisher eventPublisher;
 
+    @Mock
+    private SettlementReconciliationWorkRepository reconciliationWorkRepository;
+
     private ManualPaymentSettlementService service;
 
     @BeforeEach
@@ -48,12 +53,13 @@ class ManualPaymentSettlementServiceTest {
             accountRepository,
             settlementGateway,
             ledgerService,
-            eventPublisher
+            eventPublisher,
+            reconciliationWorkRepository
         );
     }
 
     @Test
-    void partialRefundUpdatesProviderLocalLedgerAndOutboxOnce() {
+    void partialRefundUpdatesProviderLocalLedgerOutboxAndReconciliationQueue() {
         Account account = capturedAccount(101L, 701L, "100.00");
         when(accountRepository.findByAuthorizationId(701L)).thenReturn(Optional.of(account));
         when(accountRepository.saveAndFlush(account)).thenReturn(account);
@@ -91,6 +97,10 @@ class ManualPaymentSettlementServiceTest {
             new Money("30.00").getAmount(),
             "provider-refund-701-1"
         );
+        verify(reconciliationWorkRepository, times(2)).enqueue(
+            eq(701L),
+            any(Instant.class)
+        );
         verify(eventPublisher, times(1)).publishAccountEvent(
             anyLong(),
             anyLong(),
@@ -111,7 +121,12 @@ class ManualPaymentSettlementServiceTest {
         )).isInstanceOf(RefundAmountExceedsCapturedException.class)
           .hasMessageContaining("exceeds captured amount");
 
-        verifyNoInteractions(settlementGateway, ledgerService, eventPublisher);
+        verifyNoInteractions(
+            settlementGateway,
+            ledgerService,
+            eventPublisher,
+            reconciliationWorkRepository
+        );
         assertThat(account.findAuthorizationById(702L).getStatus())
             .isEqualTo(AuthorizationStatus.CAPTURED);
         assertThat(account.findAuthorizationById(702L).getRefundedAmount())
@@ -137,6 +152,7 @@ class ManualPaymentSettlementServiceTest {
         )).isInstanceOf(SettlementGatewayTimeoutException.class);
         assertThat(account.findAuthorizationById(703L).getRefundedAmount())
             .isEqualTo(Money.ZERO);
+        verifyNoInteractions(reconciliationWorkRepository);
     }
 
     private Account capturedAccount(Long orderId, Long authorizationId, String amount) {

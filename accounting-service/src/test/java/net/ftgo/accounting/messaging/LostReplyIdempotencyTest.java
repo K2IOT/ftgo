@@ -11,6 +11,7 @@ import net.ftgo.accounting.settlement.PaymentLedgerEntry;
 import net.ftgo.accounting.settlement.PaymentLedgerService;
 import net.ftgo.accounting.settlement.SettlementDecision;
 import net.ftgo.accounting.settlement.SettlementGateway;
+import net.ftgo.accounting.settlement.SettlementReconciliationWorkRepository;
 import net.ftgo.common.Money;
 import net.ftgo.common.messaging.IdempotentCommandExecutor;
 import net.ftgo.common.orderflow.commands.AuthorizeCardCommand;
@@ -54,6 +55,9 @@ class LostReplyIdempotencyTest {
     @Mock
     private PaymentLedgerService paymentLedgerService;
 
+    @Mock
+    private SettlementReconciliationWorkRepository reconciliationWorkRepository;
+
     @Test
     void duplicateAuthorizeCommandReplaysEstablishedAuthorizationReply() {
         IdempotentCommandExecutor executor = new IdempotentCommandExecutor(
@@ -88,6 +92,7 @@ class LostReplyIdempotencyTest {
             new Money("42.50").getAmount(),
             "provider-authorization-101"
         );
+        verify(reconciliationWorkRepository, times(1)).enqueue(anyLong(), any());
         verify(accountRepository, times(1)).findByConsumerId(202L);
         verify(accountRepository, times(2)).saveAndFlush(any(Account.class));
     }
@@ -125,6 +130,7 @@ class LostReplyIdempotencyTest {
             paymentAuthorizationGateway,
             settlementGateway,
             paymentLedgerService,
+            reconciliationWorkRepository,
             executor
         );
     }
