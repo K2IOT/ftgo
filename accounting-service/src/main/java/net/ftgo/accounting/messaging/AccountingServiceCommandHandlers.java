@@ -14,6 +14,7 @@ import net.ftgo.accounting.settlement.PaymentLedgerEntry;
 import net.ftgo.accounting.settlement.PaymentLedgerService;
 import net.ftgo.accounting.settlement.SettlementDecision;
 import net.ftgo.accounting.settlement.SettlementGateway;
+import net.ftgo.accounting.settlement.SettlementReconciliationWorkRepository;
 import net.ftgo.common.Money;
 import net.ftgo.common.channels.ChannelNames;
 import net.ftgo.common.messaging.IdempotentCommandExecutor;
@@ -31,6 +32,7 @@ import net.ftgo.common.orderflow.replies.PaymentCaptured;
 import net.ftgo.common.orderflow.replies.PaymentRefunded;
 import org.springframework.stereotype.Component;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 
 import static io.eventuate.tram.commands.consumer.CommandHandlerReplyBuilder.withFailure;
@@ -46,6 +48,7 @@ public class AccountingServiceCommandHandlers {
     private final PaymentAuthorizationGateway paymentAuthorizationGateway;
     private final SettlementGateway settlementGateway;
     private final PaymentLedgerService paymentLedgerService;
+    private final SettlementReconciliationWorkRepository reconciliationWorkRepository;
     private final IdempotentCommandExecutor idempotentCommandExecutor;
 
     public AccountingServiceCommandHandlers(
@@ -54,6 +57,7 @@ public class AccountingServiceCommandHandlers {
         PaymentAuthorizationGateway paymentAuthorizationGateway,
         SettlementGateway settlementGateway,
         PaymentLedgerService paymentLedgerService,
+        SettlementReconciliationWorkRepository reconciliationWorkRepository,
         IdempotentCommandExecutor idempotentCommandExecutor
     ) {
         this.accountRepository = accountRepository;
@@ -61,6 +65,7 @@ public class AccountingServiceCommandHandlers {
         this.paymentAuthorizationGateway = paymentAuthorizationGateway;
         this.settlementGateway = settlementGateway;
         this.paymentLedgerService = paymentLedgerService;
+        this.reconciliationWorkRepository = reconciliationWorkRepository;
         this.idempotentCommandExecutor = idempotentCommandExecutor;
     }
 
@@ -181,6 +186,7 @@ public class AccountingServiceCommandHandlers {
                 authorization.getAmount().getAmount(),
                 settlement.providerReference()
             );
+            enqueueReconciliation(authorization.getId());
 
             if (created) {
                 eventPublisher.publishAccountEvent(
@@ -230,6 +236,7 @@ public class AccountingServiceCommandHandlers {
                 authorization.getAmount().getAmount(),
                 settlement.providerReference()
             );
+            enqueueReconciliation(command.getAuthorizationId());
             if (changed) {
                 eventPublisher.publishAccountEvent(
                     account.getId(),
@@ -280,6 +287,7 @@ public class AccountingServiceCommandHandlers {
                 authorization.getAmount().getAmount(),
                 settlement.providerReference()
             );
+            enqueueReconciliation(command.getAuthorizationId());
             if (changed) {
                 eventPublisher.publishAccountEvent(
                     account.getId(),
@@ -331,6 +339,7 @@ public class AccountingServiceCommandHandlers {
                 command.getAmount().getAmount(),
                 settlement.providerReference()
             );
+            enqueueReconciliation(command.getCaptureId());
             if (changed) {
                 eventPublisher.publishAccountEvent(
                     account.getId(),
@@ -369,6 +378,7 @@ public class AccountingServiceCommandHandlers {
             if (command.getOrderId() == null || command.getRequestId() == null) {
                 account.reverseAuthorization(command.getAuthorizationId());
                 accountRepository.saveAndFlush(account);
+                enqueueReconciliation(command.getAuthorizationId());
                 eventPublisher.publishAccountEvent(
                     account.getId(),
                     account.getVersion(),
@@ -406,6 +416,7 @@ public class AccountingServiceCommandHandlers {
                     authorization.getAmount().getAmount(),
                     settlement.providerReference()
                 );
+                enqueueReconciliation(authorization.getId());
                 if (changed) {
                     eventPublisher.publishAccountEvent(
                         account.getId(),
@@ -451,6 +462,7 @@ public class AccountingServiceCommandHandlers {
                     remaining.getAmount(),
                     settlement.providerReference()
                 );
+                enqueueReconciliation(authorization.getId());
                 if (changed) {
                     eventPublisher.publishAccountEvent(
                         account.getId(),
@@ -499,6 +511,10 @@ public class AccountingServiceCommandHandlers {
         } catch (IllegalArgumentException | IllegalStateException e) {
             return withFailure(e.getMessage());
         }
+    }
+
+    private void enqueueReconciliation(Long authorizationId) {
+        reconciliationWorkRepository.enqueue(authorizationId, Instant.now());
     }
 
     private Account requireAccount(Long authorizationId) {
