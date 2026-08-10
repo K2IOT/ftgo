@@ -39,6 +39,9 @@ class SettlementRepairRetryTest {
     @Mock
     private PaymentLedgerEntryRepository ledgerRepository;
 
+    @Mock
+    private SettlementReconciliationWorkRepository workRepository;
+
     @Test
     void failedRepairContinuesWithTheSameIdempotencyKey() {
         Authorization authorization = new Authorization(
@@ -77,6 +80,7 @@ class SettlementRepairRetryTest {
             settlementGateway,
             discrepancyRepository,
             ledgerRepository,
+            workRepository,
             new SimpleMeterRegistry(),
             Clock.fixed(Instant.parse("2026-07-27T02:00:00Z"), ZoneOffset.UTC)
         );
@@ -102,5 +106,6 @@ class SettlementRepairRetryTest {
             any(SettlementTarget.class),
             eq("repair-701-1")
         );
+        verify(workRepository, times(2)).enqueue(eq(701L), any(Instant.class));
     }
 }
