@@ -110,6 +110,22 @@ class SettlementReconciliationWorkRepositoryTest {
     }
 
     @Test
+    void configuredBatchAboveLimitStillClaimsOnlyHundred() throws Exception {
+        insertAuthorizations(150);
+        for (long id = 1; id <= 150; id++) {
+            repository.enqueue(id, NOW.minusSeconds(1));
+        }
+        connection.commit();
+
+        List<SettlementReconciliationWork> claimed = repository.claimDue(250, NOW, LEASE);
+
+        assertThat(claimed).hasSize(100);
+        assertThat(claimed).extracting(SettlementReconciliationWork::authorizationId)
+            .containsExactlyElementsOf(longRange(1, 100));
+        connection.commit();
+    }
+
+    @Test
     void twoReplicasSkipEachOthersLockedRows() throws Exception {
         insertAuthorizations(2);
         repository.enqueue(1L, NOW.minusSeconds(1));
