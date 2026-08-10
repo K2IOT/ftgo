@@ -14,6 +14,7 @@ import net.ftgo.accounting.settlement.PaymentLedgerService;
 import net.ftgo.accounting.settlement.SettlementDecision;
 import net.ftgo.accounting.settlement.SettlementGateway;
 import net.ftgo.accounting.settlement.SettlementGatewayTimeoutException;
+import net.ftgo.accounting.settlement.SettlementReconciliationWorkRepository;
 import net.ftgo.accounting.settlement.SettlementRetryExhaustedException;
 import net.ftgo.common.Money;
 import net.ftgo.common.messaging.IdempotentCommandExecutor;
@@ -28,6 +29,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
 
@@ -35,6 +37,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -58,6 +61,9 @@ class AccountingSettlementCommandHandlersTest {
     @Mock
     private PaymentLedgerService paymentLedgerService;
 
+    @Mock
+    private SettlementReconciliationWorkRepository reconciliationWorkRepository;
+
     private InMemoryProcessedCommandStore processedCommands;
     private AccountingServiceCommandHandlers handlers;
 
@@ -70,12 +76,13 @@ class AccountingSettlementCommandHandlersTest {
             paymentAuthorizationGateway,
             settlementGateway,
             paymentLedgerService,
+            reconciliationWorkRepository,
             new IdempotentCommandExecutor(processedCommands)
         );
     }
 
     @Test
-    void authorizePersistsProviderStateLedgerAndOutboxOnce() {
+    void authorizePersistsProviderStateLedgerOutboxAndReconciliationOnce() {
         when(paymentAuthorizationGateway.authorize("tok-101", new Money("42.50")))
             .thenReturn(PaymentAuthorizationDecision.allow());
         when(accountRepository.findByConsumerId(301L)).thenReturn(Optional.empty());
@@ -127,6 +134,10 @@ class AccountingSettlementCommandHandlersTest {
             new Money("42.50").getAmount(),
             "provider-authorize-101"
         );
+        verify(reconciliationWorkRepository, times(1)).enqueue(
+            eq(701L),
+            any(Instant.class)
+        );
         verify(eventPublisher, times(1)).publishAccountEvent(
             anyLong(),
             anyLong(),
@@ -135,7 +146,7 @@ class AccountingSettlementCommandHandlersTest {
     }
 
     @Test
-    void captureMutatesProviderAggregateLedgerAndOutboxOnce() {
+    void captureMutatesProviderAggregateLedgerOutboxAndReconciliationOnce() {
         Account account = accountWithAuthorization(101L, 701L, new Money("42.50"));
         when(accountRepository.findByAuthorizationId(701L)).thenReturn(Optional.of(account));
         when(accountRepository.saveAndFlush(account)).thenReturn(account);
@@ -162,6 +173,10 @@ class AccountingSettlementCommandHandlersTest {
             new Money("42.50").getAmount(),
             "provider-capture-101"
         );
+        verify(reconciliationWorkRepository, times(1)).enqueue(
+            eq(701L),
+            any(Instant.class)
+        );
         verify(eventPublisher, times(1)).publishAccountEvent(
             anyLong(),
             anyLong(),
@@ -187,6 +202,7 @@ class AccountingSettlementCommandHandlersTest {
         verify(paymentLedgerService, never()).append(
             anyLong(), anyLong(), anyLong(), any(), any(), any(), any()
         );
+        verify(reconciliationWorkRepository, never()).enqueue(anyLong(), any(Instant.class));
         verify(eventPublisher, never()).publishAccountEvent(
             anyLong(), anyLong(), any(PaymentCapturedEvent.class)
         );
@@ -218,6 +234,10 @@ class AccountingSettlementCommandHandlersTest {
         assertThat(account.findAuthorizationById(703L).getStatus())
             .isEqualTo(AuthorizationStatus.CAPTURED);
         verify(settlementGateway, times(2)).capture(703L, 103L, "timeout-capture-103");
+        verify(reconciliationWorkRepository, times(1)).enqueue(
+            eq(703L),
+            any(Instant.class)
+        );
     }
 
     @Test
@@ -257,10 +277,11 @@ class AccountingSettlementCommandHandlersTest {
         verify(paymentLedgerService, never()).append(
             anyLong(), anyLong(), anyLong(), any(), any(), any(), any()
         );
+        verify(reconciliationWorkRepository, never()).enqueue(anyLong(), any(Instant.class));
     }
 
     @Test
-    void partialRefundWritesOnlyTheRefundAmount() {
+    void partialRefundWritesOnlyTheRefundAmountAndRequeues() {
         Account account = accountWithAuthorization(104L, 704L, new Money("100.00"));
         account.captureAuthorization(104L, 704L, "capture-104");
         when(accountRepository.findByAuthorizationId(704L)).thenReturn(Optional.of(account));
@@ -294,6 +315,7 @@ class AccountingSettlementCommandHandlersTest {
             new Money("30.00").getAmount(),
             "provider-refund-104-1"
         );
+        verify(reconciliationWorkRepository).enqueue(eq(704L), any(Instant.class));
     }
 
     private Account accountWithAuthorization(Long orderId, Long authorizationId, Money amount) {
