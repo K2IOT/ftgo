@@ -20,7 +20,7 @@ class LocalOrderFlowRuntimeConfigurationTest {
     private static final Pattern NEXT_COMPOSE_SERVICE = Pattern.compile("(?m)^  [A-Za-z0-9_-]+:");
 
     @Test
-    void mysqlBackedServicesUseThePortsExposedByDockerCompose() throws IOException {
+    void localProfilesUseThePortsExposedByDockerCompose() throws IOException {
         Map<String, String> expectedPortsByService = new LinkedHashMap<>();
         expectedPortsByService.put("order-service", exposedMysqlPort("mysql-order"));
         expectedPortsByService.put("consumer-service", exposedMysqlPort("mysql-consumer"));
@@ -31,17 +31,18 @@ class LocalOrderFlowRuntimeConfigurationTest {
 
         Map<String, String> actualPortsByService = new LinkedHashMap<>();
         for (String service : expectedPortsByService.keySet()) {
-            actualPortsByService.put(service, configuredMysqlPort(service));
+            actualPortsByService.put(service, configuredLocalMysqlPort(service));
         }
 
         assertThat(actualPortsByService).isEqualTo(expectedPortsByService);
     }
 
-    private String configuredMysqlPort(String service) throws IOException {
-        String applicationYaml = Files.readString(REPO_ROOT.resolve(service).resolve("src/main/resources/application.yml"));
+    private String configuredLocalMysqlPort(String service) throws IOException {
+        Path localProfile = REPO_ROOT.resolve(service).resolve("src/main/resources/application-local.yml");
+        String applicationYaml = Files.readString(localProfile);
         Matcher matcher = JDBC_URL.matcher(applicationYaml);
         assertThat(matcher.find())
-            .as("JDBC URL in %s application.yml", service)
+            .as("JDBC URL in %s application-local.yml", service)
             .isTrue();
         return matcher.group(1);
     }
