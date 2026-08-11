@@ -11,11 +11,11 @@ import net.ftgo.orderhistory.service.OrderHistoryQueryService;
 import net.ftgo.orderhistory.service.OrderHistoryQueryStore;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.security.authentication.AbstractAuthenticationToken;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.test.context.ContextConfiguration;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.Instant;
@@ -49,13 +49,13 @@ class OrderHistoryPagingTokenMvcTest {
     @Autowired
     private OrderHistoryPagingTokenCodec codec;
 
-    @MockBean
+    @MockitoBean
     private OrderHistoryRepository orderHistoryRepository;
 
-    @MockBean
+    @MockitoBean
     private OrderHistoryQueryStore queryStore;
 
-    @MockBean
+    @MockitoBean
     private OrderHistoryAuthorizationService authorizationService;
 
     @Test
