@@ -48,6 +48,40 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  wrapper-checkpoint:
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Set up Java 21
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Verify bootstrap Gradle 8.14.3
+        run: bash scripts/ci/verify-gradle-wrapper.sh
+      - name: Generate official Gradle 8.14.3 wrapper
+        run: ./gradlew wrapper --gradle-version 8.14.3 --distribution-type all --no-daemon
+      - name: Commit generated wrapper checkpoint
+        env:
+          HEAD_BRANCH: ${{ github.head_ref }}
+        run: |
+          git add gradle/wrapper/gradle-wrapper.jar gradle/wrapper/gradle-wrapper.properties gradlew gradlew.bat
+          if git diff --cached --quiet; then
+            echo 'Gradle wrapper is already regenerated.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'build: regenerate Gradle 8.14.3 wrapper'
+          git push origin "HEAD:${HEAD_BRANCH}"
+
   api-contracts:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -62,17 +96,6 @@ jobs:
           cache: gradle
       - name: Verify Gradle wrapper
         run: bash scripts/ci/verify-gradle-wrapper.sh
-      - name: Generate Gradle 8.14.3 wrapper checkpoint
-        run: ./gradlew wrapper --gradle-version 8.14.3 --distribution-type all --no-daemon
-      - name: Upload generated Gradle wrapper checkpoint
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: task10-gradle-wrapper
-          path: |
-            gradle/wrapper/gradle-wrapper.jar
-            gradle/wrapper/gradle-wrapper.properties
-            gradlew
-            gradlew.bat
       - name: Verify supported dependency baseline
         run: python3 -m unittest deployment/tests/test_supported_dependency_baseline.py -v
       - name: Verify shared RFC 9457 and auto-configuration contracts
