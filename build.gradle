@@ -1,7 +1,7 @@
 plugins {
     id 'java'
-    id 'org.springframework.boot' version '3.2.0' apply false
-    id 'io.spring.dependency-management' version '1.1.4' apply false
+    id 'org.springframework.boot' version '3.5.15' apply false
+    id 'io.spring.dependency-management' version '1.1.7' apply false
 }
 
 allprojects {
@@ -9,7 +9,6 @@ allprojects {
     version = '1.0.0-SNAPSHOT'
     repositories {
         mavenCentral()
-        maven { url 'https://repo.spring.io/milestone' }
     }
 }
 
@@ -38,21 +37,20 @@ subprojects {
         annotationProcessor 'org.projectlombok:lombok'
 
         testImplementation 'org.springframework.boot:spring-boot-starter-test'
-        testImplementation 'org.testcontainers:testcontainers:1.19.3'
-        testImplementation 'org.testcontainers:junit-jupiter:1.19.3'
-        testImplementation 'org.testcontainers:kafka:1.19.3'
-        testImplementation 'org.testcontainers:mysql:1.19.3'
+        testImplementation 'org.testcontainers:testcontainers'
+        testImplementation 'org.testcontainers:junit-jupiter'
+        testImplementation 'org.testcontainers:kafka'
+        testImplementation 'org.testcontainers:mysql'
         testImplementation 'net.jqwik:jqwik:1.8.2'
-        testImplementation 'io.rest-assured:rest-assured:5.4.0'
-        testImplementation 'org.awaitility:awaitility:4.2.0'
+        testImplementation 'io.rest-assured:rest-assured'
+        testImplementation 'org.awaitility:awaitility'
         testRuntimeOnly 'com.h2database:h2'
     }
 
     dependencyManagement {
         imports {
-            mavenBom 'org.springframework.cloud:spring-cloud-dependencies:2023.0.0'
-            mavenBom 'io.eventuate.tram.core:eventuate-tram-bom:0.34.0.RELEASE'
-            mavenBom 'io.eventuate.tram.sagas:eventuate-tram-sagas-bom:0.23.0.RELEASE'
+            mavenBom 'org.springframework.cloud:spring-cloud-dependencies:2025.0.3'
+            mavenBom 'io.eventuate.platform:eventuate-platform-dependencies:2024.0.RELEASE'
         }
     }
 
@@ -103,7 +101,6 @@ project(':order-service') {
         implementation 'com.mysql:mysql-connector-j'
         implementation 'org.flywaydb:flyway-core'
         implementation 'org.flywaydb:flyway-mysql'
-        implementation 'com.zaxxer:HikariCP'
         testImplementation 'io.eventuate.tram.sagas:eventuate-tram-sagas-testing-support'
         testImplementation project(':consumer-service')
         testImplementation project(':kitchen-service')
@@ -118,7 +115,6 @@ project(':consumer-service') {
         implementation 'com.mysql:mysql-connector-j'
         implementation 'org.flywaydb:flyway-core'
         implementation 'org.flywaydb:flyway-mysql'
-        implementation 'com.zaxxer:HikariCP'
     }
 }
 
@@ -128,7 +124,6 @@ project(':restaurant-service') {
         implementation 'com.mysql:mysql-connector-j'
         implementation 'org.flywaydb:flyway-core'
         implementation 'org.flywaydb:flyway-mysql'
-        implementation 'com.zaxxer:HikariCP'
     }
 }
 
@@ -139,7 +134,6 @@ project(':kitchen-service') {
         implementation 'com.mysql:mysql-connector-j'
         implementation 'org.flywaydb:flyway-core'
         implementation 'org.flywaydb:flyway-mysql'
-        implementation 'com.zaxxer:HikariCP'
     }
 }
 
@@ -150,7 +144,6 @@ project(':accounting-service') {
         implementation 'com.mysql:mysql-connector-j'
         implementation 'org.flywaydb:flyway-core'
         implementation 'org.flywaydb:flyway-mysql'
-        implementation 'com.zaxxer:HikariCP'
     }
 }
 
@@ -160,14 +153,13 @@ project(':delivery-service') {
         implementation 'com.mysql:mysql-connector-j'
         implementation 'org.flywaydb:flyway-core'
         implementation 'org.flywaydb:flyway-mysql'
-        implementation 'com.zaxxer:HikariCP'
     }
 }
 
 project(':order-history-service') {
     dependencies {
         implementation 'org.springframework.boot:spring-boot-starter-data-cassandra'
-        testImplementation 'org.testcontainers:cassandra:1.19.3'
+        testImplementation 'org.testcontainers:cassandra'
     }
 }
 
@@ -185,10 +177,10 @@ project(':api-gateway') {
         implementation 'io.github.resilience4j:resilience4j-circuitbreaker:2.1.0'
         implementation 'io.micrometer:micrometer-registry-prometheus'
         testImplementation 'org.springframework.security:spring-security-test'
-        testImplementation 'com.nimbusds:nimbus-jose-jwt:9.37.3'
+        testImplementation 'com.nimbusds:nimbus-jose-jwt'
         testImplementation 'org.wiremock:wiremock-standalone:3.3.1'
-        testImplementation 'org.testcontainers:testcontainers:1.19.3'
-        testImplementation 'org.testcontainers:junit-jupiter:1.19.3'
+        testImplementation 'org.testcontainers:testcontainers'
+        testImplementation 'org.testcontainers:junit-jupiter'
         testImplementation 'io.projectreactor:reactor-test'
     }
 }
@@ -214,6 +206,6 @@ project(':e2e-tests') {
 }
 
 wrapper {
-    gradleVersion = '8.5'
+    gradleVersion = '8.14.3'
     distributionType = Wrapper.DistributionType.ALL
 }
