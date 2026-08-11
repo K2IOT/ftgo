@@ -62,6 +62,17 @@ jobs:
           cache: gradle
       - name: Verify Gradle wrapper
         run: bash scripts/ci/verify-gradle-wrapper.sh
+      - name: Generate Gradle 8.14.3 wrapper checkpoint
+        run: ./gradlew wrapper --gradle-version 8.14.3 --distribution-type all --no-daemon
+      - name: Upload generated Gradle wrapper checkpoint
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: task10-gradle-wrapper
+          path: |
+            gradle/wrapper/gradle-wrapper.jar
+            gradle/wrapper/gradle-wrapper.properties
+            gradlew
+            gradlew.bat
       - name: Verify supported dependency baseline
         run: python3 -m unittest deployment/tests/test_supported_dependency_baseline.py -v
       - name: Verify shared RFC 9457 and auto-configuration contracts
