@@ -74,7 +74,8 @@ class FreshStackContractTest(unittest.TestCase):
         self.assertIn('gradle-${GRADLE_VERSION}-bin.zip', bootstrap)
         self.assertIn("https://services.gradle.org/distributions/", bootstrap)
         self.assertIn("bd71102213493060956ec229d946beee57158dbd89d0e62b91bca0fa2c5f3531", bootstrap)
-        self.assertIn("org.gradle.wrapper.GradleWrapperMain", GRADLEW.read_text())
+        self.assertIn('gradle/wrapper/gradle-wrapper.jar', GRADLEW.read_text())
+        self.assertIn('-jar "$APP_HOME/gradle/wrapper/gradle-wrapper.jar"', GRADLEW.read_text())
 
 
 if __name__ == "__main__":
