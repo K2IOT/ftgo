@@ -74,7 +74,7 @@ class DeliveryControllerIdentityTest {
     void ignoresSpoofedCourierIdAndUsesAuthenticatedCourier() throws Exception {
         Delivery claimed = assignedDelivery(77L);
         when(deliveryService.claimDelivery(eq(1L), any(Authentication.class)))
-            .thenReturn(claimed;
+            .thenReturn(claimed);
 
         mockMvc.perform(post("/deliveries/1/assign")
                 .with(authentication(courierAuthentication(77L)))
