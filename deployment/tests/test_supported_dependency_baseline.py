@@ -13,6 +13,13 @@ class SupportedDependencyBaselineTest(unittest.TestCase):
     def build(self):
         return BUILD.read_text(encoding="utf-8")
 
+    def all_builds(self):
+        paths = [BUILD, *sorted(ROOT.glob("*/build.gradle"))]
+        return "\n".join(
+            f"// {path.relative_to(ROOT)}\n{path.read_text(encoding='utf-8')}"
+            for path in paths
+        )
+
     def wrapper(self):
         return WRAPPER.read_text(encoding="utf-8")
 
@@ -50,10 +57,10 @@ class SupportedDependencyBaselineTest(unittest.TestCase):
         self.assertEqual(1, source.count("io.eventuate.platform:eventuate-platform-dependencies"))
 
     def test_spring_milestone_repository_is_not_used(self):
-        self.assertNotIn("repo.spring.io/milestone", self.build())
+        self.assertNotIn("repo.spring.io/milestone", self.all_builds())
 
-    def test_boot_managed_test_dependencies_do_not_repeat_versions(self):
-        source = self.build()
+    def test_platform_managed_dependencies_do_not_repeat_versions(self):
+        source = self.all_builds()
         managed_coordinates = (
             "org.testcontainers:testcontainers",
             "org.testcontainers:junit-jupiter",
@@ -63,6 +70,7 @@ class SupportedDependencyBaselineTest(unittest.TestCase):
             "io.rest-assured:rest-assured",
             "org.awaitility:awaitility",
             "com.nimbusds:nimbus-jose-jwt",
+            "jakarta.persistence:jakarta.persistence-api",
         )
         for coordinate in managed_coordinates:
             self.assertNotRegex(
