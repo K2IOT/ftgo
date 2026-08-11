@@ -6,6 +6,7 @@ plugins {
 
 ext {
     nimbusJoseJwtVersion = '9.37.4'
+    restAssuredVersion = '6.0.1'
 }
 
 allprojects {
@@ -42,11 +43,11 @@ subprojects {
 
         testImplementation 'org.springframework.boot:spring-boot-starter-test'
         testImplementation 'org.testcontainers:testcontainers'
-        testImplementation 'org.testcontainers:junit-jupiter'
-        testImplementation 'org.testcontainers:kafka'
-        testImplementation 'org.testcontainers:mysql'
+        testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
+        testImplementation 'org.testcontainers:testcontainers-kafka'
+        testImplementation 'org.testcontainers:testcontainers-mysql'
         testImplementation 'net.jqwik:jqwik:1.8.2'
-        testImplementation 'io.rest-assured:rest-assured'
+        testImplementation "io.rest-assured:rest-assured:${rootProject.ext.restAssuredVersion}"
         testImplementation 'org.awaitility:awaitility'
         testRuntimeOnly 'com.h2database:h2'
     }
@@ -163,7 +164,7 @@ project(':delivery-service') {
 project(':order-history-service') {
     dependencies {
         implementation 'org.springframework.boot:spring-boot-starter-data-cassandra'
-        testImplementation 'org.testcontainers:cassandra'
+        testImplementation 'org.testcontainers:testcontainers-cassandra'
     }
 }
 
@@ -181,7 +182,7 @@ project(':api-gateway') {
         testImplementation 'com.nimbusds:nimbus-jose-jwt'
         testImplementation 'org.wiremock:wiremock-standalone:3.3.1'
         testImplementation 'org.testcontainers:testcontainers'
-        testImplementation 'org.testcontainers:junit-jupiter'
+        testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
         testImplementation 'io.projectreactor:reactor-test'
     }
 }
