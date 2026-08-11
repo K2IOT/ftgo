@@ -120,7 +120,7 @@ class CircuitBreakerIntegrationTest {
         String breakerName,
         String fallbackUri
     ) {
-        String route = "spring.cloud.gateway.routes[" + index + "]";
+        String route = "spring.cloud.gateway.server.webflux.routes[" + index + "]";
         registry.add(route + ".id", () -> id);
         registry.add(route + ".uri", () -> uri);
         registry.add(route + ".predicates[0]", () -> "Path=" + path);
