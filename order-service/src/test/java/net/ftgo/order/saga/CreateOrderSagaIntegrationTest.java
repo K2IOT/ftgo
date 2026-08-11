@@ -23,7 +23,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.boot.test.mock.mockito.SpyBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -55,7 +55,7 @@ class CreateOrderSagaIntegrationTest extends OrderServiceIntegrationTestBase {
     @Qualifier("createOrderSagaCommandDispatcher")
     private CommandDispatcher createOrderSagaCommandDispatcher;
 
-    @SpyBean
+    @MockitoSpyBean
     private MessageProducer messageProducer;
 
     @BeforeEach
