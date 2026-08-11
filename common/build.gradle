@@ -23,7 +23,7 @@ dependencies {
 
     testFixturesImplementation 'org.junit.jupiter:junit-jupiter-api'
     testFixturesImplementation 'io.eventuate.tram.core:eventuate-tram-commands'
-    testFixturesImplementation 'org.testcontainers:mysql'
+    testFixturesImplementation 'org.testcontainers:testcontainers-mysql'
     testFixturesImplementation 'org.springframework:spring-jdbc'
     testFixturesImplementation 'org.flywaydb:flyway-core'
     testFixturesImplementation 'org.flywaydb:flyway-mysql'
