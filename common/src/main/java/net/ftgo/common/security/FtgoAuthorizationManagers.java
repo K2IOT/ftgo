@@ -50,7 +50,7 @@ public final class FtgoAuthorizationManagers {
     }
 
     private static AuthorizationDecision decide(
-        Supplier<Authentication> authenticationSupplier,
+        Supplier<? extends Authentication> authenticationSupplier,
         Set<String> requiredRoles,
         String requiredAudience
     ) {
