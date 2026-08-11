@@ -42,7 +42,7 @@ class GatewayCorrelationFilterTest {
 
         assertThat(downstream.get().getRequest().getHeaders()
             .getFirst(CorrelationIds.HEADER_NAME)).isEqualTo("corr-12345678");
-        assertThat(downstream.get().getRequest().getHeaders().containsKey("X-Request-Id"))
+        assertThat(downstream.get().getRequest().getHeaders().containsHeader("X-Request-Id"))
             .isFalse();
         assertThat(exchange.getResponse().getHeaders()
             .getFirst(CorrelationIds.HEADER_NAME)).isEqualTo("corr-12345678");
