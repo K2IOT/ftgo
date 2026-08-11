@@ -23,7 +23,7 @@ class SupportedDependencyBaselineTest(unittest.TestCase):
     def wrapper(self):
         return WRAPPER.read_text(encoding="utf-8")
 
-    def test_spring_platform_is_on_supported_bridge_or_final_train(self):
+    def test_spring_platform_is_on_supported_final_train(self):
         source = self.build()
         boot = re.search(
             r"id 'org\.springframework\.boot' version '([^']+)'", source
@@ -34,10 +34,8 @@ class SupportedDependencyBaselineTest(unittest.TestCase):
         )
         self.assertIsNotNone(boot)
         self.assertIsNotNone(cloud)
-        self.assertIn(boot.group(1), {"3.5.15", "4.0.7"})
-        self.assertIn(cloud.group(1), {"2025.0.3", "2025.1.2"})
-        self.assertNotRegex(boot.group(1), r"^3\.2\.")
-        self.assertNotRegex(cloud.group(1), r"^2023\.0\.")
+        self.assertEqual("4.0.7", boot.group(1))
+        self.assertEqual("2025.1.2", cloud.group(1))
 
     def test_gradle_and_dependency_management_plugin_match_upgrade_baseline(self):
         source = self.build()
