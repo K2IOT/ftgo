@@ -10,7 +10,7 @@ jar {
 
 dependencies {
     testImplementation 'org.apache.kafka:kafka-clients'
-    testImplementation 'com.nimbusds:nimbus-jose-jwt'
+    testImplementation "com.nimbusds:nimbus-jose-jwt:${rootProject.ext.nimbusJoseJwtVersion}"
 }
 
 tasks.named('test') {
