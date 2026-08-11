@@ -23,8 +23,8 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.boot.test.mock.mockito.SpyBean;
 import org.springframework.context.annotation.Import;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -52,10 +52,10 @@ class CancelOrderSagaIntegrationTest extends OrderServiceIntegrationTestBase {
     @Qualifier("cancelOrderSagaCommandDispatcher")
     private CommandDispatcher cancelOrderSagaCommandDispatcher;
 
-    @SpyBean
+    @MockitoSpyBean
     private MessageProducer messageProducer;
 
-    @SpyBean
+    @MockitoSpyBean
     private CancelOrderSagaLocalSteps cancelOrderSagaLocalSteps;
 
     @BeforeEach
