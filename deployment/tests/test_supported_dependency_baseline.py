@@ -69,7 +69,6 @@ class SupportedDependencyBaselineTest(unittest.TestCase):
             "org.testcontainers:cassandra",
             "io.rest-assured:rest-assured",
             "org.awaitility:awaitility",
-            "com.nimbusds:nimbus-jose-jwt",
             "jakarta.persistence:jakarta.persistence-api",
         )
         for coordinate in managed_coordinates:
@@ -78,6 +77,18 @@ class SupportedDependencyBaselineTest(unittest.TestCase):
                 rf"{re.escape(coordinate)}:[^'\"\s]+",
                 f"{coordinate} should inherit its version from the platform BOM",
             )
+
+    def test_unmanaged_nimbus_version_is_centralized_and_patched(self):
+        source = self.build()
+        all_builds = self.all_builds()
+        self.assertIn("nimbusJoseJwtVersion = '9.37.4'", source)
+        self.assertEqual(1, source.count("nimbusJoseJwtVersion ="))
+        self.assertNotIn("com.nimbusds:nimbus-jose-jwt:9.37.3", all_builds)
+        self.assertNotRegex(all_builds, r"com\.nimbusds:nimbus-jose-jwt:[0-9]")
+        self.assertIn(
+            'com.nimbusds:nimbus-jose-jwt:${rootProject.ext.nimbusJoseJwtVersion}',
+            all_builds,
+        )
 
 
 if __name__ == "__main__":
