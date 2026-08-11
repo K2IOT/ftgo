@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-GRADLE_VERSION="8.5"
-EXPECTED_SHA256="9d926787066a081739e8200858338b4a69e837c3a821a33aca9db09dd4a41026"
+GRADLE_VERSION="8.14.3"
+EXPECTED_SHA256="bd71102213493060956ec229d946beee57158dbd89d0e62b91bca0fa2c5f3531"
 DISTRIBUTION_NAME="gradle-${GRADLE_VERSION}-bin.zip"
 DISTRIBUTION_URL="https://services.gradle.org/distributions/${DISTRIBUTION_NAME}"
 CACHE_ROOT="${GRADLE_USER_HOME:-${HOME}/.gradle}/wrapper/verified-distributions"
