@@ -54,10 +54,10 @@ class FreshStackContractTest(unittest.TestCase):
         for path in (BOOTSTRAP, VERIFY, GRADLEW):
             self.assertTrue(path.is_file())
         bootstrap = BOOTSTRAP.read_text()
-        self.assertIn('GRADLE_VERSION="8.5"', bootstrap)
+        self.assertIn('GRADLE_VERSION="8.14.3"', bootstrap)
         self.assertIn('gradle-${GRADLE_VERSION}-bin.zip', bootstrap)
         self.assertIn("https://services.gradle.org/distributions/", bootstrap)
-        self.assertIn("9d926787066a081739e8200858338b4a69e837c3a821a33aca9db09dd4a41026", bootstrap)
+        self.assertIn("bd71102213493060956ec229d946beee57158dbd89d0e62b91bca0fa2c5f3531", bootstrap)
         self.assertIn("bootstrap-gradle.sh", GRADLEW.read_text())
 
 
