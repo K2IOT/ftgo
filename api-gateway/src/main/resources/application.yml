@@ -5,293 +5,295 @@ spring:
     max-in-memory-size: 256KB
   cloud:
     gateway:
-      # Global defaults
-      default-filters:
-        - TokenRelay
-        - name: RequestSize
-          args:
-            maxSize: 256KB
-      routes:
-        - id: order-service
-          uri: ${services.order-service.url:http://localhost:8081}
-          predicates:
-            - Path=/orders/**
-          filters:
-            - name: CircuitBreaker
+      server:
+        webflux:
+          # Global defaults
+          default-filters:
+            - TokenRelay
+            - name: RequestSize
               args:
-                name: orderServiceCircuitBreaker
-                fallbackUri: forward:/fallback/orders
-                statusCodes:
-                  - 500
-                  - 502
-                  - 503
-                  - 504
-            - name: RequestRateLimiter
-              args:
-                redis-rate-limiter.replenishRate: 100
-                redis-rate-limiter.burstCapacity: 200
-                redis-rate-limiter.requestedTokens: 1
-                key-resolver: "#{@userKeyResolver}"
-                deny-empty-key: false
-            - name: Retry
-              args:
-                retries: 3
-                statuses: BAD_GATEWAY,SERVICE_UNAVAILABLE,GATEWAY_TIMEOUT
-                methods: GET
-                backoff:
-                  firstBackoff: 500ms
-                  maxBackoff: 2000ms
-                  factor: 2
-                  basedOnPreviousValue: false
+                maxSize: 256KB
+          routes:
+            - id: order-service
+              uri: ${services.order-service.url:http://localhost:8081}
+              predicates:
+                - Path=/orders/**
+              filters:
+                - name: CircuitBreaker
+                  args:
+                    name: orderServiceCircuitBreaker
+                    fallbackUri: forward:/fallback/orders
+                    statusCodes:
+                      - 500
+                      - 502
+                      - 503
+                      - 504
+                - name: RequestRateLimiter
+                  args:
+                    redis-rate-limiter.replenishRate: 100
+                    redis-rate-limiter.burstCapacity: 200
+                    redis-rate-limiter.requestedTokens: 1
+                    key-resolver: "#{@userKeyResolver}"
+                    deny-empty-key: false
+                - name: Retry
+                  args:
+                    retries: 3
+                    statuses: BAD_GATEWAY,SERVICE_UNAVAILABLE,GATEWAY_TIMEOUT
+                    methods: GET
+                    backoff:
+                      firstBackoff: 500ms
+                      maxBackoff: 2000ms
+                      factor: 2
+                      basedOnPreviousValue: false
 
-        - id: consumer-admin
-          uri: ${services.consumer-service.url:http://localhost:8082}
-          predicates:
-            - Path=/admin/consumers/**
-          filters:
-            - name: CircuitBreaker
-              args:
-                name: consumerServiceCircuitBreaker
-                fallbackUri: forward:/fallback/consumers
-                statusCodes:
-                  - 500
-                  - 502
-                  - 503
-                  - 504
-            - name: RequestRateLimiter
-              args:
-                redis-rate-limiter.replenishRate: 5
-                redis-rate-limiter.burstCapacity: 10
-                redis-rate-limiter.requestedTokens: 1
-                key-resolver: "#{@userKeyResolver}"
-                deny-empty-key: true
-            - name: Retry
-              args:
-                retries: 2
-                statuses: BAD_GATEWAY,SERVICE_UNAVAILABLE,GATEWAY_TIMEOUT
-                methods: GET
-                backoff:
-                  firstBackoff: 500ms
-                  maxBackoff: 1500ms
-                  factor: 2
-                  basedOnPreviousValue: false
+            - id: consumer-admin
+              uri: ${services.consumer-service.url:http://localhost:8082}
+              predicates:
+                - Path=/admin/consumers/**
+              filters:
+                - name: CircuitBreaker
+                  args:
+                    name: consumerServiceCircuitBreaker
+                    fallbackUri: forward:/fallback/consumers
+                    statusCodes:
+                      - 500
+                      - 502
+                      - 503
+                      - 504
+                - name: RequestRateLimiter
+                  args:
+                    redis-rate-limiter.replenishRate: 5
+                    redis-rate-limiter.burstCapacity: 10
+                    redis-rate-limiter.requestedTokens: 1
+                    key-resolver: "#{@userKeyResolver}"
+                    deny-empty-key: true
+                - name: Retry
+                  args:
+                    retries: 2
+                    statuses: BAD_GATEWAY,SERVICE_UNAVAILABLE,GATEWAY_TIMEOUT
+                    methods: GET
+                    backoff:
+                      firstBackoff: 500ms
+                      maxBackoff: 1500ms
+                      factor: 2
+                      basedOnPreviousValue: false
 
-        - id: consumer-service
-          uri: ${services.consumer-service.url:http://localhost:8082}
-          predicates:
-            - Path=/consumers/**
-          filters:
-            - name: CircuitBreaker
-              args:
-                name: consumerServiceCircuitBreaker
-                fallbackUri: forward:/fallback/consumers
-                statusCodes:
-                  - 500
-                  - 502
-                  - 503
-                  - 504
-            - name: RequestRateLimiter
-              args:
-                redis-rate-limiter.replenishRate: 100
-                redis-rate-limiter.burstCapacity: 200
-                redis-rate-limiter.requestedTokens: 1
-                key-resolver: "#{@userKeyResolver}"
-                deny-empty-key: false
-            - name: Retry
-              args:
-                retries: 3
-                statuses: BAD_GATEWAY,SERVICE_UNAVAILABLE,GATEWAY_TIMEOUT
-                methods: GET
-                backoff:
-                  firstBackoff: 500ms
-                  maxBackoff: 2000ms
-                  factor: 2
-                  basedOnPreviousValue: false
+            - id: consumer-service
+              uri: ${services.consumer-service.url:http://localhost:8082}
+              predicates:
+                - Path=/consumers/**
+              filters:
+                - name: CircuitBreaker
+                  args:
+                    name: consumerServiceCircuitBreaker
+                    fallbackUri: forward:/fallback/consumers
+                    statusCodes:
+                      - 500
+                      - 502
+                      - 503
+                      - 504
+                - name: RequestRateLimiter
+                  args:
+                    redis-rate-limiter.replenishRate: 100
+                    redis-rate-limiter.burstCapacity: 200
+                    redis-rate-limiter.requestedTokens: 1
+                    key-resolver: "#{@userKeyResolver}"
+                    deny-empty-key: false
+                - name: Retry
+                  args:
+                    retries: 3
+                    statuses: BAD_GATEWAY,SERVICE_UNAVAILABLE,GATEWAY_TIMEOUT
+                    methods: GET
+                    backoff:
+                      firstBackoff: 500ms
+                      maxBackoff: 2000ms
+                      factor: 2
+                      basedOnPreviousValue: false
 
-        - id: restaurant-service
-          uri: ${services.restaurant-service.url:http://localhost:8083}
-          predicates:
-            - Path=/restaurants/**
-          filters:
-            - name: CircuitBreaker
-              args:
-                name: restaurantServiceCircuitBreaker
-                fallbackUri: forward:/fallback/restaurants
-                statusCodes:
-                  - 500
-                  - 502
-                  - 503
-                  - 504
-            - name: RequestRateLimiter
-              args:
-                redis-rate-limiter.replenishRate: 100
-                redis-rate-limiter.burstCapacity: 200
-                redis-rate-limiter.requestedTokens: 1
-                key-resolver: "#{@userKeyResolver}"
-                deny-empty-key: false
-            - name: Retry
-              args:
-                retries: 3
-                statuses: BAD_GATEWAY,SERVICE_UNAVAILABLE,GATEWAY_TIMEOUT
-                methods: GET
-                backoff:
-                  firstBackoff: 500ms
-                  maxBackoff: 2000ms
-                  factor: 2
-                  basedOnPreviousValue: false
+            - id: restaurant-service
+              uri: ${services.restaurant-service.url:http://localhost:8083}
+              predicates:
+                - Path=/restaurants/**
+              filters:
+                - name: CircuitBreaker
+                  args:
+                    name: restaurantServiceCircuitBreaker
+                    fallbackUri: forward:/fallback/restaurants
+                    statusCodes:
+                      - 500
+                      - 502
+                      - 503
+                      - 504
+                - name: RequestRateLimiter
+                  args:
+                    redis-rate-limiter.replenishRate: 100
+                    redis-rate-limiter.burstCapacity: 200
+                    redis-rate-limiter.requestedTokens: 1
+                    key-resolver: "#{@userKeyResolver}"
+                    deny-empty-key: false
+                - name: Retry
+                  args:
+                    retries: 3
+                    statuses: BAD_GATEWAY,SERVICE_UNAVAILABLE,GATEWAY_TIMEOUT
+                    methods: GET
+                    backoff:
+                      firstBackoff: 500ms
+                      maxBackoff: 2000ms
+                      factor: 2
+                      basedOnPreviousValue: false
 
-        - id: kitchen-service
-          uri: ${services.kitchen-service.url:http://localhost:8084}
-          predicates:
-            - Path=/tickets/**
-          filters:
-            - name: CircuitBreaker
-              args:
-                name: kitchenServiceCircuitBreaker
-                fallbackUri: forward:/fallback/tickets
-                statusCodes:
-                  - 500
-                  - 502
-                  - 503
-                  - 504
-            - name: RequestRateLimiter
-              args:
-                redis-rate-limiter.replenishRate: 100
-                redis-rate-limiter.burstCapacity: 200
-                redis-rate-limiter.requestedTokens: 1
-                key-resolver: "#{@userKeyResolver}"
-                deny-empty-key: false
-            - name: Retry
-              args:
-                retries: 3
-                statuses: BAD_GATEWAY,SERVICE_UNAVAILABLE,GATEWAY_TIMEOUT
-                methods: GET
-                backoff:
-                  firstBackoff: 500ms
-                  maxBackoff: 2000ms
-                  factor: 2
-                  basedOnPreviousValue: false
+            - id: kitchen-service
+              uri: ${services.kitchen-service.url:http://localhost:8084}
+              predicates:
+                - Path=/tickets/**
+              filters:
+                - name: CircuitBreaker
+                  args:
+                    name: kitchenServiceCircuitBreaker
+                    fallbackUri: forward:/fallback/tickets
+                    statusCodes:
+                      - 500
+                      - 502
+                      - 503
+                      - 504
+                - name: RequestRateLimiter
+                  args:
+                    redis-rate-limiter.replenishRate: 100
+                    redis-rate-limiter.burstCapacity: 200
+                    redis-rate-limiter.requestedTokens: 1
+                    key-resolver: "#{@userKeyResolver}"
+                    deny-empty-key: false
+                - name: Retry
+                  args:
+                    retries: 3
+                    statuses: BAD_GATEWAY,SERVICE_UNAVAILABLE,GATEWAY_TIMEOUT
+                    methods: GET
+                    backoff:
+                      firstBackoff: 500ms
+                      maxBackoff: 2000ms
+                      factor: 2
+                      basedOnPreviousValue: false
 
-        - id: accounting-service
-          uri: ${services.accounting-service.url:http://localhost:8085}
-          predicates:
-            - Path=/accounts/**
-          filters:
-            - name: CircuitBreaker
-              args:
-                name: accountingServiceCircuitBreaker
-                fallbackUri: forward:/fallback/accounts
-                statusCodes:
-                  - 500
-                  - 502
-                  - 503
-                  - 504
-            - name: RequestRateLimiter
-              args:
-                redis-rate-limiter.replenishRate: 50
-                redis-rate-limiter.burstCapacity: 100
-                redis-rate-limiter.requestedTokens: 1
-                key-resolver: "#{@userKeyResolver}"
-                deny-empty-key: false
-            - name: Retry
-              args:
-                retries: 3
-                statuses: BAD_GATEWAY,SERVICE_UNAVAILABLE,GATEWAY_TIMEOUT
-                methods: GET
-                backoff:
-                  firstBackoff: 500ms
-                  maxBackoff: 2000ms
-                  factor: 2
-                  basedOnPreviousValue: false
+            - id: accounting-service
+              uri: ${services.accounting-service.url:http://localhost:8085}
+              predicates:
+                - Path=/accounts/**
+              filters:
+                - name: CircuitBreaker
+                  args:
+                    name: accountingServiceCircuitBreaker
+                    fallbackUri: forward:/fallback/accounts
+                    statusCodes:
+                      - 500
+                      - 502
+                      - 503
+                      - 504
+                - name: RequestRateLimiter
+                  args:
+                    redis-rate-limiter.replenishRate: 50
+                    redis-rate-limiter.burstCapacity: 100
+                    redis-rate-limiter.requestedTokens: 1
+                    key-resolver: "#{@userKeyResolver}"
+                    deny-empty-key: false
+                - name: Retry
+                  args:
+                    retries: 3
+                    statuses: BAD_GATEWAY,SERVICE_UNAVAILABLE,GATEWAY_TIMEOUT
+                    methods: GET
+                    backoff:
+                      firstBackoff: 500ms
+                      maxBackoff: 2000ms
+                      factor: 2
+                      basedOnPreviousValue: false
 
-        - id: payment-settlement-admin
-          uri: ${services.accounting-service.url:http://localhost:8085}
-          predicates:
-            - Path=/api/admin/payment-settlement/**
-          filters:
-            - name: CircuitBreaker
-              args:
-                name: accountingServiceCircuitBreaker
-                fallbackUri: forward:/fallback/accounts
-                statusCodes:
-                  - 500
-                  - 502
-                  - 503
-                  - 504
-            - name: RequestRateLimiter
-              args:
-                redis-rate-limiter.replenishRate: 5
-                redis-rate-limiter.burstCapacity: 10
-                redis-rate-limiter.requestedTokens: 1
-                key-resolver: "#{@userKeyResolver}"
-                deny-empty-key: true
+            - id: payment-settlement-admin
+              uri: ${services.accounting-service.url:http://localhost:8085}
+              predicates:
+                - Path=/api/admin/payment-settlement/**
+              filters:
+                - name: CircuitBreaker
+                  args:
+                    name: accountingServiceCircuitBreaker
+                    fallbackUri: forward:/fallback/accounts
+                    statusCodes:
+                      - 500
+                      - 502
+                      - 503
+                      - 504
+                - name: RequestRateLimiter
+                  args:
+                    redis-rate-limiter.replenishRate: 5
+                    redis-rate-limiter.burstCapacity: 10
+                    redis-rate-limiter.requestedTokens: 1
+                    key-resolver: "#{@userKeyResolver}"
+                    deny-empty-key: true
 
-        - id: delivery-service
-          uri: ${services.delivery-service.url:http://localhost:8086}
-          predicates:
-            - Path=/deliveries/**
-          filters:
-            - name: CircuitBreaker
-              args:
-                name: deliveryServiceCircuitBreaker
-                fallbackUri: forward:/fallback/deliveries
-                statusCodes:
-                  - 500
-                  - 502
-                  - 503
-                  - 504
-            - name: RequestRateLimiter
-              args:
-                redis-rate-limiter.replenishRate: 100
-                redis-rate-limiter.burstCapacity: 200
-                redis-rate-limiter.requestedTokens: 1
-                key-resolver: "#{@userKeyResolver}"
-                deny-empty-key: false
-            - name: Retry
-              args:
-                retries: 3
-                statuses: BAD_GATEWAY,SERVICE_UNAVAILABLE,GATEWAY_TIMEOUT
-                methods: GET
-                backoff:
-                  firstBackoff: 500ms
-                  maxBackoff: 2000ms
-                  factor: 2
-                  basedOnPreviousValue: false
+            - id: delivery-service
+              uri: ${services.delivery-service.url:http://localhost:8086}
+              predicates:
+                - Path=/deliveries/**
+              filters:
+                - name: CircuitBreaker
+                  args:
+                    name: deliveryServiceCircuitBreaker
+                    fallbackUri: forward:/fallback/deliveries
+                    statusCodes:
+                      - 500
+                      - 502
+                      - 503
+                      - 504
+                - name: RequestRateLimiter
+                  args:
+                    redis-rate-limiter.replenishRate: 100
+                    redis-rate-limiter.burstCapacity: 200
+                    redis-rate-limiter.requestedTokens: 1
+                    key-resolver: "#{@userKeyResolver}"
+                    deny-empty-key: false
+                - name: Retry
+                  args:
+                    retries: 3
+                    statuses: BAD_GATEWAY,SERVICE_UNAVAILABLE,GATEWAY_TIMEOUT
+                    methods: GET
+                    backoff:
+                      firstBackoff: 500ms
+                      maxBackoff: 2000ms
+                      factor: 2
+                      basedOnPreviousValue: false
 
-        # Order History Service uses @RequestMapping("/api") with endpoints
-        # /api/orders/{id} and /api/consumers/{consumerId}/orders.
-        - id: order-history-service
-          uri: ${services.order-history-service.url:http://localhost:8087}
-          predicates:
-            - Path=/order-history/**
-          filters:
-            - RewritePath=/order-history(?<segment>/?.*), /api${segment}
-            - name: CircuitBreaker
-              args:
-                name: orderHistoryServiceCircuitBreaker
-                fallbackUri: forward:/fallback/order-history
-                statusCodes:
-                  - 500
-                  - 502
-                  - 503
-                  - 504
-            - name: RequestRateLimiter
-              args:
-                redis-rate-limiter.replenishRate: 100
-                redis-rate-limiter.burstCapacity: 200
-                redis-rate-limiter.requestedTokens: 1
-                key-resolver: "#{@userKeyResolver}"
-                deny-empty-key: false
-            - name: Retry
-              args:
-                retries: 3
-                statuses: BAD_GATEWAY,SERVICE_UNAVAILABLE,GATEWAY_TIMEOUT
-                methods: GET
-                backoff:
-                  firstBackoff: 500ms
-                  maxBackoff: 2000ms
-                  factor: 2
-                  basedOnPreviousValue: false
+            # Order History Service uses @RequestMapping("/api") with endpoints
+            # /api/orders/{id} and /api/consumers/{consumerId}/orders.
+            - id: order-history-service
+              uri: ${services.order-history-service.url:http://localhost:8087}
+              predicates:
+                - Path=/order-history/**
+              filters:
+                - RewritePath=/order-history(?<segment>/?.*), /api${segment}
+                - name: CircuitBreaker
+                  args:
+                    name: orderHistoryServiceCircuitBreaker
+                    fallbackUri: forward:/fallback/order-history
+                    statusCodes:
+                      - 500
+                      - 502
+                      - 503
+                      - 504
+                - name: RequestRateLimiter
+                  args:
+                    redis-rate-limiter.replenishRate: 100
+                    redis-rate-limiter.burstCapacity: 200
+                    redis-rate-limiter.requestedTokens: 1
+                    key-resolver: "#{@userKeyResolver}"
+                    deny-empty-key: false
+                - name: Retry
+                  args:
+                    retries: 3
+                    statuses: BAD_GATEWAY,SERVICE_UNAVAILABLE,GATEWAY_TIMEOUT
+                    methods: GET
+                    backoff:
+                      firstBackoff: 500ms
+                      maxBackoff: 2000ms
+                      factor: 2
+                      basedOnPreviousValue: false
 
   data:
     redis:
