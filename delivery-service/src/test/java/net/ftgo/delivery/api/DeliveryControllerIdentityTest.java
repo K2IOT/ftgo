@@ -9,13 +9,13 @@ import net.ftgo.delivery.repository.DeliveryRepository;
 import net.ftgo.delivery.service.DeliveryService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.AbstractAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.test.context.ContextConfiguration;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -46,13 +46,13 @@ class DeliveryControllerIdentityTest {
     @Autowired
     private MockMvc mockMvc;
 
-    @MockBean
+    @MockitoBean
     private DeliveryService deliveryService;
 
-    @MockBean
+    @MockitoBean
     private DeliveryRepository deliveryRepository;
 
-    @MockBean
+    @MockitoBean
     private DomainEventPublisher eventPublisher;
 
     @Test
@@ -74,7 +74,7 @@ class DeliveryControllerIdentityTest {
     void ignoresSpoofedCourierIdAndUsesAuthenticatedCourier() throws Exception {
         Delivery claimed = assignedDelivery(77L);
         when(deliveryService.claimDelivery(eq(1L), any(Authentication.class)))
-            .thenReturn(claimed);
+            .thenReturn(claimed;
 
         mockMvc.perform(post("/deliveries/1/assign")
                 .with(authentication(courierAuthentication(77L)))
