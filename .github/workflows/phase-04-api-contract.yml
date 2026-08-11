@@ -72,7 +72,8 @@ jobs:
         env:
           HEAD_BRANCH: ${{ github.head_ref }}
         run: |
-          git add gradle/wrapper/gradle-wrapper.jar gradle/wrapper/gradle-wrapper.properties gradlew gradlew.bat
+          git add gradle/wrapper/gradle-wrapper.properties gradlew gradlew.bat
+          git add -f gradle/wrapper/gradle-wrapper.jar
           if git diff --cached --quiet; then
             echo 'Gradle wrapper is already regenerated.'
             exit 0
