@@ -57,15 +57,14 @@ class SupportedDependencyBaselineTest(unittest.TestCase):
     def test_spring_milestone_repository_is_not_used(self):
         self.assertNotIn("repo.spring.io/milestone", self.all_builds())
 
-    def test_platform_managed_dependencies_do_not_repeat_versions(self):
+    def test_boot_managed_dependencies_do_not_repeat_versions(self):
         source = self.all_builds()
         managed_coordinates = (
             "org.testcontainers:testcontainers",
-            "org.testcontainers:junit-jupiter",
-            "org.testcontainers:kafka",
-            "org.testcontainers:mysql",
-            "org.testcontainers:cassandra",
-            "io.rest-assured:rest-assured",
+            "org.testcontainers:testcontainers-junit-jupiter",
+            "org.testcontainers:testcontainers-kafka",
+            "org.testcontainers:testcontainers-mysql",
+            "org.testcontainers:testcontainers-cassandra",
             "org.awaitility:awaitility",
             "jakarta.persistence:jakarta.persistence-api",
         )
@@ -73,10 +72,27 @@ class SupportedDependencyBaselineTest(unittest.TestCase):
             self.assertNotRegex(
                 source,
                 rf"{re.escape(coordinate)}:[^'\"\s]+",
-                f"{coordinate} should inherit its version from the platform BOM",
+                f"{coordinate} should inherit its version from the Spring Boot BOM",
             )
 
-    def test_unmanaged_nimbus_version_is_centralized_and_patched(self):
+    def test_testcontainers_uses_v2_module_coordinates(self):
+        source = self.all_builds()
+        for legacy_coordinate in (
+            "org.testcontainers:junit-jupiter",
+            "org.testcontainers:kafka",
+            "org.testcontainers:mysql",
+            "org.testcontainers:cassandra",
+        ):
+            self.assertNotIn(legacy_coordinate, source)
+        for current_coordinate in (
+            "org.testcontainers:testcontainers-junit-jupiter",
+            "org.testcontainers:testcontainers-kafka",
+            "org.testcontainers:testcontainers-mysql",
+            "org.testcontainers:testcontainers-cassandra",
+        ):
+            self.assertIn(current_coordinate, source)
+
+    def test_unmanaged_test_dependencies_are_centralized(self):
         source = self.build()
         all_builds = self.all_builds()
         self.assertIn("nimbusJoseJwtVersion = '9.37.4'", source)
@@ -85,6 +101,14 @@ class SupportedDependencyBaselineTest(unittest.TestCase):
         self.assertNotRegex(all_builds, r"com\.nimbusds:nimbus-jose-jwt:[0-9]")
         self.assertIn(
             'com.nimbusds:nimbus-jose-jwt:${rootProject.ext.nimbusJoseJwtVersion}',
+            all_builds,
+        )
+
+        self.assertIn("restAssuredVersion = '6.0.1'", source)
+        self.assertEqual(1, source.count("restAssuredVersion ="))
+        self.assertNotRegex(all_builds, r"io\.rest-assured:rest-assured:[0-9]")
+        self.assertIn(
+            'io.rest-assured:rest-assured:${rootProject.ext.restAssuredVersion}',
             all_builds,
         )
 
