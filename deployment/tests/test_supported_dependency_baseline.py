@@ -9,6 +9,7 @@ WRAPPER = ROOT / "gradle" / "wrapper" / "gradle-wrapper.properties"
 DEPENDENCY_AUDIT = ROOT / "scripts" / "ci" / "verify-supported-dependencies.sh"
 PLATFORM_SECURITY_WORKFLOW = ROOT / ".github" / "workflows" / "remediation-10-platform-security.yml"
 UPGRADE_RUNBOOK = ROOT / "docs" / "operations" / "spring-platform-upgrade-runbook.md"
+WORKFLOWS = ROOT / ".github" / "workflows"
 
 
 class SupportedDependencyBaselineTest(unittest.TestCase):
@@ -138,6 +139,28 @@ class SupportedDependencyBaselineTest(unittest.TestCase):
         self.assertRegex(workflow, r"scan-type:\s*['\"]?fs['\"]?")
         self.assertRegex(workflow, r"severity:\s*['\"]HIGH,CRITICAL['\"]")
         self.assertRegex(workflow, r"exit-code:\s*['\"]1['\"]")
+
+    def test_github_workflows_use_supported_gradle_setup(self):
+        workflows = sorted(WORKFLOWS.glob("*.yml"))
+        self.assertTrue(workflows, "GitHub workflows are required")
+        for workflow_path in workflows:
+            workflow = workflow_path.read_text(encoding="utf-8")
+            self.assertNotIn(
+                "Gradle 8.5",
+                workflow,
+                f"{workflow_path.name} still references the old Gradle 8.5 wrapper",
+            )
+            self.assertNotRegex(
+                workflow,
+                r"actions/(?:checkout|setup-java)@v\d+",
+                f"{workflow_path.name} must pin checkout/setup-java by commit SHA",
+            )
+            if "./gradlew" in workflow:
+                self.assertIn(
+                    "scripts/ci/verify-gradle-wrapper.sh",
+                    workflow,
+                    f"{workflow_path.name} must verify the Gradle wrapper before running Gradle",
+                )
 
 
 if __name__ == "__main__":
