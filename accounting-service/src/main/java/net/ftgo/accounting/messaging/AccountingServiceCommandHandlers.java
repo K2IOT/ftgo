@@ -164,7 +164,14 @@ public class AccountingServiceCommandHandlers {
                         command.getAmount()
                     );
             }
-            accountRepository.saveAndFlush(account);
+
+            account = accountRepository.saveAndFlush(account);
+            authorization = account.findAuthorizationByRequestId(command.getRequestId());
+            if (authorization == null || authorization.getId() == null) {
+                throw new IllegalStateException(
+                    "Persisted authorization is missing for request " + command.getRequestId()
+                );
+            }
 
             SettlementDecision settlement = settlementGateway.authorize(
                 authorization.getId(),
@@ -466,17 +473,13 @@ public class AccountingServiceCommandHandlers {
                 if (changed) {
                     eventPublisher.publishAccountEvent(
                         account.getId(),
-                        account.getVersion(),
-                        new PaymentRefundedEvent(
-                            account.getId(),
-                            command.getOrderId(),
-                            authorization.getId(),
-                            "ORDER_CANCELLED",
-                            command.getRequestId(),
-                            LocalDateTime.now()
-                        )
-                    );
-                }
+                        command.getOrderId(),
+                        authorization.getId(),
+                        "ORDER_CANCELLED",
+                        command.getRequestId(),
+                        LocalDateTime.now()
+                    )
+                );
                 return withSuccess(new AuthorizationReversed(authorization.getId()));
             }
 
