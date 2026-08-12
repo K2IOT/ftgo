@@ -6,6 +6,9 @@ import unittest
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 BUILD = ROOT / "build.gradle"
 WRAPPER = ROOT / "gradle" / "wrapper" / "gradle-wrapper.properties"
+DEPENDENCY_AUDIT = ROOT / "scripts" / "ci" / "verify-supported-dependencies.sh"
+PLATFORM_SECURITY_WORKFLOW = ROOT / ".github" / "workflows" / "remediation-10-platform-security.yml"
+UPGRADE_RUNBOOK = ROOT / "docs" / "operations" / "spring-platform-upgrade-runbook.md"
 
 
 class SupportedDependencyBaselineTest(unittest.TestCase):
@@ -111,6 +114,30 @@ class SupportedDependencyBaselineTest(unittest.TestCase):
             'io.rest-assured:rest-assured:${rootProject.ext.restAssuredVersion}',
             all_builds,
         )
+
+    def test_platform_upgrade_has_dependency_and_vulnerability_gates(self):
+        self.assertTrue(DEPENDENCY_AUDIT.is_file(), "dependency audit script is required")
+        self.assertTrue(PLATFORM_SECURITY_WORKFLOW.is_file(), "platform security workflow is required")
+        self.assertTrue(UPGRADE_RUNBOOK.is_file(), "Spring platform upgrade runbook is required")
+
+        audit = DEPENDENCY_AUDIT.read_text(encoding="utf-8")
+        for dependency in (
+            "spring-security",
+            "netty",
+            "jackson",
+            "kafka",
+            "mysql",
+            "testcontainers",
+        ):
+            self.assertIn(dependency, audit)
+        self.assertIn("dependencyInsight", audit)
+
+        workflow = PLATFORM_SECURITY_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("./gradlew bootJar", workflow)
+        self.assertIn("aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25", workflow)
+        self.assertRegex(workflow, r"scan-type:\s*['\"]?fs['\"]?")
+        self.assertRegex(workflow, r"severity:\s*['\"]HIGH,CRITICAL['\"]")
+        self.assertRegex(workflow, r"exit-code:\s*['\"]1['\"]")
 
 
 if __name__ == "__main__":
