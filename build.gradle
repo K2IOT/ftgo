@@ -24,6 +24,9 @@ subprojects {
     apply plugin: 'org.springframework.boot'
     apply plugin: 'io.spring.dependency-management'
 
+    // Override Spring Boot's managed Netty patch level through the BOM property itself.
+    ext['netty.version'] = rootProject.ext.nettyVersion
+
     java {
         sourceCompatibility = JavaVersion.VERSION_21
         targetCompatibility = JavaVersion.VERSION_21
@@ -182,7 +185,6 @@ project(':order-history-service') {
 project(':api-gateway') {
     dependencies {
         implementation project(':common')
-        implementation enforcedPlatform("io.netty:netty-bom:${rootProject.ext.nettyVersion}")
         implementation 'org.springframework.cloud:spring-cloud-starter-gateway-server-webflux'
         implementation 'org.springframework.boot:spring-boot-starter-data-redis-reactive'
         implementation 'org.springframework.boot:spring-boot-starter-security'
