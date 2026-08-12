@@ -7,6 +7,7 @@ plugins {
 ext {
     nimbusJoseJwtVersion = '9.37.4'
     restAssuredVersion = '6.0.1'
+    nettyVersion = '4.2.16.Final'
 }
 
 allprojects {
@@ -31,6 +32,12 @@ subprojects {
         compileOnly {
             extendsFrom annotationProcessor
         }
+    }
+
+    configurations.configureEach {
+        exclude group: 'mysql', module: 'mysql-connector-java'
+        exclude group: 'org.postgresql', module: 'postgresql'
+        exclude group: 'com.microsoft.sqlserver', module: 'mssql-jdbc'
     }
 
     dependencies {
@@ -173,6 +180,7 @@ project(':order-history-service') {
 project(':api-gateway') {
     dependencies {
         implementation project(':common')
+        implementation enforcedPlatform("io.netty:netty-bom:${rootProject.ext.nettyVersion}")
         implementation 'org.springframework.cloud:spring-cloud-starter-gateway-server-webflux'
         implementation 'org.springframework.boot:spring-boot-starter-data-redis-reactive'
         implementation 'org.springframework.boot:spring-boot-starter-security'
