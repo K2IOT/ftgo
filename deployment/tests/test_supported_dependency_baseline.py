@@ -7,6 +7,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 BUILD = ROOT / "build.gradle"
 WRAPPER = ROOT / "gradle" / "wrapper" / "gradle-wrapper.properties"
 DEPENDENCY_AUDIT = ROOT / "scripts" / "ci" / "verify-supported-dependencies.sh"
+TRIVY_REPORT_VALIDATOR = ROOT / "scripts" / "ci" / "verify-trivy-java-report.py"
 PLATFORM_SECURITY_WORKFLOW = ROOT / ".github" / "workflows" / "remediation-10-platform-security.yml"
 UPGRADE_RUNBOOK = ROOT / "docs" / "operations" / "spring-platform-upgrade-runbook.md"
 WORKFLOWS = ROOT / ".github" / "workflows"
@@ -118,6 +119,7 @@ class SupportedDependencyBaselineTest(unittest.TestCase):
 
     def test_platform_upgrade_has_dependency_and_vulnerability_gates(self):
         self.assertTrue(DEPENDENCY_AUDIT.is_file(), "dependency audit script is required")
+        self.assertTrue(TRIVY_REPORT_VALIDATOR.is_file(), "Trivy Java coverage validator is required")
         self.assertTrue(PLATFORM_SECURITY_WORKFLOW.is_file(), "platform security workflow is required")
         self.assertTrue(UPGRADE_RUNBOOK.is_file(), "Spring platform upgrade runbook is required")
 
@@ -133,10 +135,18 @@ class SupportedDependencyBaselineTest(unittest.TestCase):
             self.assertIn(dependency, audit)
         self.assertIn("dependencyInsight", audit)
 
+        validator = TRIVY_REPORT_VALIDATOR.read_text(encoding="utf-8")
+        self.assertIn('"jar"', validator)
+        self.assertIn('"Packages"', validator)
+
         workflow = PLATFORM_SECURITY_WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("./gradlew bootJar", workflow)
         self.assertIn("aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25", workflow)
-        self.assertRegex(workflow, r"scan-type:\s*['\"]?fs['\"]?")
+        self.assertRegex(workflow, r"scan-type:\s*['\"]?rootfs['\"]?")
+        self.assertRegex(workflow, r"format:\s*['\"]?json['\"]?")
+        self.assertRegex(workflow, r"output:\s*['\"]?trivy-results\.json['\"]?")
+        self.assertRegex(workflow, r"list-all-pkgs:\s*['\"]?true['\"]?")
+        self.assertIn("python scripts/ci/verify-trivy-java-report.py trivy-results.json", workflow)
         self.assertRegex(workflow, r"severity:\s*['\"]HIGH,CRITICAL['\"]")
         self.assertRegex(workflow, r"exit-code:\s*['\"]1['\"]")
 
