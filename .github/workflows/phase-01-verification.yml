@@ -79,7 +79,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
-      - name: Verify Gradle 8.5 wrapper checksum
+      - name: Verify Gradle 8.14.3 wrapper checksum
         run: bash scripts/ci/verify-gradle-wrapper.sh
       - name: Run migration test and capture output
         id: gradle
@@ -119,7 +119,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
-      - name: Verify Gradle 8.5 wrapper checksum
+      - name: Verify Gradle 8.14.3 wrapper checksum
         run: bash scripts/ci/verify-gradle-wrapper.sh
       - name: Run order context and saga topology tests
         id: gradle
@@ -175,7 +175,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
-      - name: Verify Gradle 8.5 wrapper checksum
+      - name: Verify Gradle 8.14.3 wrapper checksum
         run: bash scripts/ci/verify-gradle-wrapper.sh
       - name: Run pickup snapshot contract test
         id: gradle
