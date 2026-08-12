@@ -473,13 +473,17 @@ public class AccountingServiceCommandHandlers {
                 if (changed) {
                     eventPublisher.publishAccountEvent(
                         account.getId(),
-                        command.getOrderId(),
-                        authorization.getId(),
-                        "ORDER_CANCELLED",
-                        command.getRequestId(),
-                        LocalDateTime.now()
-                    )
-                );
+                        account.getVersion(),
+                        new PaymentRefundedEvent(
+                            account.getId(),
+                            command.getOrderId(),
+                            authorization.getId(),
+                            "ORDER_CANCELLED",
+                            command.getRequestId(),
+                            LocalDateTime.now()
+                        )
+                    );
+                }
                 return withSuccess(new AuthorizationReversed(authorization.getId()));
             }
 
