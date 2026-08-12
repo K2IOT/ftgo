@@ -63,16 +63,20 @@ jobs:
           )
           count=0
           for module in "${modules[@]}"; do
-            while IFS= read -r jar; do
+            mapfile -t jars < <(
+              find "$module/build/libs" -maxdepth 1 -type f -name '*.jar' ! -name '*-plain.jar' -print
+            )
+            if (( ${#jars[@]} == 0 )); then
+              echo "No executable jar found for ${module}" >&2
+              exit 1
+            fi
+            for jar in "${jars[@]}"; do
               cp "$jar" build/trivy-rootfs/
               count=$((count + 1))
-            done < <(find "$module/build/libs" -maxdepth 1 -type f -name '*.jar' -print)
+            done
+            echo "staged_module=${module} jars=${#jars[@]}"
           done
           echo "staged_boot_jars=${count}"
-          if (( count < ${#modules[@]} )); then
-            echo "Expected at least ${#modules[@]} executable service jars, staged ${count}" >&2
-            exit 1
-          fi
 
       - name: Fail on HIGH or CRITICAL dependency vulnerabilities
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
