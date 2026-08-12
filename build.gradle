@@ -7,6 +7,7 @@ plugins {
 ext {
     nimbusJoseJwtVersion = '9.37.4'
     restAssuredVersion = '6.0.1'
+    // Task 10 security gate requires the patched Netty family to resolve consistently.
     nettyVersion = '4.2.16.Final'
 }
 
@@ -35,6 +36,7 @@ subprojects {
     }
 
     configurations.configureEach {
+        // Eventuate's generic JDBC support brings drivers FTGO does not use; FTGO is MySQL-only here.
         exclude group: 'mysql', module: 'mysql-connector-java'
         exclude group: 'org.postgresql', module: 'postgresql'
         exclude group: 'com.microsoft.sqlserver', module: 'mssql-jdbc'
