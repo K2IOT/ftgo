@@ -162,6 +162,23 @@ class SupportedDependencyBaselineTest(unittest.TestCase):
                     f"{workflow_path.name} must verify the Gradle wrapper before running Gradle",
                 )
 
+    def test_final_verification_entrypoints_match_plan(self):
+        gates = {
+            "scripts/smoke/verify-fresh-stack.sh": ".github/workflows/phase-01-fresh-stack.yml",
+            "scripts/smoke/verify-core-order-flow.sh": ".github/workflows/phase-02-core-order-flow-e2e.yml",
+            "scripts/smoke/verify-payment-settlement.sh": ".github/workflows/phase-02b-payment-settlement.yml",
+            "scripts/smoke/verify-distributed-consistency.sh": ".github/workflows/phase-03-distributed-failure-e2e.yml",
+        }
+        for script_name, workflow_name in gates.items():
+            script = ROOT / script_name
+            workflow = ROOT / workflow_name
+            self.assertTrue(script.is_file(), f"{script_name} is required by the final verification plan")
+            self.assertIn(
+                f"bash {script_name} --runs 2",
+                workflow.read_text(encoding="utf-8"),
+                f"{workflow_name} must execute the exact two-run verification entrypoint",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
