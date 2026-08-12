@@ -117,6 +117,21 @@ class SupportedDependencyBaselineTest(unittest.TestCase):
             all_builds,
         )
 
+    def test_security_remediation_patches_netty_and_removes_unused_jdbc_drivers(self):
+        source = self.build()
+        self.assertIn("nettyVersion = '4.2.16.Final'", source)
+        self.assertIn(
+            'implementation enforcedPlatform("io.netty:netty-bom:${rootProject.ext.nettyVersion}")',
+            source,
+        )
+        for exclusion in (
+            "exclude group: 'mysql', module: 'mysql-connector-java'",
+            "exclude group: 'org.postgresql', module: 'postgresql'",
+            "exclude group: 'com.microsoft.sqlserver', module: 'mssql-jdbc'",
+        ):
+            self.assertIn(exclusion, source)
+        self.assertIn("implementation 'com.mysql:mysql-connector-j'", source)
+
     def test_platform_upgrade_has_dependency_and_vulnerability_gates(self):
         self.assertTrue(DEPENDENCY_AUDIT.is_file(), "dependency audit script is required")
         self.assertTrue(TRIVY_REPORT_VALIDATOR.is_file(), "Trivy Java coverage validator is required")
@@ -130,6 +145,8 @@ class SupportedDependencyBaselineTest(unittest.TestCase):
             "jackson",
             "kafka",
             "mysql",
+            "postgresql",
+            "mssql",
             "testcontainers",
         ):
             self.assertIn(dependency, audit)
