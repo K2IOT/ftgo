@@ -8,6 +8,7 @@ on:
       - '*/build.gradle'
       - 'gradle/**'
       - 'scripts/ci/verify-supported-dependencies.sh'
+      - 'scripts/ci/verify-trivy-java-report.py'
       - 'docs/operations/spring-platform-upgrade-runbook.md'
       - 'deployment/tests/test_supported_dependency_baseline.py'
       - '.github/workflows/remediation-10-platform-security.yml'
@@ -44,15 +45,50 @@ jobs:
       - name: Build executable jars for vulnerability analysis
         run: ./gradlew bootJar --no-daemon --stacktrace
 
+      - name: Stage executable jars for Trivy rootfs analysis
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf build/trivy-rootfs
+          mkdir -p build/trivy-rootfs
+          modules=(
+            api-gateway
+            accounting-service
+            consumer-service
+            delivery-service
+            kitchen-service
+            order-service
+            order-history-service
+            restaurant-service
+          )
+          count=0
+          for module in "${modules[@]}"; do
+            while IFS= read -r jar; do
+              cp "$jar" build/trivy-rootfs/
+              count=$((count + 1))
+            done < <(find "$module/build/libs" -maxdepth 1 -type f -name '*.jar' -print)
+          done
+          echo "staged_boot_jars=${count}"
+          if (( count < ${#modules[@]} )); then
+            echo "Expected at least ${#modules[@]} executable service jars, staged ${count}" >&2
+            exit 1
+          fi
+
       - name: Fail on HIGH or CRITICAL dependency vulnerabilities
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          scan-type: 'fs'
-          scan-ref: '.'
+          scan-type: 'rootfs'
+          scan-ref: 'build/trivy-rootfs'
           scanners: 'vuln'
           severity: 'HIGH,CRITICAL'
           exit-code: '1'
-          format: 'table'
+          format: 'json'
+          output: 'trivy-results.json'
+          list-all-pkgs: 'true'
+
+      - name: Verify Trivy scanned Java dependencies
+        if: always()
+        run: python scripts/ci/verify-trivy-java-report.py trivy-results.json
 
       - name: Upload dependency audit evidence
         if: always()
@@ -60,4 +96,6 @@ jobs:
         with:
           name: remediation-10-platform-security-evidence
           if-no-files-found: warn
-          path: dependency-insight.log
+          path: |
+            dependency-insight.log
+            trivy-results.json

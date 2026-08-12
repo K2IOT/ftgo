@@ -72,7 +72,11 @@ The security workflow first builds executable Spring Boot jars:
 ./gradlew bootJar --no-daemon --stacktrace
 ```
 
-It then runs the pinned Trivy filesystem scanner against the checkout, including the generated Java archives, and fails on `HIGH` or `CRITICAL` vulnerabilities. The scanner gate must not be changed to `continue-on-error`, a zero exit code, or a lower severity policy merely to unblock the PR.
+It stages the eight runtime service jars into `build/trivy-rootfs` and runs the pinned Trivy **rootfs** vulnerability scanner against those artifacts. Repository/filesystem mode is intentionally not used for this gate because it can ignore binary JAR artifacts and produce a zero-target result.
+
+Trivy writes `trivy-results.json` with `list-all-pkgs` enabled and fails on `HIGH` or `CRITICAL` vulnerabilities. Independently, `scripts/ci/verify-trivy-java-report.py` rejects the run unless the JSON report contains at least one `Type=jar` result with detected packages. A scanner run with zero Java targets therefore fails even when Trivy itself exits zero.
+
+The scanner gate must not be changed to `continue-on-error`, a zero vulnerability exit code, a lower severity policy, or a configuration that permits an empty Java scan merely to unblock the PR.
 
 ### Exception policy
 
