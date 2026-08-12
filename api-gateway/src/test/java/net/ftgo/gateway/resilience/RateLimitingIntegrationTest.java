@@ -8,7 +8,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.webtestclient.autoconfigure.AutoConfigureWebTestClient;
+import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpStatus;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -21,17 +21,19 @@ import org.testcontainers.utility.DockerImageName;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
 import static org.springframework.security.test.web.reactive.server.SecurityMockServerConfigurers.mockUser;
+import static org.springframework.security.test.web.reactive.server.SecurityMockServerConfigurers.springSecurity;
 
 /**
  * Integration tests for the Redis token-bucket rate limiter used by API Gateway.
  */
 @SpringBootTest
-@AutoConfigureWebTestClient
 @Testcontainers
 @Import(GatewayTestSecurityConfiguration.class)
 class RateLimitingIntegrationTest {
 
     @Autowired
+    private ApplicationContext applicationContext;
+
     private WebTestClient webTestClient;
 
     private static WireMockServer wireMockServer;
@@ -42,6 +44,11 @@ class RateLimitingIntegrationTest {
 
     @BeforeEach
     void setUp() {
+        webTestClient = WebTestClient.bindToApplicationContext(applicationContext)
+            .apply(springSecurity())
+            .configureClient()
+            .build();
+
         wireMockServer = new WireMockServer(18091);
         wireMockServer.start();
         WireMock.configureFor("localhost", 18091);
