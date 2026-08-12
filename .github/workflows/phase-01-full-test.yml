@@ -61,7 +61,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
-      - name: Verify Gradle 8.5 wrapper checksum
+      - name: Verify Gradle 8.14.3 wrapper checksum
         run: bash scripts/ci/verify-gradle-wrapper.sh
       - name: Run full clean test suite with checked-in wrapper
         id: gradle
