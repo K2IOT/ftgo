@@ -120,10 +120,7 @@ class SupportedDependencyBaselineTest(unittest.TestCase):
     def test_security_remediation_patches_netty_and_removes_unused_jdbc_drivers(self):
         source = self.build()
         self.assertIn("nettyVersion = '4.2.16.Final'", source)
-        self.assertIn(
-            'implementation enforcedPlatform("io.netty:netty-bom:${rootProject.ext.nettyVersion}")',
-            source,
-        )
+        self.assertIn("ext['netty.version'] = rootProject.ext.nettyVersion", source)
         for exclusion in (
             "exclude group: 'mysql', module: 'mysql-connector-java'",
             "exclude group: 'org.postgresql', module: 'postgresql'",
@@ -155,6 +152,7 @@ class SupportedDependencyBaselineTest(unittest.TestCase):
         validator = TRIVY_REPORT_VALIDATOR.read_text(encoding="utf-8")
         self.assertIn('"jar"', validator)
         self.assertIn('"Packages"', validator)
+        self.assertIn("EXPECTED_SERVICES", validator)
 
         workflow = PLATFORM_SECURITY_WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("./gradlew bootJar", workflow)
