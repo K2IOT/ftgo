@@ -69,7 +69,7 @@ jobs:
         run: |
           set +e
           chmod +x gradlew
-          timeout 40m ./gradlew --no-daemon clean test --stacktrace --continue 2>&1 | tee full-test.log
+          timeout 40m ./gradlew clean test --no-daemon --stacktrace 2>&1 | tee full-test.log
           status=${PIPESTATUS[0]}
           echo "status=${status}" >> "$GITHUB_OUTPUT"
           exit 0
