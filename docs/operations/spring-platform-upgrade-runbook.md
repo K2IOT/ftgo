@@ -16,6 +16,7 @@ The migration used an intermediate compatibility bridge and a final supported ta
 | io.spring.dependency-management | 1.1.7 | 1.1.7 |
 | Gradle | 8.14.3 | 8.14.3 |
 | Eventuate platform BOM | 2024.0.RELEASE | 2024.0.RELEASE |
+| Netty security override | n/a | 4.2.16.Final |
 
 The final build resolves Eventuate through the single `io.eventuate.platform:eventuate-platform-dependencies:2024.0.RELEASE` BOM. Separate Eventuate core and saga BOM declarations are not permitted.
 
@@ -45,6 +46,10 @@ Tests use the Testcontainers 2 module coordinates managed by the Spring Boot BOM
 
 MySQL-backed services use the Boot 4 Flyway starter plus the MySQL Flyway database module. Test fixes caused by Hibernate merge semantics are kept at the persistence test boundary; domain contracts are unchanged.
 
+### JDBC runtime scope
+
+FTGO's relational services are MySQL-backed and explicitly use `com.mysql:mysql-connector-j`. Eventuate's generic JDBC support also declares legacy MySQL, PostgreSQL, and SQL Server drivers transitively even though FTGO does not use those databases at runtime. Those unused transitive drivers are excluded from all FTGO runtime/test configurations so they cannot expand the application attack surface or reintroduce obsolete JDBC implementations.
+
 ## Dependency insight evidence
 
 Run:
@@ -60,6 +65,9 @@ The script generates Gradle `dependencyInsight` output for these required depend
 - Jackson — Order Service `runtimeClasspath`
 - Kafka — Delivery Service `runtimeClasspath`
 - MySQL — Order Service `runtimeClasspath`
+- legacy `mysql:mysql-connector-java` — must be absent from Order Service runtime
+- PostgreSQL JDBC — must be absent from Order Service runtime
+- Microsoft SQL Server JDBC — must be absent from Order Service runtime
 - Testcontainers — Accounting Service `testRuntimeClasspath`
 
 The `Remediation 10 Platform Security` workflow uploads `dependency-insight.log` as evidence. The workflow artifact for the exact final head SHA is the source of truth for resolved transitive versions.
@@ -77,6 +85,23 @@ It stages the eight runtime service jars into `build/trivy-rootfs` and runs the 
 Trivy writes `trivy-results.json` with `list-all-pkgs` enabled and fails on `HIGH` or `CRITICAL` vulnerabilities. Independently, `scripts/ci/verify-trivy-java-report.py` rejects the run unless the JSON report contains at least one `Type=jar` result with detected packages. A scanner run with zero Java targets therefore fails even when Trivy itself exits zero.
 
 The scanner gate must not be changed to `continue-on-error`, a zero vulnerability exit code, a lower severity policy, or a configuration that permits an empty Java scan merely to unblock the PR.
+
+### Security review finding and remediation
+
+A final pre-merge review found that the first filesystem-mode Trivy gate had produced a false green because it reported zero Java language files. The gate was changed to rootfs artifact scanning and a coverage validator was added. The first real Java scan then exposed these HIGH dependency families:
+
+- Netty 4.2.15.Final in API Gateway;
+- legacy `mysql:mysql-connector-java:8.0.21` pulled by `eventuate-common-jdbc`;
+- PostgreSQL JDBC 42.7.11 pulled transitively into MySQL-backed services;
+- Microsoft SQL Server JDBC 13.2.1 pulled transitively into MySQL-backed services.
+
+Remediation applied before merge:
+
+1. API Gateway enforces the Netty 4.2.16.Final BOM so Netty modules resolve as one patched family.
+2. The three unused transitive JDBC driver families are excluded; FTGO keeps the Boot-managed `com.mysql:mysql-connector-j` used by its MySQL services.
+3. Dependency insight records the resulting paths/absence, and the rootfs Trivy gate must pass with non-zero Java package coverage on the exact final head SHA.
+
+No vulnerability exception is being used for these findings.
 
 ### Exception policy
 
