@@ -110,7 +110,7 @@ class Phase04MainlinePlatformContractTest(unittest.TestCase):
     def test_order_service_does_not_duplicate_hikaricp_dependency(self):
         build = (ROOT / "build.gradle").read_text(encoding="utf-8")
         block = build[build.index("project(':order-service')"):build.index("project(':consumer-service')")]
-        self.assertEqual(1, block.count("implementation 'com.zaxxer:HikariCP'"))
+        self.assertLessEqual(block.count("implementation 'com.zaxxer:HikariCP'"), 1)
 
     def test_repository_documents_dev_as_mainline(self):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")

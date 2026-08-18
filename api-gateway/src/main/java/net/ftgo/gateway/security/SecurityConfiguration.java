@@ -9,6 +9,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.authorization.AuthorizationDecision;
+import org.springframework.security.authorization.AuthorizationResult;
 import org.springframework.security.authorization.ReactiveAuthorizationManager;
 import org.springframework.security.config.annotation.web.reactive.EnableWebFluxSecurity;
 import org.springframework.security.config.web.server.ServerHttpSecurity;
@@ -145,7 +146,7 @@ public class SecurityConfiguration {
             .map(role -> "ROLE_" + role.trim().toUpperCase(Locale.ROOT))
             .collect(Collectors.toUnmodifiableSet());
         return (authentication, context) -> authentication
-            .map(actor -> new AuthorizationDecision(
+            .<AuthorizationResult>map(actor -> new AuthorizationDecision(
                 hasAuthority(actor, audienceAuthority)
                     && roleAuthorities.stream().anyMatch(role -> hasAuthority(actor, role))
             ))

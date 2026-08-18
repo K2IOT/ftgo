@@ -1,7 +1,7 @@
 package net.ftgo.gateway.filter;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.json.JsonMapper;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpHeaders;
@@ -47,10 +47,10 @@ public final class JsonContentTypeFilter implements WebFilter {
         "/api/admin/payment-settlement"
     );
 
-    private final ObjectMapper objectMapper;
+    private final JsonMapper jsonMapper;
 
-    public JsonContentTypeFilter(ObjectMapper objectMapper) {
-        this.objectMapper = objectMapper;
+    public JsonContentTypeFilter(JsonMapper jsonMapper) {
+        this.jsonMapper = jsonMapper;
     }
 
     @Override
@@ -88,8 +88,8 @@ public final class JsonContentTypeFilter implements WebFilter {
 
         byte[] bytes;
         try {
-            bytes = objectMapper.writeValueAsBytes(problem);
-        } catch (JsonProcessingException error) {
+            bytes = jsonMapper.writeValueAsBytes(problem);
+        } catch (JacksonException error) {
             return Mono.error(error);
         }
 

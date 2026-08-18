@@ -61,7 +61,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
-      - name: Verify Gradle 8.5 wrapper checksum
+      - name: Verify Gradle 8.14.3 wrapper checksum
         run: bash scripts/ci/verify-gradle-wrapper.sh
       - name: Run full clean test suite with checked-in wrapper
         id: gradle
@@ -69,7 +69,7 @@ jobs:
         run: |
           set +e
           chmod +x gradlew
-          timeout 40m ./gradlew --no-daemon clean test --stacktrace --continue 2>&1 | tee full-test.log
+          timeout 40m ./gradlew clean test --no-daemon --stacktrace 2>&1 | tee full-test.log
           status=${PIPESTATUS[0]}
           echo "status=${status}" >> "$GITHUB_OUTPUT"
           exit 0

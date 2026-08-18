@@ -1,7 +1,7 @@
 package net.ftgo.gateway.filter;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.mock.http.server.reactive.MockServerHttpRequest;
@@ -15,9 +15,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class JsonContentTypeFilterTest {
 
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final JsonMapper jsonMapper = JsonMapper.builder().build();
     private final ApiVersioningFilter versioningFilter = new ApiVersioningFilter();
-    private final JsonContentTypeFilter contentTypeFilter = new JsonContentTypeFilter(objectMapper);
+    private final JsonContentTypeFilter contentTypeFilter = new JsonContentTypeFilter(jsonMapper);
 
     @Test
     void rejectsVersionedTextMutationBeforeRouting() throws Exception {
@@ -43,7 +43,7 @@ class JsonContentTypeFilterTest {
         assertThat(exchange.getResponse().getHeaders().getFirst("X-Correlation-ID")).isNotBlank();
 
         String body = exchange.getResponse().getBodyAsString().block();
-        JsonNode problem = objectMapper.readTree(body.getBytes(StandardCharsets.UTF_8));
+        JsonNode problem = jsonMapper.readTree(body.getBytes(StandardCharsets.UTF_8));
         assertThat(problem.path("status").asInt()).isEqualTo(415);
         assertThat(problem.path("errorCode").asText()).isEqualTo("UNSUPPORTED_MEDIA_TYPE");
         assertThat(problem.path("instance").asText()).isEqualTo("/api/v1/orders");

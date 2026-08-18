@@ -164,7 +164,14 @@ public class AccountingServiceCommandHandlers {
                         command.getAmount()
                     );
             }
-            accountRepository.saveAndFlush(account);
+
+            account = accountRepository.saveAndFlush(account);
+            authorization = account.findAuthorizationByRequestId(command.getRequestId());
+            if (authorization == null || authorization.getId() == null) {
+                throw new IllegalStateException(
+                    "Persisted authorization is missing for request " + command.getRequestId()
+                );
+            }
 
             SettlementDecision settlement = settlementGateway.authorize(
                 authorization.getId(),
@@ -501,12 +508,18 @@ public class AccountingServiceCommandHandlers {
                 .orElseThrow(() -> new IllegalArgumentException(
                     "Account not found for consumer " + command.getConsumerId()
                 ));
-            Authorization revised = account.reviseAuthorization(
+            account.reviseAuthorization(
                 command.getAuthorizationId(),
                 new Money(command.getNewAmount()),
                 command.getRequestId()
             );
-            accountRepository.save(account);
+            account = accountRepository.saveAndFlush(account);
+            Authorization revised = account.findAuthorizationByRequestId(command.getRequestId());
+            if (revised == null || revised.getId() == null) {
+                throw new IllegalStateException(
+                    "Persisted revised authorization is missing for request " + command.getRequestId()
+                );
+            }
             return withSuccess(new AuthorizationRevised(revised.getId()));
         } catch (IllegalArgumentException | IllegalStateException e) {
             return withFailure(e.getMessage());

@@ -33,8 +33,8 @@ class SecurityResponseHeadersFilterTest {
 
         HttpHeaders headers = downstream.get().getRequest().getHeaders();
         assertThat(headers.getFirst(HttpHeaders.AUTHORIZATION)).isEqualTo("Bearer signed-token");
-        assertThat(headers.containsKey("X-User-Id")).isFalse();
-        assertThat(headers.containsKey("X-User-Roles")).isFalse();
+        assertThat(headers.containsHeader("X-User-Id")).isFalse();
+        assertThat(headers.containsHeader("X-User-Roles")).isFalse();
     }
 
     @Test

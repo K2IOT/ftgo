@@ -56,7 +56,11 @@ class AccountingServiceCommandHandlersContractTest {
         setAuthorizationId(original, 300L);
 
         when(accountRepository.findByConsumerId(100L)).thenReturn(Optional.of(account));
-        when(accountRepository.save(account)).thenReturn(account);
+        when(accountRepository.saveAndFlush(account)).thenAnswer(invocation -> {
+            Authorization revised = account.findAuthorizationByRequestId("revision-request-xyz");
+            setAuthorizationId(revised, 301L);
+            return account;
+        });
 
         ReviseAuthorizationCommand command = new ReviseAuthorizationCommand(
             100L,

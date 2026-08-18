@@ -14,7 +14,7 @@ import net.ftgo.restaurant.repository.RestaurantRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.AbstractAuthenticationToken;
@@ -205,7 +205,7 @@ class RestaurantServiceIntegrationTest {
         Restaurant restaurant = createTestRestaurant();
         createTestMenuItem(restaurant.getId(), "Burger", new BigDecimal("12.99"));
         MenuItem pizza = createTestMenuItem(restaurant.getId(), "Pizza", new BigDecimal("15.99"));
-        createTestMenuItem(restaurant.getId(), "Salad", new BigDecimal("8.99"));
+        MenuItem salad = createTestMenuItem(restaurant.getId(), "Salad", new BigDecimal("8.99"));
 
         pizza.setAvailable(false);
         menuItemRepository.save(pizza);

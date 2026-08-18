@@ -28,10 +28,9 @@ import net.ftgo.consumer.service.ConsumerService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.resttestclient.TestRestTemplate;
+import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureTestRestTemplate;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.boot.test.mock.mockito.SpyBean;
-import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -43,6 +42,8 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.testcontainers.containers.KafkaContainer;
 import org.testcontainers.containers.MySQLContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -65,6 +66,7 @@ import static org.mockito.Mockito.when;
     classes = ConsumerServiceApplication.class,
     webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT
 )
+@AutoConfigureTestRestTemplate
 @Testcontainers
 class ConsumerServiceIntegrationTest {
 
@@ -111,19 +113,19 @@ class ConsumerServiceIntegrationTest {
     @Autowired
     private OutboxRepository outboxRepository;
 
-    @SpyBean
+    @MockitoSpyBean
     private ConsumerService consumerService;
 
-    @SpyBean
+    @MockitoSpyBean
     private ConsumerCommandHandlers consumerCommandHandlers;
 
-    @MockBean
+    @MockitoBean
     private MessageProducer messageProducer;
 
-    @MockBean
+    @MockitoBean
     private MessageConsumer messageConsumer;
 
-    @MockBean
+    @MockitoBean
     private JwtDecoder jwtDecoder;
 
     private String consumersUrl;

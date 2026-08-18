@@ -25,7 +25,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
-      - name: Verify Gradle 8.5 wrapper checksum
+      - name: Verify Gradle 8.14.3 wrapper checksum
         run: bash scripts/ci/verify-gradle-wrapper.sh
       - name: Run out-of-order recovery contracts
         id: gradle
@@ -68,7 +68,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
-      - name: Verify Gradle 8.5 wrapper checksum
+      - name: Verify Gradle 8.14.3 wrapper checksum
         run: bash scripts/ci/verify-gradle-wrapper.sh
       - name: Run signed paging and access-pattern contracts
         id: gradle

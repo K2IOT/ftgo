@@ -265,8 +265,11 @@ class SettlementKafkaRedeliveryIntegrationTest {
                     int assignedPartitions = description.members().stream()
                         .mapToInt(member -> member.assignment().topicPartitions().size())
                         .sum();
+                    boolean onePartitionPerMember = description.members().stream()
+                        .allMatch(member -> member.assignment().topicPartitions().size() == 1);
                     if (description.members().size() == expectedMembers
-                        && assignedPartitions == expectedMembers) {
+                        && assignedPartitions == expectedMembers
+                        && onePartitionPerMember) {
                         return;
                     }
                 } catch (Exception exception) {

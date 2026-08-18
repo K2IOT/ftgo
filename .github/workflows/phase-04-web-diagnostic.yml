@@ -10,6 +10,9 @@ on:
       - 'restaurant-service/**'
       - 'delivery-service/**'
       - 'scripts/ci/summarize-junit-failures.py'
+      - 'scripts/ci/verify-gradle-wrapper.sh'
+      - 'gradle/wrapper/**'
+      - 'gradlew'
       - '.github/workflows/phase-04-web-diagnostic.yml'
   workflow_dispatch:
 
@@ -44,6 +47,7 @@ jobs:
           cd repository
           export JAVA_HOME="$JAVA_HOME_21_X64"
           export PATH="$JAVA_HOME/bin:$PATH"
+          bash scripts/ci/verify-gradle-wrapper.sh
 
           set +e
           case "${{ matrix.module }}" in
@@ -89,6 +93,7 @@ jobs:
           cd repository
           export JAVA_HOME="$JAVA_HOME_21_X64"
           export PATH="$JAVA_HOME/bin:$PATH"
+          bash scripts/ci/verify-gradle-wrapper.sh
 
           set +e
           ./gradlew :api-gateway:test --tests '*${{ matrix.test }}' \

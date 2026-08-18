@@ -8,8 +8,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.reactive.AutoConfigureWebTestClient;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.webtestclient.autoconfigure.AutoConfigureWebTestClient;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -120,7 +120,7 @@ class CircuitBreakerIntegrationTest {
         String breakerName,
         String fallbackUri
     ) {
-        String route = "spring.cloud.gateway.routes[" + index + "]";
+        String route = "spring.cloud.gateway.server.webflux.routes[" + index + "]";
         registry.add(route + ".id", () -> id);
         registry.add(route + ".uri", () -> uri);
         registry.add(route + ".predicates[0]", () -> "Path=" + path);

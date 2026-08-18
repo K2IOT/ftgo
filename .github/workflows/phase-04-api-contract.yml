@@ -4,6 +4,8 @@ on:
   push:
     branches: [dev]
     paths:
+      - 'build.gradle'
+      - 'gradle/**'
       - 'common/**'
       - 'api-gateway/**'
       - 'order-service/**'
@@ -14,11 +16,13 @@ on:
       - 'delivery-service/**'
       - 'order-history-service/**'
       - 'e2e-tests/**'
-      - 'deployment/tests/test_phase04_*.py'
+      - 'deployment/tests/**'
       - '.github/workflows/phase-04-api-contract.yml'
   pull_request:
     branches: [dev]
     paths:
+      - 'build.gradle'
+      - 'gradle/**'
       - 'common/**'
       - 'api-gateway/**'
       - 'order-service/**'
@@ -29,7 +33,7 @@ on:
       - 'delivery-service/**'
       - 'order-history-service/**'
       - 'e2e-tests/**'
-      - 'deployment/tests/test_phase04_*.py'
+      - 'deployment/tests/**'
       - '.github/workflows/phase-04-api-contract.yml'
   merge_group:
   workflow_dispatch:
@@ -54,8 +58,12 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: gradle
-      - name: Verify Gradle wrapper
+      - name: Verify Gradle 8.14.3 wrapper checksum
         run: bash scripts/ci/verify-gradle-wrapper.sh
+      - name: Verify supported dependency baseline
+        run: python3 -m unittest deployment/tests/test_supported_dependency_baseline.py -v
+      - name: Run repository contract matrix
+        run: python3 -m unittest discover -s deployment/tests -p 'test_*.py' -v
       - name: Verify shared RFC 9457 and auto-configuration contracts
         run: |
           ./gradlew :common:test \

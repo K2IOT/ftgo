@@ -7,8 +7,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.reactive.AutoConfigureWebTestClient;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpStatus;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -21,17 +21,19 @@ import org.testcontainers.utility.DockerImageName;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
 import static org.springframework.security.test.web.reactive.server.SecurityMockServerConfigurers.mockUser;
+import static org.springframework.security.test.web.reactive.server.SecurityMockServerConfigurers.springSecurity;
 
 /**
  * Integration tests for the Redis token-bucket rate limiter used by API Gateway.
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@AutoConfigureWebTestClient
+@SpringBootTest
 @Testcontainers
 @Import(GatewayTestSecurityConfiguration.class)
 class RateLimitingIntegrationTest {
 
     @Autowired
+    private ApplicationContext applicationContext;
+
     private WebTestClient webTestClient;
 
     private static WireMockServer wireMockServer;
@@ -42,6 +44,11 @@ class RateLimitingIntegrationTest {
 
     @BeforeEach
     void setUp() {
+        webTestClient = WebTestClient.bindToApplicationContext(applicationContext)
+            .apply(springSecurity())
+            .configureClient()
+            .build();
+
         wireMockServer = new WireMockServer(18091);
         wireMockServer.start();
         WireMock.configureFor("localhost", 18091);
@@ -65,15 +72,16 @@ class RateLimitingIntegrationTest {
         // A complete test route avoids partially overriding a production route definition.
         // replenishRate=1 token/s, requestedTokens=2, burstCapacity=4 => burst of 2
         // requests and one new request every 2 seconds.
-        registry.add("spring.cloud.gateway.routes[0].id", () -> "rate-limit-test");
-        registry.add("spring.cloud.gateway.routes[0].uri", () -> "http://localhost:18091");
-        registry.add("spring.cloud.gateway.routes[0].predicates[0]", () -> "Path=/rate-limit-test/**");
-        registry.add("spring.cloud.gateway.routes[0].filters[0].name", () -> "RequestRateLimiter");
-        registry.add("spring.cloud.gateway.routes[0].filters[0].args.redis-rate-limiter.replenishRate", () -> "1");
-        registry.add("spring.cloud.gateway.routes[0].filters[0].args.redis-rate-limiter.burstCapacity", () -> "4");
-        registry.add("spring.cloud.gateway.routes[0].filters[0].args.redis-rate-limiter.requestedTokens", () -> "2");
-        registry.add("spring.cloud.gateway.routes[0].filters[0].args.key-resolver", () -> "#{@userKeyResolver}");
-        registry.add("spring.cloud.gateway.routes[0].filters[0].args.deny-empty-key", () -> "false");
+        String route = "spring.cloud.gateway.server.webflux.routes[0]";
+        registry.add(route + ".id", () -> "rate-limit-test");
+        registry.add(route + ".uri", () -> "http://localhost:18091");
+        registry.add(route + ".predicates[0]", () -> "Path=/rate-limit-test/**");
+        registry.add(route + ".filters[0].name", () -> "RequestRateLimiter");
+        registry.add(route + ".filters[0].args.redis-rate-limiter.replenishRate", () -> "1");
+        registry.add(route + ".filters[0].args.redis-rate-limiter.burstCapacity", () -> "4");
+        registry.add(route + ".filters[0].args.redis-rate-limiter.requestedTokens", () -> "2");
+        registry.add(route + ".filters[0].args.key-resolver", () -> "#{@userKeyResolver}");
+        registry.add(route + ".filters[0].args.deny-empty-key", () -> "false");
     }
 
     @Test
