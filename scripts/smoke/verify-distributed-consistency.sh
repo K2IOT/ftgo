@@ -136,6 +136,8 @@ start_sql_service() {
     SPRING_DATASOURCE_PASSWORD=ftgo_password
     SPRING_KAFKA_BOOTSTRAP_SERVERS=localhost:29092
     EVENTUATELOCAL_KAFKA_BOOTSTRAP_SERVERS=localhost:29092
+    FTGO_SECURITY_ISSUER_URI=http://localhost:19000/realms/ftgo
+    FTGO_SECURITY_JWK_SET_URI=http://localhost:19000/realms/ftgo/protocol/openid-connect/certs
   )
   command+=("$@" java -jar "${jar}")
   write_restart_script "${restart_file}" "${pid_file}" "${log_file}" "${command[@]}"
@@ -168,6 +170,8 @@ start_order_history() {
     SPRING_CASSANDRA_SCHEMA_ACTION=CREATE_IF_NOT_EXISTS
     SPRING_KAFKA_BOOTSTRAP_SERVERS=localhost:29092
     FTGO_ORDER_HISTORY_PAGING_SECRET=test-order-history-paging-secret-32-bytes
+    FTGO_SECURITY_ISSUER_URI=http://localhost:19000/realms/ftgo
+    FTGO_SECURITY_JWK_SET_URI=http://localhost:19000/realms/ftgo/protocol/openid-connect/certs
     java -jar "${jar}"
   )
   write_restart_script "${restart_file}" "${pid_file}" "${log_file}" "${command[@]}"
