@@ -44,6 +44,7 @@ public final class KafkaProbe implements AutoCloseable {
         properties.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
         properties.put(ProducerConfig.ACKS_CONFIG, "all");
         properties.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, true);
+        properties.put(ProducerConfig.LINGER_MS_CONFIG, 0);
         properties.put(ProducerConfig.DELIVERY_TIMEOUT_MS_CONFIG, 30_000);
         producer = new KafkaProducer<>(properties);
     }
