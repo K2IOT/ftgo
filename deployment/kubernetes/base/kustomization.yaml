@@ -1,0 +1,21 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+commonLabels:
+  app.kubernetes.io/part-of: ftgo
+
+resources:
+  - api-gateway
+  - order-service
+  - consumer-service
+  - restaurant-service
+  - kitchen-service
+  - accounting-service
+  - delivery-service
+  - order-history-service
+  - availability/pod-disruption-budgets.yaml
+  - autoscaling/gateway-hpa.yaml
+  - autoscaling/keda-kafka-consumers.yaml
+  - secrets/cluster-secret-store.yaml
+  - network-policies/default-deny.yaml
+  - network-policies/service-allow-list.yaml

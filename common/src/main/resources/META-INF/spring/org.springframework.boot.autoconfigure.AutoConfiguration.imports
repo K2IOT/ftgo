@@ -1,1 +1,2 @@
 net.ftgo.common.web.FtgoWebAutoConfiguration
+net.ftgo.common.observability.ObservabilityAutoConfiguration

@@ -1,0 +1,162 @@
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaUser
+metadata:
+  name: order-service
+  labels:
+    strimzi.io/cluster: ftgo-kafka
+spec:
+  authentication:
+    type: scram-sha-512
+  authorization:
+    type: simple
+    acls:
+      - resource:
+          type: topic
+          name: net.ftgo.orderservice.domain.Order
+          patternType: literal
+        operations: [Write, Describe]
+      - resource:
+          type: topic
+          name: orderService
+          patternType: literal
+        operations: [Read, Write, Describe]
+      - resource:
+          type: group
+          name: order-service
+          patternType: prefix
+        operations: [Read]
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaUser
+metadata:
+  name: consumer-service
+  labels:
+    strimzi.io/cluster: ftgo-kafka
+spec:
+  authentication:
+    type: scram-sha-512
+  authorization:
+    type: simple
+    acls:
+      - resource:
+          type: topic
+          name: consumerService
+          patternType: literal
+        operations: [Read, Write, Describe]
+      - resource:
+          type: topic
+          name: net.ftgo.consumerservice.domain.Consumer
+          patternType: literal
+        operations: [Write, Describe]
+      - resource:
+          type: group
+          name: consumer-service
+          patternType: prefix
+        operations: [Read]
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaUser
+metadata:
+  name: kitchen-service
+  labels:
+    strimzi.io/cluster: ftgo-kafka
+spec:
+  authentication:
+    type: scram-sha-512
+  authorization:
+    type: simple
+    acls:
+      - resource:
+          type: topic
+          name: kitchenService
+          patternType: literal
+        operations: [Read, Write, Describe]
+      - resource:
+          type: topic
+          name: net.ftgo.kitchenservice.domain.Ticket
+          patternType: literal
+        operations: [Write, Describe]
+      - resource:
+          type: group
+          name: kitchen-service
+          patternType: prefix
+        operations: [Read]
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaUser
+metadata:
+  name: accounting-service
+  labels:
+    strimzi.io/cluster: ftgo-kafka
+spec:
+  authentication:
+    type: scram-sha-512
+  authorization:
+    type: simple
+    acls:
+      - resource:
+          type: topic
+          name: accountingService
+          patternType: literal
+        operations: [Read, Write, Describe]
+      - resource:
+          type: topic
+          name: net.ftgo.accountingservice.domain.Account
+          patternType: literal
+        operations: [Write, Describe]
+      - resource:
+          type: group
+          name: accounting-service
+          patternType: prefix
+        operations: [Read]
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaUser
+metadata:
+  name: delivery-service
+  labels:
+    strimzi.io/cluster: ftgo-kafka
+spec:
+  authentication:
+    type: scram-sha-512
+  authorization:
+    type: simple
+    acls:
+      - resource:
+          type: topic
+          name: deliveryService
+          patternType: literal
+        operations: [Read, Write, Describe]
+      - resource:
+          type: topic
+          name: net.ftgo.deliveryservice.domain.Delivery
+          patternType: literal
+        operations: [Write, Describe]
+      - resource:
+          type: group
+          name: delivery-service
+          patternType: prefix
+        operations: [Read]
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaUser
+metadata:
+  name: order-history-service
+  labels:
+    strimzi.io/cluster: ftgo-kafka
+spec:
+  authentication:
+    type: tls
+  authorization:
+    type: simple
+    acls:
+      - resource:
+          type: topic
+          name: net.ftgo.
+          patternType: prefix
+        operations: [Read, Describe]
+      - resource:
+          type: group
+          name: order-history-service
+          patternType: prefix
+        operations: [Read]

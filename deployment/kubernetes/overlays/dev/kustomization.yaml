@@ -1,0 +1,48 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: ftgo-dev
+resources:
+  - ../../base
+  - ../../istio
+replicas:
+  - name: api-gateway
+    count: 1
+  - name: order-service
+    count: 1
+  - name: consumer-service
+    count: 1
+  - name: restaurant-service
+    count: 1
+  - name: kitchen-service
+    count: 1
+  - name: accounting-service
+    count: 1
+  - name: delivery-service
+    count: 1
+  - name: order-history-service
+    count: 1
+images:
+  - name: ftgo/api-gateway
+    newName: registry.example.invalid/ftgo/api-gateway
+    digest: sha256:1111111111111111111111111111111111111111111111111111111111111111
+  - name: ftgo/order-service
+    newName: registry.example.invalid/ftgo/order-service
+    digest: sha256:1111111111111111111111111111111111111111111111111111111111111111
+  - name: ftgo/consumer-service
+    newName: registry.example.invalid/ftgo/consumer-service
+    digest: sha256:1111111111111111111111111111111111111111111111111111111111111111
+  - name: ftgo/restaurant-service
+    newName: registry.example.invalid/ftgo/restaurant-service
+    digest: sha256:1111111111111111111111111111111111111111111111111111111111111111
+  - name: ftgo/kitchen-service
+    newName: registry.example.invalid/ftgo/kitchen-service
+    digest: sha256:1111111111111111111111111111111111111111111111111111111111111111
+  - name: ftgo/accounting-service
+    newName: registry.example.invalid/ftgo/accounting-service
+    digest: sha256:1111111111111111111111111111111111111111111111111111111111111111
+  - name: ftgo/delivery-service
+    newName: registry.example.invalid/ftgo/delivery-service
+    digest: sha256:1111111111111111111111111111111111111111111111111111111111111111
+  - name: ftgo/order-history-service
+    newName: registry.example.invalid/ftgo/order-history-service
+    digest: sha256:1111111111111111111111111111111111111111111111111111111111111111

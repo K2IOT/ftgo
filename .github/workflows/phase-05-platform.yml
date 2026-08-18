@@ -1,0 +1,118 @@
+name: Phase 05 Platform and Observability
+
+on:
+  pull_request:
+    branches: [dev]
+    paths:
+      - 'docker/**'
+      - '.dockerignore'
+      - '.gitignore'
+      - 'scripts/build/**'
+      - 'deployment/docker-compose.infra.yml'
+      - 'deployment/kafka-init.sh'
+      - 'deployment/.env.example'
+      - 'deployment/tests/test_phase05_image_contract.py'
+      - 'docs/runbooks/image-build.md'
+      - '.github/workflows/phase-05-platform.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: phase-05-platform-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  image-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      required: ${{ steps.detect.outputs.required }}
+    steps:
+      - name: Checkout history
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          fetch-depth: 0
+      - name: Detect image-related changes in this update
+        id: detect
+        shell: bash
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          base="${BEFORE_SHA}"
+          if [[ -z "${base}" ]] || ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
+            git fetch origin dev --quiet
+            base="$(git merge-base origin/dev "${HEAD_SHA}")"
+          fi
+          if git diff --quiet "${base}" "${HEAD_SHA}" -- \
+            docker .dockerignore scripts/build \
+            deployment/docker-compose.infra.yml deployment/kafka-init.sh \
+            deployment/.env.example deployment/tests/test_phase05_image_contract.py \
+            docs/runbooks/image-build.md .github/workflows/phase-05-platform.yml
+          then
+            echo 'required=false' >> "$GITHUB_OUTPUT"
+          else
+            echo 'required=true' >> "$GITHUB_OUTPUT"
+          fi
+
+  immutable-image-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - name: Verify immutable image and infrastructure contracts
+        run: python -m unittest deployment.tests.test_phase05_image_contract -v
+      - name: Validate pinned infrastructure Compose
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp deployment/.env.example deployment/.env
+          docker compose --env-file deployment/.env \
+            -f deployment/docker-compose.infra.yml config --quiet
+
+  service-image:
+    needs: [image-changes, immutable-image-contract]
+    if: needs.image-changes.outputs.required == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - api-gateway
+          - order-service
+          - consumer-service
+          - restaurant-service
+          - kitchen-service
+          - accounting-service
+          - delivery-service
+          - order-history-service
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - name: Build ${{ matrix.service }} immutable image
+        shell: bash
+        env:
+          SERVICE: ${{ matrix.service }}
+          VERSION: phase05-${{ github.run_id }}
+          GIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          DOCKER_BUILDKIT=1 docker build \
+            --file docker/service.Dockerfile \
+            --build-arg SERVICE="${SERVICE}" \
+            --build-arg VERSION="${VERSION}" \
+            --build-arg GIT_SHA="${GIT_SHA}" \
+            --tag "ftgo/${SERVICE}:${VERSION}" \
+            .
+      - name: Verify ${{ matrix.service }} runtime image
+        shell: bash
+        env:
+          SERVICE: ${{ matrix.service }}
+          VERSION: phase05-${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          bash scripts/build/verify-image.sh "ftgo/${SERVICE}:${VERSION}"

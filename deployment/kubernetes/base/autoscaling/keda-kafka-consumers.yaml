@@ -1,0 +1,119 @@
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: consumer-service-kafka
+spec:
+  scaleTargetRef:
+    name: consumer-service
+  pollingInterval: 15
+  cooldownPeriod: 300
+  minReplicaCount: 2
+  maxReplicaCount: 12
+  fallback:
+    failureThreshold: 3
+    replicas: 2
+  triggers:
+    - type: kafka
+      metadata:
+        bootstrapServers: kafka.ftgo-platform.svc:9092
+        consumerGroup: consumer-service
+        topic: consumerService
+        lagThreshold: "100"
+        activationLagThreshold: "10"
+        offsetResetPolicy: latest
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: kitchen-service-kafka
+spec:
+  scaleTargetRef:
+    name: kitchen-service
+  pollingInterval: 15
+  cooldownPeriod: 300
+  minReplicaCount: 2
+  maxReplicaCount: 12
+  fallback:
+    failureThreshold: 3
+    replicas: 2
+  triggers:
+    - type: kafka
+      metadata:
+        bootstrapServers: kafka.ftgo-platform.svc:9092
+        consumerGroup: kitchen-service
+        topic: kitchenService
+        lagThreshold: "100"
+        activationLagThreshold: "10"
+        offsetResetPolicy: latest
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: accounting-service-kafka
+spec:
+  scaleTargetRef:
+    name: accounting-service
+  pollingInterval: 15
+  cooldownPeriod: 300
+  minReplicaCount: 2
+  maxReplicaCount: 10
+  fallback:
+    failureThreshold: 3
+    replicas: 2
+  triggers:
+    - type: kafka
+      metadata:
+        bootstrapServers: kafka.ftgo-platform.svc:9092
+        consumerGroup: accounting-service
+        topic: accountingService
+        lagThreshold: "100"
+        activationLagThreshold: "10"
+        offsetResetPolicy: latest
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: delivery-service-kafka
+spec:
+  scaleTargetRef:
+    name: delivery-service
+  pollingInterval: 15
+  cooldownPeriod: 300
+  minReplicaCount: 2
+  maxReplicaCount: 10
+  fallback:
+    failureThreshold: 3
+    replicas: 2
+  triggers:
+    - type: kafka
+      metadata:
+        bootstrapServers: kafka.ftgo-platform.svc:9092
+        consumerGroup: delivery-service
+        topic: deliveryService
+        lagThreshold: "100"
+        activationLagThreshold: "10"
+        offsetResetPolicy: latest
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: order-history-service-kafka
+spec:
+  scaleTargetRef:
+    name: order-history-service
+  pollingInterval: 15
+  cooldownPeriod: 300
+  minReplicaCount: 2
+  maxReplicaCount: 16
+  fallback:
+    failureThreshold: 3
+    replicas: 2
+  triggers:
+    - type: kafka
+      metadata:
+        bootstrapServers: kafka.ftgo-platform.svc:9092
+        consumerGroup: order-history-service
+        topic: net.ftgo.orderservice.domain.Order
+        lagThreshold: "200"
+        activationLagThreshold: "20"
+        offsetResetPolicy: latest

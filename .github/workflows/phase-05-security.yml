@@ -1,0 +1,28 @@
+name: Phase 05 Platform Security
+
+on:
+  pull_request:
+    branches: [dev]
+    paths:
+      - 'deployment/kubernetes/**'
+      - 'scripts/k8s/**'
+      - 'deployment/tests/test_phase05_security_contract.py'
+      - '.github/workflows/phase-05-security.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: phase-05-security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  platform-security-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - name: Verify secrets, mTLS and network isolation contracts
+        run: python -m unittest deployment.tests.test_phase05_security_contract -v
