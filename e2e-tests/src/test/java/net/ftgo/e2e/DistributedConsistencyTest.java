@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import net.ftgo.e2e.support.FailureInjector;
 import net.ftgo.e2e.support.KafkaProbe;
+import net.ftgo.e2e.support.TestIdentityProvider;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.awaitility.Awaitility;
 import org.junit.jupiter.api.AfterAll;
@@ -63,12 +64,23 @@ class DistributedConsistencyTest {
     private static final String DB_PASSWORD = "ftgo_password";
     private static final String ORDER_TOPIC = "net.ftgo.orderservice.domain.Order";
     private static final String ORDER_DLT = ORDER_TOPIC + ".DLT";
+    private static final int IDENTITY_PORT = 19000;
 
     private static KafkaProbe kafka;
     private static FailureInjector failures;
+    private static TestIdentityProvider identityProvider;
+    private static String adminToken;
 
     @BeforeAll
-    static void beforeAll() {
+    static void beforeAll() throws Exception {
+        identityProvider = TestIdentityProvider.start(IDENTITY_PORT);
+        adminToken = identityProvider.issueToken(
+            "phase03-e2e-admin",
+            List.of("ADMIN"),
+            List.of("ftgo-api"),
+            Map.of(),
+            Duration.ofMinutes(30)
+        );
         kafka = new KafkaProbe(environment(
             "FTGO_E2E_KAFKA_BOOTSTRAP_SERVERS",
             "localhost:29092"
@@ -83,7 +95,12 @@ class DistributedConsistencyTest {
 
     @AfterAll
     static void afterAll() {
-        kafka.close();
+        if (kafka != null) {
+            kafka.close();
+        }
+        if (identityProvider != null) {
+            identityProvider.close();
+        }
     }
 
     @Test
@@ -620,10 +637,11 @@ class DistributedConsistencyTest {
 
     private JsonNode post(String url, JsonNode body) {
         HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url))
-            .timeout(Duration.ofSeconds(30));
+            .timeout(Duration.ofSeconds(30))
+            .header("Authorization", "Bearer " + adminToken);
         if ((ORDER_URL + "/orders").equals(url)) {
-    builder.header("Idempotency-Key", "distributed-consistency-" + UUID.randomUUID());
-}
+            builder.header("Idempotency-Key", "distributed-consistency-" + UUID.randomUUID());
+        }
         if (body == null) {
             builder.POST(HttpRequest.BodyPublishers.noBody());
         } else {
@@ -645,6 +663,7 @@ class DistributedConsistencyTest {
     private JsonNode get(String url) {
         HttpResponse<String> response = send(HttpRequest.newBuilder(URI.create(url))
             .timeout(Duration.ofSeconds(10))
+            .header("Authorization", "Bearer " + adminToken)
             .GET()
             .build());
         assertThat(response.statusCode()).isEqualTo(200);
@@ -658,6 +677,7 @@ class DistributedConsistencyTest {
     private int getStatus(String url) {
         return send(HttpRequest.newBuilder(URI.create(url))
             .timeout(Duration.ofSeconds(10))
+            .header("Authorization", "Bearer " + adminToken)
             .GET()
             .build()).statusCode();
     }
