@@ -1,0 +1,431 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - dev
+  pull_request:
+    branches:
+      - dev
+  merge_group:
+  schedule:
+    - cron: '17 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name != 'push' || github.ref != 'refs/heads/dev' }}
+
+jobs:
+  validate:
+    name: Validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Verify exact revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Verifying CI SHA: ${GITHUB_SHA}"
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+
+      - name: Set up Java 21
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Verify Gradle 8.14.3 wrapper checksum
+        run: bash scripts/ci/verify-gradle-wrapper.sh
+
+      - name: Scan repository for secrets
+        run: bash scripts/ci/scan-secrets.sh
+
+      - name: Validate Docker Compose models
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose -f deployment/tests/docker-compose.debezium-smoke.yml config --quiet
+          docker compose -f deployment/tests/docker-compose.fresh-stack.yml config --quiet
+          docker compose -f deployment/tests/docker-compose.core-order-flow.yml config --quiet
+
+  build:
+    name: Build
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Set up Java 21
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+
+      - name: Verify Gradle 8.14.3 wrapper checksum
+        run: bash scripts/ci/verify-gradle-wrapper.sh
+
+      - name: Build all modules
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          ./gradlew clean assemble --no-daemon --stacktrace
+
+      - name: Upload build artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ftgo-build-${{ github.sha }}
+          if-no-files-found: warn
+          retention-days: 7
+          path: |
+            **/build/libs/*.jar
+
+  unit-test:
+    name: Unit Test
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    env:
+      FTGO_ORDER_HISTORY_PAGING_SECRET: test-order-history-paging-secret-32-bytes
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Set up Java 21
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+
+      - name: Verify Gradle 8.14.3 wrapper checksum
+        run: bash scripts/ci/verify-gradle-wrapper.sh
+
+      - name: Run full Gradle test suite
+        shell: bash
+        run: |
+          set -o pipefail
+          chmod +x gradlew
+          timeout 45m ./gradlew clean test --no-daemon --stacktrace 2>&1 | tee unit-test.log
+
+      - name: Upload unit-test diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: unit-test-diagnostics-${{ github.run_attempt }}
+          if-no-files-found: warn
+          retention-days: 7
+          path: |
+            unit-test.log
+            **/build/reports/tests/**
+            **/build/test-results/**
+
+  contract-test:
+    name: Contract Test
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Run repository contract matrix
+        shell: bash
+        run: |
+          set -o pipefail
+          python3 -m unittest discover -s deployment/tests -p 'test_*.py' -v 2>&1 | tee contract-test.log
+
+      - name: Upload contract diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: contract-test-diagnostics-${{ github.run_attempt }}
+          if-no-files-found: warn
+          retention-days: 7
+          path: contract-test.log
+
+  dependency-security:
+    name: Dependency & Vulnerability
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Set up Java 21
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+
+      - name: Verify Gradle 8.14.3 wrapper checksum
+        run: bash scripts/ci/verify-gradle-wrapper.sh
+
+      - name: Generate dependency insight
+        run: bash scripts/ci/verify-supported-dependencies.sh | tee dependency-insight.log
+
+      - name: Build executable jars for vulnerability analysis
+        run: ./gradlew bootJar --no-daemon --stacktrace
+
+      - name: Stage executable jars for Trivy rootfs analysis
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf build/trivy-rootfs
+          mkdir -p build/trivy-rootfs
+          modules=(
+            api-gateway
+            accounting-service
+            consumer-service
+            delivery-service
+            kitchen-service
+            order-service
+            order-history-service
+            restaurant-service
+          )
+          count=0
+          for module in "${modules[@]}"; do
+            mapfile -t jars < <(
+              find "$module/build/libs" -maxdepth 1 -type f -name '*.jar' ! -name '*-plain.jar' -print
+            )
+            if (( ${#jars[@]} == 0 )); then
+              echo "No executable jar found for ${module}" >&2
+              exit 1
+            fi
+            for jar in "${jars[@]}"; do
+              cp "$jar" build/trivy-rootfs/
+              count=$((count + 1))
+            done
+            echo "staged_module=${module} jars=${#jars[@]}"
+          done
+          echo "staged_boot_jars=${count}"
+
+      - name: Fail on HIGH or CRITICAL dependency vulnerabilities
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: 'rootfs'
+          scan-ref: 'build/trivy-rootfs'
+          scanners: 'vuln'
+          severity: 'HIGH,CRITICAL'
+          exit-code: '1'
+          format: 'json'
+          output: 'trivy-results.json'
+          list-all-pkgs: 'true'
+
+      - name: Verify Trivy scanned Java dependencies
+        if: always()
+        run: python scripts/ci/verify-trivy-java-report.py trivy-results.json
+
+      - name: Upload dependency audit evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dependency-security-evidence-${{ github.run_attempt }}
+          if-no-files-found: warn
+          retention-days: 7
+          path: |
+            dependency-insight.log
+            trivy-results.json
+
+  smoke-test:
+    name: Smoke Test / ${{ matrix.scenario }}
+    needs:
+      - unit-test
+      - contract-test
+      - dependency-security
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario:
+          - debezium-cdc
+          - fresh-stack
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Set up Java 21
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+
+      - name: Run smoke scenario
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x gradlew deployment/tests/run-debezium-smoke.sh scripts/smoke/*.sh
+
+          case "${{ matrix.scenario }}" in
+            debezium-cdc)
+              timeout 20m bash deployment/tests/run-debezium-smoke.sh
+              ;;
+            fresh-stack)
+              runs=1
+              if [[ "${GITHUB_EVENT_NAME}" == "push" || "${GITHUB_EVENT_NAME}" == "schedule" || "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+                runs=2
+              fi
+              timeout 55m bash scripts/smoke/verify-fresh-stack.sh --runs "${runs}"
+              ;;
+            *)
+              echo "Unknown smoke scenario: ${{ matrix.scenario }}" >&2
+              exit 2
+              ;;
+          esac
+
+      - name: Upload smoke diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: smoke-${{ matrix.scenario }}-${{ github.run_attempt }}
+          if-no-files-found: warn
+          retention-days: 7
+          path: |
+            deployment/tests/debezium-smoke.log
+            deployment/tests/debezium-smoke-record.txt
+            deployment/tests/debezium-smoke-containers.log
+            build/fresh-stack-smoke/**
+
+  integration-test:
+    name: Integration Test / ${{ matrix.scenario }}
+    needs: smoke-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 105
+    env:
+      FTGO_E2E_ENABLED: 'true'
+      FTGO_ORDER_HISTORY_PAGING_SECRET: test-order-history-paging-secret-32-bytes
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario:
+          - core-order-flow
+          - payment-settlement
+          - distributed-consistency
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Set up Java 21
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+
+      - name: Validate integration harness
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x gradlew scripts/smoke/*.sh
+          docker compose -f deployment/tests/docker-compose.core-order-flow.yml config --quiet
+          bash -n scripts/smoke/verify-core-order-flow.sh
+          bash -n scripts/smoke/verify-payment-settlement.sh
+          bash -n scripts/smoke/verify-distributed-consistency.sh
+
+      - name: Run integration scenario
+        shell: bash
+        run: |
+          set -o pipefail
+          runs=1
+          if [[ "${GITHUB_EVENT_NAME}" == "push" || "${GITHUB_EVENT_NAME}" == "schedule" || "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            runs=2
+          fi
+
+          case "${{ matrix.scenario }}" in
+            core-order-flow)
+              timeout 100m bash scripts/smoke/verify-core-order-flow.sh --runs "${runs}" 2>&1 | tee integration-core-order-flow.log
+              ;;
+            payment-settlement)
+              timeout 100m bash scripts/smoke/verify-payment-settlement.sh --runs "${runs}" 2>&1 | tee integration-payment-settlement.log
+              ;;
+            distributed-consistency)
+              timeout 100m bash scripts/smoke/verify-distributed-consistency.sh --runs "${runs}" 2>&1 | tee integration-distributed-consistency.log
+              ;;
+            *)
+              echo "Unknown integration scenario: ${{ matrix.scenario }}" >&2
+              exit 2
+              ;;
+          esac
+
+      - name: Print concise JUnit failures
+        if: failure()
+        run: python3 scripts/ci/summarize-junit-failures.py e2e-tests || true
+
+      - name: Upload integration diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: integration-${{ matrix.scenario }}-${{ github.run_attempt }}
+          if-no-files-found: warn
+          retention-days: 7
+          path: |
+            integration-*.log
+            core-order-flow-e2e-logs/**
+            payment-settlement-e2e-logs/**
+            distributed-consistency-e2e-logs/**
+            e2e-tests/build/reports/tests/**
+            e2e-tests/build/test-results/**
+
+  ci-gate:
+    name: CI Gate
+    if: always()
+    needs:
+      - validate
+      - build
+      - unit-test
+      - contract-test
+      - dependency-security
+      - smoke-test
+      - integration-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify all CI stages passed
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "validate=${{ needs.validate.result }}"
+          echo "build=${{ needs.build.result }}"
+          echo "unit-test=${{ needs.unit-test.result }}"
+          echo "contract-test=${{ needs.contract-test.result }}"
+          echo "dependency-security=${{ needs.dependency-security.result }}"
+          echo "smoke-test=${{ needs.smoke-test.result }}"
+          echo "integration-test=${{ needs.integration-test.result }}"
+
+          test "${{ needs.validate.result }}" = "success"
+          test "${{ needs.build.result }}" = "success"
+          test "${{ needs.unit-test.result }}" = "success"
+          test "${{ needs.contract-test.result }}" = "success"
+          test "${{ needs.dependency-security.result }}" = "success"
+          test "${{ needs.smoke-test.result }}" = "success"
+          test "${{ needs.integration-test.result }}" = "success"

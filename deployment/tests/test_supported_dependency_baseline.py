@@ -8,7 +8,7 @@ BUILD = ROOT / "build.gradle"
 WRAPPER = ROOT / "gradle" / "wrapper" / "gradle-wrapper.properties"
 DEPENDENCY_AUDIT = ROOT / "scripts" / "ci" / "verify-supported-dependencies.sh"
 TRIVY_REPORT_VALIDATOR = ROOT / "scripts" / "ci" / "verify-trivy-java-report.py"
-PLATFORM_SECURITY_WORKFLOW = ROOT / ".github" / "workflows" / "remediation-10-platform-security.yml"
+CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 UPGRADE_RUNBOOK = ROOT / "docs" / "operations" / "spring-platform-upgrade-runbook.md"
 WORKFLOWS = ROOT / ".github" / "workflows"
 
@@ -132,7 +132,7 @@ class SupportedDependencyBaselineTest(unittest.TestCase):
     def test_platform_upgrade_has_dependency_and_vulnerability_gates(self):
         self.assertTrue(DEPENDENCY_AUDIT.is_file(), "dependency audit script is required")
         self.assertTrue(TRIVY_REPORT_VALIDATOR.is_file(), "Trivy Java coverage validator is required")
-        self.assertTrue(PLATFORM_SECURITY_WORKFLOW.is_file(), "platform security workflow is required")
+        self.assertTrue(CI_WORKFLOW.is_file(), "canonical CI workflow is required")
         self.assertTrue(UPGRADE_RUNBOOK.is_file(), "Spring platform upgrade runbook is required")
 
         audit = DEPENDENCY_AUDIT.read_text(encoding="utf-8")
@@ -154,20 +154,28 @@ class SupportedDependencyBaselineTest(unittest.TestCase):
         self.assertIn('"Packages"', validator)
         self.assertIn("EXPECTED_SERVICES", validator)
 
-        workflow = PLATFORM_SECURITY_WORKFLOW.read_text(encoding="utf-8")
+        workflow = CI_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("dependency-security:", workflow)
+        self.assertIn("bash scripts/ci/verify-supported-dependencies.sh", workflow)
         self.assertIn("./gradlew bootJar", workflow)
-        self.assertIn("aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25", workflow)
+        self.assertIn(
+            "aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25",
+            workflow,
+        )
         self.assertRegex(workflow, r"scan-type:\s*['\"]?rootfs['\"]?")
         self.assertRegex(workflow, r"format:\s*['\"]?json['\"]?")
         self.assertRegex(workflow, r"output:\s*['\"]?trivy-results\.json['\"]?")
         self.assertRegex(workflow, r"list-all-pkgs:\s*['\"]?true['\"]?")
-        self.assertIn("python scripts/ci/verify-trivy-java-report.py trivy-results.json", workflow)
+        self.assertIn(
+            "python scripts/ci/verify-trivy-java-report.py trivy-results.json",
+            workflow,
+        )
         self.assertRegex(workflow, r"severity:\s*['\"]HIGH,CRITICAL['\"]")
         self.assertRegex(workflow, r"exit-code:\s*['\"]1['\"]")
 
     def test_github_workflows_use_supported_gradle_setup(self):
         workflows = sorted(WORKFLOWS.glob("*.yml"))
-        self.assertTrue(workflows, "GitHub workflows are required")
+        self.assertEqual([CI_WORKFLOW], workflows)
         for workflow_path in workflows:
             workflow = workflow_path.read_text(encoding="utf-8")
             self.assertNotIn(
@@ -188,21 +196,25 @@ class SupportedDependencyBaselineTest(unittest.TestCase):
                 )
 
     def test_final_verification_entrypoints_match_plan(self):
-        gates = {
-            "scripts/smoke/verify-fresh-stack.sh": ".github/workflows/phase-01-fresh-stack.yml",
-            "scripts/smoke/verify-core-order-flow.sh": ".github/workflows/phase-02-core-order-flow-e2e.yml",
-            "scripts/smoke/verify-payment-settlement.sh": ".github/workflows/phase-02b-payment-settlement.yml",
-            "scripts/smoke/verify-distributed-consistency.sh": ".github/workflows/phase-03-distributed-failure-e2e.yml",
-        }
-        for script_name, workflow_name in gates.items():
+        workflow = CI_WORKFLOW.read_text(encoding="utf-8")
+        for script_name in (
+            "scripts/smoke/verify-fresh-stack.sh",
+            "scripts/smoke/verify-core-order-flow.sh",
+            "scripts/smoke/verify-payment-settlement.sh",
+            "scripts/smoke/verify-distributed-consistency.sh",
+        ):
             script = ROOT / script_name
-            workflow = ROOT / workflow_name
-            self.assertTrue(script.is_file(), f"{script_name} is required by the final verification plan")
-            self.assertIn(
-                f"bash {script_name} --runs 2",
-                workflow.read_text(encoding="utf-8"),
-                f"{workflow_name} must execute the exact two-run verification entrypoint",
+            self.assertTrue(
+                script.is_file(),
+                f"{script_name} is required by the final verification plan",
             )
+            self.assertIn(
+                f"bash {script_name} --runs \"${{runs}}\"",
+                workflow,
+                f"ci.yml must execute {script_name} through the canonical cycle count",
+            )
+        self.assertIn("runs=2", workflow)
+        self.assertIn('"${GITHUB_EVENT_NAME}" == "push"', workflow)
 
 
 if __name__ == "__main__":

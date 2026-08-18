@@ -4,34 +4,17 @@ import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 WORKFLOW_ROOT = ROOT / ".github" / "workflows"
+CI_WORKFLOW = "ci.yml"
 
-ALL_PHASE_WORKFLOWS = (
-    "phase-01-debezium-smoke.yml",
-    "phase-01-fresh-stack.yml",
-    "phase-01-full-test.yml",
-    "phase-01-module-diagnostics.yml",
-    "phase-01-verification.yml",
-    "phase-02-core-order-flow-e2e.yml",
-    "phase-02-core-order-flow.yml",
-    "phase-02b-payment-settlement.yml",
-    "phase-03-distributed-consistency.yml",
-    "phase-03-distributed-failure-e2e.yml",
-    "phase-03-operations.yml",
-    "phase-03-order-history.yml",
-    "phase-04-api-contract.yml",
-    "phase-04-security-api.yml",
-    "phase-04-web-diagnostic.yml",
-)
-
-PHASE01_WORKFLOWS = tuple(
-    name for name in ALL_PHASE_WORKFLOWS if name.startswith("phase-01-")
-)
-
-REQUIRED_MERGE_CHECKS = (
-    "phase-01-full-test.yml",
-    "phase-01-verification.yml",
-    "phase-04-api-contract.yml",
-    "phase-04-security-api.yml",
+EXPECTED_CI_JOBS = (
+    "validate:",
+    "build:",
+    "unit-test:",
+    "contract-test:",
+    "dependency-security:",
+    "smoke-test:",
+    "integration-test:",
+    "ci-gate:",
 )
 
 HTTP_SERVICES = (
@@ -48,45 +31,59 @@ HTTP_SERVICES = (
 
 class Phase04MainlinePlatformContractTest(unittest.TestCase):
 
-    def workflow(self, name):
-        return (WORKFLOW_ROOT / name).read_text(encoding="utf-8")
+    def workflow(self):
+        return (WORKFLOW_ROOT / CI_WORKFLOW).read_text(encoding="utf-8")
 
-    def test_phase_workflows_target_dev_pull_requests_and_remain_dispatchable(self):
-        for name in ALL_PHASE_WORKFLOWS:
-            source = self.workflow(name)
-            self.assertIn("pull_request:", source, name)
-            self.assertIn("dev", source, name)
-            self.assertIn("workflow_dispatch:", source, name)
+    def test_repository_has_one_canonical_ci_workflow(self):
+        workflow_files = sorted(
+            path.name
+            for path in WORKFLOW_ROOT.iterdir()
+            if path.is_file() and path.suffix in {".yml", ".yaml"}
+        )
+        self.assertEqual([CI_WORKFLOW], workflow_files)
 
-    def test_phase01_push_triggers_no_longer_target_historical_agent_branch(self):
-        for name in PHASE01_WORKFLOWS:
-            source = self.workflow(name)
-            self.assertNotIn("agent/ftgo-phase-01-runtime-foundation", source, name)
-
-    def test_required_checks_run_for_dev_push_and_merge_queue(self):
-        for name in REQUIRED_MERGE_CHECKS:
-            source = self.workflow(name)
-            push = source[source.index("push:"):source.index("pull_request:")]
-            self.assertIn("dev", push, name)
-            self.assertIn("merge_group:", source, name)
-
-    def test_dev_merge_verification_retests_exact_dev_sha(self):
-        source = self.workflow("dev-merge-verification.yml")
+    def test_ci_targets_dev_pull_requests_pushes_merge_queue_and_manual_dispatch(self):
+        source = self.workflow()
         self.assertIn("push:", source)
+        self.assertIn("pull_request:", source)
         self.assertIn("- dev", source)
+        self.assertIn("merge_group:", source)
         self.assertIn("workflow_dispatch:", source)
-        self.assertIn("./gradlew --no-daemon clean test", source)
-        self.assertIn("python3 -m unittest discover -s deployment/tests -p 'test_*.py' -v", source)
-        self.assertIn("github.sha", source)
-        self.assertIn("git rev-parse HEAD", source)
 
-    def test_secret_scanning_is_enforced_on_pr_dev_push_and_merge_queue(self):
-        workflow = self.workflow("secret-scan.yml")
+    def test_ci_retests_exact_event_sha(self):
+        source = self.workflow()
+        self.assertIn("ref: ${{ github.sha }}", source)
+        self.assertIn('test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"', source)
+
+    def test_ci_exposes_one_standard_stage_graph(self):
+        source = self.workflow()
+        for job in EXPECTED_CI_JOBS:
+            self.assertIn(job, source, job)
+
+        self.assertIn("needs: validate", source)
+        self.assertIn("needs: build", source)
+        self.assertIn("needs: smoke-test", source)
+        self.assertIn("name: Dependency & Vulnerability", source)
+        self.assertIn("name: CI Gate", source)
+
+    def test_ci_runs_full_build_test_contract_smoke_and_integration_matrix(self):
+        source = self.workflow()
+        self.assertIn("./gradlew clean assemble --no-daemon --stacktrace", source)
+        self.assertIn("./gradlew clean test --no-daemon --stacktrace", source)
+        self.assertNotIn("--continue", source)
+        self.assertIn(
+            "python3 -m unittest discover -s deployment/tests -p 'test_*.py' -v",
+            source,
+        )
+        self.assertIn("deployment/tests/run-debezium-smoke.sh", source)
+        self.assertIn("scripts/smoke/verify-fresh-stack.sh", source)
+        self.assertIn("scripts/smoke/verify-core-order-flow.sh", source)
+        self.assertIn("scripts/smoke/verify-payment-settlement.sh", source)
+        self.assertIn("scripts/smoke/verify-distributed-consistency.sh", source)
+
+    def test_secret_scanning_is_enforced_inside_canonical_ci(self):
+        workflow = self.workflow()
         scanner = (ROOT / "scripts/ci/scan-secrets.sh").read_text(encoding="utf-8")
-        self.assertIn("pull_request:", workflow)
-        self.assertIn("push:", workflow)
-        self.assertIn("- dev", workflow)
-        self.assertIn("merge_group:", workflow)
         self.assertIn("scripts/ci/scan-secrets.sh", workflow)
         self.assertIn("zricethezav/gitleaks:v8.24.3", scanner)
         self.assertIn("--no-banner", scanner)
@@ -109,7 +106,10 @@ class Phase04MainlinePlatformContractTest(unittest.TestCase):
 
     def test_order_service_does_not_duplicate_hikaricp_dependency(self):
         build = (ROOT / "build.gradle").read_text(encoding="utf-8")
-        block = build[build.index("project(':order-service')"):build.index("project(':consumer-service')")]
+        block = build[
+            build.index("project(':order-service')"):
+            build.index("project(':consumer-service')")
+        ]
         self.assertLessEqual(block.count("implementation 'com.zaxxer:HikariCP'"), 1)
 
     def test_repository_documents_dev_as_mainline(self):
