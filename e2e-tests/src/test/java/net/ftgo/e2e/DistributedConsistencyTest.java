@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import net.ftgo.e2e.support.FailureInjector;
 import net.ftgo.e2e.support.KafkaProbe;
+import net.ftgo.e2e.support.TestIdentityProvider;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.awaitility.Awaitility;
 import org.junit.jupiter.api.AfterAll;
@@ -63,12 +64,23 @@ class DistributedConsistencyTest {
     private static final String DB_PASSWORD = "ftgo_password";
     private static final String ORDER_TOPIC = "net.ftgo.orderservice.domain.Order";
     private static final String ORDER_DLT = ORDER_TOPIC + ".DLT";
+    private static final int IDENTITY_PORT = 19000;
 
     private static KafkaProbe kafka;
     private static FailureInjector failures;
+    private static TestIdentityProvider identityProvider;
+    private static String adminToken;
 
     @BeforeAll
-    static void beforeAll() {
+    static void beforeAll() throws Exception {
+        identityProvider = TestIdentityProvider.start(IDENTITY_PORT);
+        adminToken = identityProvider.issueToken(
+            "phase03-e2e-admin",
+            List.of("ADMIN"),
+            List.of("ftgo-api"),
+            Map.of(),
+            Duration.ofMinutes(30)
+        );
         kafka = new KafkaProbe(environment(
             "FTGO_E2E_KAFKA_BOOTSTRAP_SERVERS",
             "localhost:29092"
@@ -83,7 +95,12 @@ class DistributedConsistencyTest {
 
     @AfterAll
     static void afterAll() {
-        kafka.close();
+        if (kafka != null) {
+            kafka.close();
+        }
+        if (identityProvider != null) {
+            identityProvider.close();
+        }
     }
 
     @Test
@@ -288,9 +305,9 @@ class DistributedConsistencyTest {
         Fixture fixture = createFixture(new BigDecimal("1000.00"), new BigDecimal("25.00"), scenario);
         long orderId = createOrder(fixture, "tok_phase03_" + scenario);
         long ticketId = awaitTicket(orderId, fixture.restaurantId());
-        awaitOrderState(orderId, "AWAITING_RESTAURANT_ACCEPTANCE");
+        awaitOrderState(orderId, "AWAITING_RESTAURANT_ACCEPTANCE", fixture.consumerToken());
         post(KITCHEN_URL + "/tickets/" + ticketId + "/accept", null);
-        awaitOrderState(orderId, "APPROVED");
+        awaitOrderState(orderId, "APPROVED", fixture.consumerToken());
         return new ApprovedOrder(orderId, ticketId);
     }
 
@@ -500,6 +517,11 @@ class DistributedConsistencyTest {
         consumer.put("email", suffix + "@example.test");
         consumer.put("creditLimit", creditLimit);
         long consumerId = post(CONSUMER_URL + "/consumers", consumer).path("id").asLong();
+        String consumerToken = issueToken(
+            "phase03-consumer-" + consumerId,
+            List.of("CONSUMER"),
+            Map.of("consumer_id", consumerId)
+        );
 
         ObjectNode restaurant = JSON.createObjectNode();
         restaurant.put("name", "Phase03 Restaurant " + suffix);
@@ -522,7 +544,15 @@ class DistributedConsistencyTest {
             "select menu_version from restaurants where id = ?",
             restaurantId
         ));
-        return new Fixture(consumerId, restaurantId, menuItemId, menuVersion, price, menuName);
+        return new Fixture(
+            consumerId,
+            restaurantId,
+            menuItemId,
+            menuVersion,
+            price,
+            menuName,
+            consumerToken
+        );
     }
 
     private long createOrder(Fixture fixture, String paymentToken) {
@@ -540,7 +570,8 @@ class DistributedConsistencyTest {
         request.set("deliveryAddress", address("2 Phase03 Delivery Street"));
         request.put("deliveryTime", LocalDateTime.now().plusHours(1).toString());
         request.put("paymentToken", paymentToken);
-        return post(ORDER_URL + "/orders", request).path("orderId").asLong();
+        return post(ORDER_URL + "/orders", request, fixture.consumerToken())
+            .path("orderId").asLong();
     }
 
     private ObjectNode address(String street) {
@@ -571,10 +602,10 @@ class DistributedConsistencyTest {
         return ticketId[0];
     }
 
-    private void awaitOrderState(long orderId, String expectedState) {
+    private void awaitOrderState(long orderId, String expectedState, String consumerToken) {
         Awaitility.await().atMost(90, TimeUnit.SECONDS).pollInterval(Duration.ofMillis(250))
             .untilAsserted(() -> assertThat(
-                get(ORDER_URL + "/orders/" + orderId).path("state").asText()
+                get(ORDER_URL + "/orders/" + orderId, consumerToken).path("state").asText()
             ).isEqualTo(expectedState));
     }
 
@@ -619,11 +650,16 @@ class DistributedConsistencyTest {
     }
 
     private JsonNode post(String url, JsonNode body) {
+        return post(url, body, adminToken);
+    }
+
+    private JsonNode post(String url, JsonNode body, String token) {
         HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url))
-            .timeout(Duration.ofSeconds(30));
+            .timeout(Duration.ofSeconds(30))
+            .header("Authorization", "Bearer " + token);
         if ((ORDER_URL + "/orders").equals(url)) {
-    builder.header("Idempotency-Key", "distributed-consistency-" + UUID.randomUUID());
-}
+            builder.header("Idempotency-Key", "distributed-consistency-" + UUID.randomUUID());
+        }
         if (body == null) {
             builder.POST(HttpRequest.BodyPublishers.noBody());
         } else {
@@ -643,8 +679,13 @@ class DistributedConsistencyTest {
     }
 
     private JsonNode get(String url) {
+        return get(url, adminToken);
+    }
+
+    private JsonNode get(String url, String token) {
         HttpResponse<String> response = send(HttpRequest.newBuilder(URI.create(url))
             .timeout(Duration.ofSeconds(10))
+            .header("Authorization", "Bearer " + token)
             .GET()
             .build());
         assertThat(response.statusCode()).isEqualTo(200);
@@ -658,8 +699,23 @@ class DistributedConsistencyTest {
     private int getStatus(String url) {
         return send(HttpRequest.newBuilder(URI.create(url))
             .timeout(Duration.ofSeconds(10))
+            .header("Authorization", "Bearer " + adminToken)
             .GET()
             .build()).statusCode();
+    }
+
+    private String issueToken(String subject, List<String> roles, Map<String, ?> claims) {
+        try {
+            return identityProvider.issueToken(
+                subject,
+                roles,
+                List.of("ftgo-api"),
+                claims,
+                Duration.ofMinutes(30)
+            );
+        } catch (Exception error) {
+            throw new IllegalStateException("Unable to issue E2E JWT for " + subject, error);
+        }
     }
 
     private HttpResponse<String> send(HttpRequest request) {
@@ -725,7 +781,8 @@ class DistributedConsistencyTest {
         long menuItemId,
         long menuVersion,
         BigDecimal price,
-        String menuName
+        String menuName,
+        String consumerToken
     ) {
     }
 

@@ -69,11 +69,12 @@ public final class FailureInjector {
     }
 
     public void awaitHealth(String healthUrl, Duration timeout) {
+        String probeUrl = readinessProbeUrl(healthUrl);
         Instant deadline = Instant.now().plus(timeout);
         while (Instant.now().isBefore(deadline)) {
             try {
                 HttpResponse<String> response = httpClient.send(
-                    HttpRequest.newBuilder(URI.create(healthUrl))
+                    HttpRequest.newBuilder(URI.create(probeUrl))
                         .timeout(Duration.ofSeconds(5))
                         .GET()
                         .build(),
@@ -88,7 +89,14 @@ public final class FailureInjector {
             }
             sleep(Duration.ofMillis(500));
         }
-        throw new AssertionError("Service did not become healthy: " + healthUrl);
+        throw new AssertionError("Service did not become healthy: " + probeUrl);
+    }
+
+    private String readinessProbeUrl(String healthUrl) {
+        if (healthUrl.endsWith("/actuator/health")) {
+            return healthUrl + "/readiness";
+        }
+        return healthUrl;
     }
 
     private void connectorAction(String connectorName, String action) {

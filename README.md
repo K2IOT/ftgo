@@ -4,9 +4,9 @@ FTGO is a Java 21 microservices reference platform for online food ordering and 
 
 ## Mainline and Current Status
 
-`dev` is the integration mainline for active FTGO development. Changes are expected to land through pull requests and must be verified again on the resulting `dev` merge SHA.
+`dev` is the integration mainline for active FTGO development. Changes are expected to land through pull requests and are verified again on the resulting `dev` merge SHA.
 
-Phase 04, **Remediation and Platform Hardening**, is in progress. Tasks 1–8 are merged; Task 9 hardens mainline CI, production configuration, secret scanning, and repository hygiene. The detailed implementation source of truth is:
+Phase 04, **Remediation and Platform Hardening**, hardens mainline CI, production configuration, secret scanning, repository hygiene, and supported platform dependencies. The detailed implementation source of truth is:
 
 - [Phase 04 Remediation and Platform Hardening Plan](docs/superpowers/plans/2026-07-29-phase-04-remediation-and-platform-hardening.md)
 
@@ -28,9 +28,10 @@ Historical Phase 01–03 design and rollout records remain under `docs/superpowe
 ## Technology Stack
 
 - Java 21
-- Spring Boot / Spring Cloud
-- Gradle multi-project build
-- Eventuate Tram and Eventuate Sagas
+- Spring Boot 4.0.7
+- Spring Cloud 2025.1.2
+- Gradle 8.14.3
+- Eventuate platform BOM 2024.0.RELEASE
 - Apache Kafka
 - MySQL 8
 - Cassandra/ScyllaDB
@@ -67,24 +68,39 @@ Do not use the local profile in production.
 
 ## Verification
 
-Run the checked-in wrapper and repository contracts:
+The repository has one canonical GitHub Actions workflow: `.github/workflows/ci.yml`. It runs a single project-wide pipeline with these gates:
+
+1. **Validate** — exact revision, Gradle wrapper integrity, secret scan, Docker Compose model validation.
+2. **Build** — clean assemble for the complete Gradle multi-project.
+3. **Unit Test** — full Gradle test suite for all modules.
+4. **Contract Test** — all repository Python contracts under `deployment/tests`.
+5. **Dependency & Vulnerability** — supported dependency insight plus Trivy rootfs analysis of all executable service jars, failing on HIGH/CRITICAL vulnerabilities.
+6. **Smoke Test** — Debezium CDC and fresh-stack service startup.
+7. **Integration Test** — core order flow, payment settlement and distributed consistency.
+8. **CI Gate** — one stable final status for branch protection.
+
+Run the core local checks with the checked-in wrapper:
 
 ```bash
 bash scripts/ci/verify-gradle-wrapper.sh
-./gradlew --no-daemon clean test --stacktrace
+bash scripts/ci/scan-secrets.sh
+./gradlew clean assemble --no-daemon --stacktrace
+./gradlew clean test --no-daemon --stacktrace
 python3 -m unittest discover -s deployment/tests -p 'test_*.py' -v
+bash scripts/ci/verify-supported-dependencies.sh
 ```
 
-Important real-stack gates are also available:
+Run the real-stack smoke and integration harnesses with:
 
 ```bash
+bash deployment/tests/run-debezium-smoke.sh
 bash scripts/smoke/verify-fresh-stack.sh --runs 2
 bash scripts/smoke/verify-core-order-flow.sh --runs 2
 bash scripts/smoke/verify-payment-settlement.sh --runs 2
 bash scripts/smoke/verify-distributed-consistency.sh --runs 2
 ```
 
-On every push to `dev`, the **Dev Merge Verification** workflow checks out the exact `${{ github.sha }}` and re-runs the full Gradle suite plus repository contract matrix. Secret scanning is enforced through the pinned gitleaks workflow.
+Pull requests and merge-queue revisions run the canonical CI workflow against the exact event SHA. Pushes to `dev`, scheduled runs and manual runs execute two clean-state cycles for the stateful smoke/integration scenarios. Repository rules should require the final **CI Gate** check.
 
 ## Quick Start
 
@@ -137,6 +153,7 @@ ftgo/
 ## Operations Documentation
 
 - [Phase 04 Security and API Runbook](docs/operations/phase-04-security-api-runbook.md)
+- [Spring Platform Upgrade Runbook](docs/operations/spring-platform-upgrade-runbook.md)
 - [Phase 03 Operations Runbook](docs/operations/phase-03-operations-runbook.md)
 - [Phase 02 Core Order Flow Rollout and Rollback](docs/operations/phase-02-core-order-flow-rollout.md)
 - [Infrastructure Setup](deployment/README.md)
@@ -149,7 +166,7 @@ ftgo/
 - Do not force-push protected mainline history.
 - Resolve review conversations before merge.
 - Do not commit production credentials or bearer/payment secrets.
-- A remediation PR is not complete until required checks pass on its final head SHA and again on the resulting `dev` merge SHA.
+- A remediation PR is not complete until the canonical **CI Gate** passes on its final head SHA and again on the resulting `dev` merge SHA.
 
 ## License
 
